@@ -123,3 +123,32 @@ font-size:11px;
   }
 
 }
+/* ADMIN EDIT BUTTON */
+
+.admin-actions{
+  display:flex;
+  align-items:center;
+  gap:8px;
+}
+
+.admin-actions .edit-btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:72px;
+  padding:10px 16px;
+  color:#ffffff;
+  background:#19150e;
+  border:1px solid #8b6d36;
+  border-radius:10px;
+  font-size:12px;
+  font-weight:600;
+  line-height:1;
+  opacity:1;
+}
+
+.admin-actions .edit-btn:hover{
+  background:#241d12;
+  color:#ffffff;
+  border-color:var(--gold2);
+}
