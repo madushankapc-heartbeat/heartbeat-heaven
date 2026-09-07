@@ -1,0 +1,5 @@
+const form=document.getElementById("uploadForm"),status=document.getElementById("status"),list=document.getElementById("adminSongs");
+async function load(){const songs=await fetch("/api/songs").then(r=>r.json());list.innerHTML=songs.length?songs.map(s=>`<div class="admin-row"><span><b>${esc(s.title)}</b><small class="meta"> — ${esc(s.genre)} • ${esc(s.language)}</small></span><button class="delete" onclick="del(${s.id})">Delete</button></div>`).join(""):"<div class='empty'>No songs yet.</div>"}
+form.onsubmit=async e=>{e.preventDefault();status.className="";status.textContent="Publishing…";const r=await fetch("/api/songs",{method:"POST",body:new FormData(form)});const d=await r.json();if(!r.ok){status.className="error";status.textContent=d.error||"Upload failed";return}status.className="success";status.textContent="Published successfully.";form.reset();form.artist.value="Madushanka";load()}
+async function del(id){if(!confirm("Delete this song and its files?"))return;await fetch("/api/songs/"+id,{method:"DELETE"});load()}
+function esc(x){return String(x||"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}load();
