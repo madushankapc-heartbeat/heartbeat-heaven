@@ -435,6 +435,234 @@ app.post(
 
 
 /* =========================================================
+   ADMIN — EDIT SONG
+========================================================= */
+
+app.put(
+  "/api/songs/:id",
+  checkAdminAuth,
+  upload.fields([
+    {
+      name: "cover",
+      maxCount: 1
+    },
+    {
+      name: "audio",
+      maxCount: 1
+    }
+  ]),
+  async (req, res) => {
+
+    try {
+
+      const { data: oldSong, error: findError } =
+        await supabase
+          .from("songs")
+          .select("*")
+          .eq("id", req.params.id)
+          .single();
+
+      if (findError || !oldSong) {
+        return res.status(404).json({
+          error: "Song not found"
+        });
+      }
+
+      const {
+        title,
+        artist,
+        genre,
+        language,
+        mood,
+        description,
+        lyrics,
+        release_date
+      } = req.body;
+
+      if (!title || !artist) {
+        return res.status(400).json({
+          error: "Title and artist are required."
+        });
+      }
+
+      const newCover = req.files?.cover?.[0];
+      const newAudio = req.files?.audio?.[0];
+
+      let cover_url = oldSong.cover_url || "";
+      let audio_url = oldSong.audio_url || "";
+
+      let newCoverPath = null;
+      let newAudioPath = null;
+
+
+      /* NEW COVER */
+
+      if (newCover) {
+
+        newCoverPath =
+          safeFileName(newCover.originalname);
+
+        const { error } =
+          await supabase.storage
+            .from("covers")
+            .upload(
+              newCoverPath,
+              newCover.buffer,
+              {
+                contentType: newCover.mimetype,
+                upsert: false
+              }
+            );
+
+        if (error) {
+          throw new Error(
+            `Cover upload failed: ${error.message}`
+          );
+        }
+
+        cover_url =
+          publicUrl(
+            "covers",
+            newCoverPath
+          );
+      }
+
+
+      /* NEW AUDIO */
+
+      if (newAudio) {
+
+        newAudioPath =
+          safeFileName(newAudio.originalname);
+
+        const { error } =
+          await supabase.storage
+            .from("audio")
+            .upload(
+              newAudioPath,
+              newAudio.buffer,
+              {
+                contentType:
+                  newAudio.mimetype ||
+                  "audio/mpeg",
+                upsert: false
+              }
+            );
+
+        if (error) {
+          throw new Error(
+            `Audio upload failed: ${error.message}`
+          );
+        }
+
+        audio_url =
+          publicUrl(
+            "audio",
+            newAudioPath
+          );
+      }
+
+
+      /* UPDATE DATABASE */
+
+      const { data, error } =
+        await supabase
+          .from("songs")
+          .update({
+            title,
+            artist,
+            genre: genre || "",
+            language: language || "",
+            mood: mood || "",
+            description: description || "",
+            lyrics: lyrics || "",
+            cover_url,
+            audio_url,
+            release_date:
+              release_date || null
+          })
+          .eq("id", req.params.id)
+          .select()
+          .single();
+
+
+      /* DATABASE FAILED */
+
+      if (error) {
+
+        if (newCoverPath) {
+          await supabase
+            .storage
+            .from("covers")
+            .remove([newCoverPath]);
+        }
+
+        if (newAudioPath) {
+          await supabase
+            .storage
+            .from("audio")
+            .remove([newAudioPath]);
+        }
+
+        throw new Error(
+          `Database update failed: ${error.message}`
+        );
+      }
+
+
+      /* REMOVE OLD FILES ONLY AFTER DATABASE SUCCESS */
+
+      if (newCoverPath) {
+
+        const oldCoverPath =
+          storagePath(
+            oldSong.cover_url,
+            "covers"
+          );
+
+        if (oldCoverPath) {
+          await supabase
+            .storage
+            .from("covers")
+            .remove([oldCoverPath]);
+        }
+      }
+
+
+      if (newAudioPath) {
+
+        const oldAudioPath =
+          storagePath(
+            oldSong.audio_url,
+            "audio"
+          );
+
+        if (oldAudioPath) {
+          await supabase
+            .storage
+            .from("audio")
+            .remove([oldAudioPath]);
+        }
+      }
+
+
+      res.json(data);
+
+    } catch (e) {
+
+      console.error(e);
+
+      res.status(500).json({
+        error:
+          e.message ||
+          "Update failed."
+      });
+    }
+  }
+);
+
+
+/* =========================================================
    ADMIN — DELETE SONG
 ========================================================= */
 
