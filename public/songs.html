@@ -1,40 +1,120 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#090909">
-  <meta name="description" content="Explore every HEARTBEAT HEAVEN release by Madushanka.">
-  <title>All Songs — HEARTBEAT HEAVEN</title>
-  <link rel="stylesheet" href="/styles.css">
-  <style>
-    .library-page{padding:70px 8vw 110px}
-    .library-hero{max-width:850px;margin-bottom:42px}
-    .library-hero h1{font-size:clamp(48px,7vw,86px);line-height:.95;letter-spacing:-4px;margin:0 0 20px}
-    .library-hero h1 em{font-family:Georgia,serif;font-weight:400;color:var(--gold2)}
-    .library-hero p:not(.eyebrow){color:#aaa;line-height:1.75;max-width:680px}
-    .library-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) 180px 180px auto;gap:10px;margin-bottom:28px}
-    .library-toolbar input,.library-toolbar select,.clear-btn{
-      background:#111;color:#eee;border:1px solid #333;border-radius:12px;padding:13px 14px;font:inherit;min-width:0
-    }
-    .clear-btn{cursor:pointer}
-    .clear-btn:hover{border-color:#8b6d36;color:var(--gold2)}
-    .library-meta{display:flex;justify-content:space-between;align-items:center;margin:0 0 18px;color:#888;font-size:12px}
-    .library-meta strong{color:#ddd}
-    .library-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
-    .library-card{background:linear-gradient(160deg,#171717,#0f0f0f);border:1px solid #262626;border-radius:18px;overflow:hidden;transition:.25s;cursor:pointer}
-    .library-card:hover{transform:translateY(-5px);border-color:#51442e}
-    .library-card img{width:100%;aspect-ratio:1;object-fit:cover;display:block;background:#191919}
-    .library-card-body{padding:16px}
-    .library-card h2{font-size:17px;margin:0 0 6px}
-    .library-card .meta{color:#8f8a82;font-size:11px}
-    .library-card .desc{color:#999;font-size:12px;line-height:1.55;margin:10px 0 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-    .library-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px}
-    .library-tag{border:1px solid #383838;border-radius:12px;padding:4px 8px;color:#c9b37e;font-size:9px}
-    .library-empty{border:1px dashed #333;border-radius:18px;padding:50px 20px;text-align:center;color:#777}
-    @media(max-width:900px){
-      .library-page{padding:55px 6vw 90px}
-      .library-grid{grid-template-columns:repeat(2,1fr)}
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#090909">
+<meta name="description" content="Explore all original music from Heartbeat Heaven by Madushanka.">
+<title>Songs — HEARTBEAT HEAVEN</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+
+<body>
+
+<header class="topbar">
+  <a class="brand" href="/">
+    <span>♥</span>
+    <div>
+      <strong>HEARTBEAT HEAVEN</strong>
+      <small>Original Music by Madushanka</small>
+    </div>
+  </a>
+
+  <nav>
+    <a href="/">Home</a>
+    <a href="/songs.html">Songs</a>
+    <a href="/#genres">Genres</a>
+    <a href="/#about">About</a>
+  </nav>
+</header>
+
+<main>
+
+<section class="section songs-library">
+
+  <div class="section-head">
+    <div>
+      <p class="eyebrow">THE COMPLETE COLLECTION</p>
+      <h1>All Songs</h1>
+      <p class="library-intro">
+        Explore every original release from Heartbeat Heaven.
+      </p>
+    </div>
+
+    <div class="search-wrap">
+      <input
+        id="search"
+        type="search"
+        placeholder="Search songs..."
+        aria-label="Search songs"
+      >
+    </div>
+  </div>
+
+  <div class="library-filters">
+    <button class="active" data-filter="all">All</button>
+    <button data-filter="Romantic">♥ Romantic</button>
+    <button data-filter="Sad">☾ Sad</button>
+    <button data-filter="Chill">✦ Chill</button>
+    <button data-filter="Cinematic">◈ Cinematic</button>
+    <button data-filter="EDM">⚡ Pop / EDM</button>
+    <button data-filter="Instrumental">♪ Instrumental</button>
+  </div>
+
+  <div id="songGrid" class="song-grid">
+    <div class="empty">Loading music…</div>
+  </div>
+
+</section>
+
+</main>
+
+<div id="player" class="player hidden">
+
+  <img id="playerCover" src="" alt="">
+
+  <div class="player-info">
+    <strong id="playerTitle">Song</strong>
+    <span id="playerArtist">Madushanka</span>
+  </div>
+
+  <button id="playBtn" class="round" type="button">▶</button>
+
+  <input
+    id="progress"
+    type="range"
+    min="0"
+    max="100"
+    value="0"
+    aria-label="Song progress"
+  >
+
+  <span id="time">0:00</span>
+
+  <button id="closePlayer" class="x" type="button">×</button>
+
+  <audio id="audio"></audio>
+
+</div>
+
+<script src="/app.js"></script>
+
+<script>
+document.querySelectorAll(".library-filters button").forEach(button => {
+  button.addEventListener("click", () => {
+
+    document
+      .querySelectorAll(".library-filters button")
+      .forEach(btn => btn.classList.remove("active"));
+
+    button.classList.add("active");
+
+  });
+});
+</script>
+
+</body>
+</html>      .library-grid{grid-template-columns:repeat(2,1fr)}
       .library-toolbar{grid-template-columns:1fr 1fr}
     }
     @media(max-width:560px){
