@@ -1,13 +1,14 @@
 {
   "name": "heartbeat-heaven",
   "version": "1.0.0",
-  "private": true,
-  "description": "Heartbeat Heaven — Original Music by Madushanka",
+  "description": "Heartbeat Heaven music website",
   "main": "server.js",
-  "scripts": { "start": "node server.js", "dev": "node server.js" },
+  "scripts": {
+    "start": "node server.js"
+  },
   "dependencies": {
-    "better-sqlite3": "^11.7.0",
-    "express": "^4.21.2",
-    "multer": "^1.4.5-lts.1"
+    "@supabase/supabase-js": "^2.57.0",
+    "express": "^5.1.0",
+    "multer": "^2.0.2"
   }
 }
