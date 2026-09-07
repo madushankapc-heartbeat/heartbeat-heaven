@@ -3,7 +3,7 @@ const multer = require("multer");
 const path = require("path");
 const crypto = require("crypto");
 const { createClient } = require("@supabase/supabase-js");
-const crypto = require("crypto");
+
 const app = express();
 const PORT = process.env.PORT || 10000;
 
@@ -44,7 +44,10 @@ function checkAdminAuth(req, res, next) {
   const header = req.headers.authorization || "";
 
   if (!header.startsWith("Basic ")) {
-    res.set("WWW-Authenticate", 'Basic realm="Heartbeat Heaven Studio"');
+    res.set(
+      "WWW-Authenticate",
+      'Basic realm="Heartbeat Heaven Studio"'
+    );
     return res.status(401).send("Authentication required.");
   }
 
@@ -56,14 +59,20 @@ function checkAdminAuth(req, res, next) {
       "base64"
     ).toString("utf8");
   } catch {
-    res.set("WWW-Authenticate", 'Basic realm="Heartbeat Heaven Studio"');
+    res.set(
+      "WWW-Authenticate",
+      'Basic realm="Heartbeat Heaven Studio"'
+    );
     return res.status(401).send("Invalid authentication.");
   }
 
   const separator = decoded.indexOf(":");
 
   if (separator < 0) {
-    res.set("WWW-Authenticate", 'Basic realm="Heartbeat Heaven Studio"');
+    res.set(
+      "WWW-Authenticate",
+      'Basic realm="Heartbeat Heaven Studio"'
+    );
     return res.status(401).send("Invalid authentication.");
   }
 
@@ -85,8 +94,13 @@ function checkAdminAuth(req, res, next) {
     );
 
   if (!userOk || !passwordOk) {
-    res.set("WWW-Authenticate", 'Basic realm="Heartbeat Heaven Studio"');
-    return res.status(401).send("Invalid username or password.");
+    res.set(
+      "WWW-Authenticate",
+      'Basic realm="Heartbeat Heaven Studio"'
+    );
+    return res.status(401).send(
+      "Invalid username or password."
+    );
   }
 
   next();
@@ -101,32 +115,55 @@ app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 
-/*
-  Protect Studio page + Studio JavaScript
-*/
-app.get("/admin.html", checkAdminAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "admin.html"));
-});
+/* =========================================================
+   PROTECT STUDIO
+========================================================= */
 
-app.get("/admin.js", checkAdminAuth, (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "admin.js"));
-});
+app.get(
+  "/admin.html",
+  checkAdminAuth,
+  (req, res) => {
+    res.sendFile(
+      path.join(
+        __dirname,
+        "public",
+        "admin.html"
+      )
+    );
+  }
+);
+
+app.get(
+  "/admin.js",
+  checkAdminAuth,
+  (req, res) => {
+    res.sendFile(
+      path.join(
+        __dirname,
+        "public",
+        "admin.js"
+      )
+    );
+  }
+);
 
 
-/*
-  Protect upload and delete API.
-  Normal GET /api/songs remains public.
-*/
-app.post("/api/songs", checkAdminAuth);
+/* =========================================================
+   PUBLIC FILES
+========================================================= */
 
-app.delete("/api/songs/:id", checkAdminAuth);
+app.use(
+  "/uploads",
+  express.static(
+    path.join(__dirname, "uploads")
+  )
+);
 
-
-/*
-  Public files
-*/
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
-app.use(express.static(path.join(__dirname, "public")));
+app.use(
+  express.static(
+    path.join(__dirname, "public")
+  )
+);
 
 
 /* =========================================================
@@ -135,13 +172,21 @@ app.use(express.static(path.join(__dirname, "public")));
 
 function safeFileName(name = "file") {
 
-  const ext = path.extname(name).toLowerCase();
+  const ext =
+    path.extname(name).toLowerCase();
 
-  const base = path
-    .basename(name, ext)
-    .replace(/[^a-zA-Z0-9-_]/g, "-")
-    .replace(/-+/g, "-")
-    .slice(0, 80) || "file";
+  const base =
+    path
+      .basename(name, ext)
+      .replace(
+        /[^a-zA-Z0-9-_]/g,
+        "-"
+      )
+      .replace(
+        /-+/g,
+        "-"
+      )
+      .slice(0, 80) || "file";
 
   return `${Date.now()}-${base}${ext}`;
 }
@@ -160,12 +205,15 @@ function storagePath(url, bucket) {
   const marker =
     `/storage/v1/object/public/${bucket}/`;
 
-  const i = url.indexOf(marker);
+  const i =
+    url.indexOf(marker);
 
   if (i < 0) return null;
 
   return decodeURIComponent(
-    url.slice(i + marker.length)
+    url.slice(
+      i + marker.length
+    )
   );
 }
 
@@ -174,72 +222,90 @@ function storagePath(url, bucket) {
    HEALTH
 ========================================================= */
 
-app.get("/api/health", async (req, res) => {
+app.get(
+  "/api/health",
+  async (req, res) => {
 
-  const { error } =
-    await supabase
-      .from("songs")
-      .select("id")
-      .limit(1);
+    const { error } =
+      await supabase
+        .from("songs")
+        .select("id")
+        .limit(1);
 
-  if (error) {
-    return res.status(500).json({
-      ok: false,
-      error: error.message
+    if (error) {
+      return res.status(500).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    res.json({
+      ok: true
     });
   }
-
-  res.json({
-    ok: true
-  });
-});
+);
 
 
 /* =========================================================
    PUBLIC SONGS
 ========================================================= */
 
-app.get("/api/songs", async (req, res) => {
+app.get(
+  "/api/songs",
+  async (req, res) => {
 
-  const { data, error } =
-    await supabase
-      .from("songs")
-      .select("*")
-      .order("release_date", {
-        ascending: false,
-        nullsFirst: false
-      })
-      .order("created_at", {
-        ascending: false
+    const { data, error } =
+      await supabase
+        .from("songs")
+        .select("*")
+        .order(
+          "release_date",
+          {
+            ascending: false,
+            nullsFirst: false
+          }
+        )
+        .order(
+          "created_at",
+          {
+            ascending: false
+          }
+        );
+
+    if (error) {
+      return res.status(500).json({
+        error: error.message
       });
+    }
 
-  if (error) {
-    return res.status(500).json({
-      error: error.message
-    });
+    res.json(data || []);
   }
-
-  res.json(data || []);
-});
+);
 
 
-app.get("/api/songs/:id", async (req, res) => {
+app.get(
+  "/api/songs/:id",
+  async (req, res) => {
 
-  const { data, error } =
-    await supabase
-      .from("songs")
-      .select("*")
-      .eq("id", req.params.id)
-      .single();
+    const { data, error } =
+      await supabase
+        .from("songs")
+        .select("*")
+        .eq(
+          "id",
+          req.params.id
+        )
+        .single();
 
-  if (error) {
-    return res.status(404).json({
-      error: "Song not found"
-    });
+    if (error) {
+      return res.status(404).json({
+        error: "Song not found"
+      });
+    }
+
+    res.json(data);
   }
-
-  res.json(data);
-});
+);
 
 
 /* =========================================================
@@ -248,6 +314,7 @@ app.get("/api/songs/:id", async (req, res) => {
 
 app.post(
   "/api/songs",
+  checkAdminAuth,
   upload.fields([
     {
       name: "cover",
@@ -275,7 +342,8 @@ app.post(
 
       if (!title || !artist) {
         return res.status(400).json({
-          error: "Title and artist are required."
+          error:
+            "Title and artist are required."
         });
       }
 
@@ -294,8 +362,6 @@ app.post(
       let coverPath = null;
       let audioPath = null;
 
-
-      /* COVER */
 
       if (cover) {
 
@@ -330,8 +396,6 @@ app.post(
           );
       }
 
-
-      /* AUDIO */
 
       if (audio) {
 
@@ -368,8 +432,6 @@ app.post(
       }
 
 
-      /* DATABASE */
-
       const { data, error } =
         await supabase
           .from("songs")
@@ -377,7 +439,8 @@ app.post(
             title,
             artist,
             genre: genre || "",
-            language: language || "",
+            language:
+              language || "",
             mood: mood || "",
             description:
               description || "",
@@ -455,16 +518,23 @@ app.put(
 
     try {
 
-      const { data: oldSong, error: findError } =
+      const {
+        data: oldSong,
+        error: findError
+      } =
         await supabase
           .from("songs")
           .select("*")
-          .eq("id", req.params.id)
+          .eq(
+            "id",
+            req.params.id
+          )
           .single();
 
       if (findError || !oldSong) {
         return res.status(404).json({
-          error: "Song not found"
+          error:
+            "Song not found"
         });
       }
 
@@ -481,26 +551,33 @@ app.put(
 
       if (!title || !artist) {
         return res.status(400).json({
-          error: "Title and artist are required."
+          error:
+            "Title and artist are required."
         });
       }
 
-      const newCover = req.files?.cover?.[0];
-      const newAudio = req.files?.audio?.[0];
+      const newCover =
+        req.files?.cover?.[0];
 
-      let cover_url = oldSong.cover_url || "";
-      let audio_url = oldSong.audio_url || "";
+      const newAudio =
+        req.files?.audio?.[0];
+
+      let cover_url =
+        oldSong.cover_url || "";
+
+      let audio_url =
+        oldSong.audio_url || "";
 
       let newCoverPath = null;
       let newAudioPath = null;
 
 
-      /* NEW COVER */
-
       if (newCover) {
 
         newCoverPath =
-          safeFileName(newCover.originalname);
+          safeFileName(
+            newCover.originalname
+          );
 
         const { error } =
           await supabase.storage
@@ -509,7 +586,8 @@ app.put(
               newCoverPath,
               newCover.buffer,
               {
-                contentType: newCover.mimetype,
+                contentType:
+                  newCover.mimetype,
                 upsert: false
               }
             );
@@ -528,12 +606,12 @@ app.put(
       }
 
 
-      /* NEW AUDIO */
-
       if (newAudio) {
 
         newAudioPath =
-          safeFileName(newAudio.originalname);
+          safeFileName(
+            newAudio.originalname
+          );
 
         const { error } =
           await supabase.storage
@@ -563,8 +641,6 @@ app.put(
       }
 
 
-      /* UPDATE DATABASE */
-
       const { data, error } =
         await supabase
           .from("songs")
@@ -572,21 +648,25 @@ app.put(
             title,
             artist,
             genre: genre || "",
-            language: language || "",
+            language:
+              language || "",
             mood: mood || "",
-            description: description || "",
-            lyrics: lyrics || "",
+            description:
+              description || "",
+            lyrics:
+              lyrics || "",
             cover_url,
             audio_url,
             release_date:
               release_date || null
           })
-          .eq("id", req.params.id)
+          .eq(
+            "id",
+            req.params.id
+          )
           .select()
           .single();
 
-
-      /* DATABASE FAILED */
 
       if (error) {
 
@@ -594,14 +674,18 @@ app.put(
           await supabase
             .storage
             .from("covers")
-            .remove([newCoverPath]);
+            .remove([
+              newCoverPath
+            ]);
         }
 
         if (newAudioPath) {
           await supabase
             .storage
             .from("audio")
-            .remove([newAudioPath]);
+            .remove([
+              newAudioPath
+            ]);
         }
 
         throw new Error(
@@ -609,8 +693,6 @@ app.put(
         );
       }
 
-
-      /* REMOVE OLD FILES ONLY AFTER DATABASE SUCCESS */
 
       if (newCoverPath) {
 
@@ -624,7 +706,9 @@ app.put(
           await supabase
             .storage
             .from("covers")
-            .remove([oldCoverPath]);
+            .remove([
+              oldCoverPath
+            ]);
         }
       }
 
@@ -641,7 +725,9 @@ app.put(
           await supabase
             .storage
             .from("audio")
-            .remove([oldAudioPath]);
+            .remove([
+              oldAudioPath
+            ]);
         }
       }
 
@@ -668,6 +754,7 @@ app.put(
 
 app.delete(
   "/api/songs/:id",
+  checkAdminAuth,
   async (req, res) => {
 
     try {
@@ -679,13 +766,17 @@ app.delete(
         await supabase
           .from("songs")
           .select("*")
-          .eq("id", req.params.id)
+          .eq(
+            "id",
+            req.params.id
+          )
           .single();
 
 
       if (findError || !song) {
         return res.status(404).json({
-          error: "Song not found"
+          error:
+            "Song not found"
         });
       }
 
@@ -707,12 +798,16 @@ app.delete(
         await supabase
           .from("songs")
           .delete()
-          .eq("id", req.params.id);
+          .eq(
+            "id",
+            req.params.id
+          );
 
 
       if (error) {
         return res.status(500).json({
-          error: error.message
+          error:
+            error.message
         });
       }
 
@@ -761,14 +856,15 @@ app.delete(
 
 app.get(
   "/{*splat}",
-  (req, res) =>
+  (req, res) => {
     res.sendFile(
       path.join(
         __dirname,
         "public",
         "index.html"
       )
-    )
+    );
+  }
 );
 
 
