@@ -1,87 +1,373 @@
 <!doctype html>
 <html lang="en">
 <head>
+
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="theme-color" content="#090909">
-<meta name="description" content="Heartbeat Heaven — Original Music by Madushanka. Romantic, emotional, cinematic and contemporary music.">
-<title>HEARTBEAT HEAVEN — Original Music by Madushanka</title>
-<link rel="stylesheet" href="/styles.css">
-</head>
-<body>
-<header class="topbar">
-  <a class="brand" href="/"><span>♥</span><div><strong>HEARTBEAT HEAVEN</strong><small>Original Music by Madushanka</small></div></a>
-  <button class="menu-toggle" id="menuToggle" aria-label="Open menu">
-  ☰
-</button>
 
-<nav id="mainNav">
-  <a href="/songs.html">Songs</a>
-  <a href="#genres">Genres</a>
-  <a href="#about">About</a>
-  <a class="admin-link" href="/admin.html">Studio</a>
-</nav>
+<meta name="theme-color" content="#090909">
+
+<meta name="description" content="HEARTBEAT HEAVEN — Discover new music releases, Sinhala, Hindi, English and Tamil songs, love songs, romantic music, remixes, nonstop mixes, chill, EDM and more. Original Music by Madushanka.">
+
+<meta name="keywords" content="new songs, new music releases, latest songs, new release songs, love songs, romantic songs, Sinhala songs, Hindi songs, English songs, Tamil songs, remix songs, nonstop songs, chill music, EDM, original music, Madushanka, Heartbeat Heaven">
+
+<meta name="author" content="Madushanka">
+
+<meta name="robots" content="index, follow">
+<meta name="googlebot" content="index, follow">
+
+<link rel="canonical" href="https://heartbeat-heaven.onrender.com/">
+
+<!-- Open Graph -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="HEARTBEAT HEAVEN — New Music, Songs & Remixes">
+<meta property="og:description" content="Discover new music releases, Sinhala, Hindi, English and Tamil songs, love songs, remixes, nonstop mixes and more. Original Music by Madushanka.">
+<meta property="og:url" content="https://heartbeat-heaven.onrender.com/">
+<meta property="og:site_name" content="HEARTBEAT HEAVEN">
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="HEARTBEAT HEAVEN — New Music & Songs">
+<meta name="twitter:description" content="Discover new songs, love music, remixes, nonstop mixes and more. Original Music by Madushanka.">
+
+<title>HEARTBEAT HEAVEN | New Songs, Music Releases & Remixes</title>
+
+<link rel="stylesheet" href="/styles.css">
+
+</head>
+
+<body>
+
+<header class="topbar">
+
+  <a class="brand" href="/">
+    <span>♥</span>
+    <div>
+      <strong>HEARTBEAT HEAVEN</strong>
+      <small>Original Music by Madushanka</small>
+    </div>
+  </a>
+
+  <button class="menu-toggle" id="menuToggle" aria-label="Open menu">
+    ☰
+  </button>
+
+  <nav id="mainNav">
+    <a href="/songs.html">Songs</a>
+    <a href="#genres">Genres</a>
+    <a href="#about">About</a>
+    <a class="admin-link" href="/admin.html">Studio</a>
+  </nav>
+
 </header>
 
+
 <main>
+
+<!-- HERO -->
+
 <section class="hero">
+
   <div class="hero-copy">
-    <p class="eyebrow">ORIGINAL MUSIC • 2026</p>
-    <h1>Music that<br><em>feels like a heartbeat.</em></h1>
-    <p class="lead">Romantic melodies, emotional stories, cinematic dreams and every feeling in between — created by Madushanka.</p>
-    <div class="hero-actions"><a class="btn primary" href="#songs">Explore Music</a><a class="btn ghost" href="#about">About the Artist</a></div>
+
+    <p class="eyebrow">
+      NEW MUSIC • 2026
+    </p>
+
+    <h1>
+      Music that<br>
+      <em>feels like a heartbeat.</em>
+    </h1>
+
+    <p class="lead">
+      Discover new music releases, love songs, romantic melodies,
+      Sinhala, Hindi, English and Tamil songs, remixes, nonstop mixes,
+      chill sounds and cinematic music — created by Madushanka.
+    </p>
+
+    <div class="hero-actions">
+
+      <a class="btn primary" href="#songs">
+        Explore Music
+      </a>
+
+      <a class="btn ghost" href="#about">
+        About the Artist
+      </a>
+
+    </div>
+
   </div>
-  <div class="hero-art"><div class="orb"></div><div class="hero-note">♪</div><div class="hero-label">FEEL • LISTEN • REMEMBER</div></div>
+
+
+  <div class="hero-art">
+
+    <div class="orb"></div>
+
+    <div class="hero-note">
+      ♪
+    </div>
+
+    <div class="hero-label">
+      FEEL • LISTEN • REMEMBER
+    </div>
+
+  </div>
+
 </section>
+
+
+<!-- LATEST RELEASES -->
 
 <section class="section" id="songs">
-  <div class="section-head"><div><p class="eyebrow">THE COLLECTION</p><h2>Latest Releases</h2></div><div class="search-wrap"><input id="search" placeholder="Search songs..." aria-label="Search songs"></div></div>
-  <div id="songGrid" class="song-grid"><div class="empty">Loading music…</div></div>
+
+  <div class="section-head">
+
+    <div>
+
+      <p class="eyebrow">
+        THE COLLECTION
+      </p>
+
+      <h2>
+        Latest Releases
+      </h2>
+
+    </div>
+
+    <div class="search-wrap">
+
+      <input
+        id="search"
+        placeholder="Search songs..."
+        aria-label="Search songs"
+      >
+
+    </div>
+
+  </div>
+
+
+  <div id="songGrid" class="song-grid">
+
+    <div class="empty">
+      Loading music…
+    </div>
+
+  </div>
+
 </section>
+
+
+<!-- GENRES -->
 
 <section class="section" id="genres">
-  <p class="eyebrow">EXPLORE BY FEELING</p><h2>Find your mood</h2>
+
+  <p class="eyebrow">
+    EXPLORE BY FEELING
+  </p>
+
+  <h2>
+    Find your mood
+  </h2>
+
+
   <div class="genre-grid">
-    <button data-filter="Romantic">♥ Romantic</button><button data-filter="Sad">☾ Sad & Emotional</button>
-    <button data-filter="Chill">✦ Chill & Dreamy</button><button data-filter="Cinematic">◈ Cinematic</button>
-    <button data-filter="EDM">⚡ Pop / EDM</button><button data-filter="Instrumental">♪ Instrumental</button>
+
+    <button data-filter="Romantic">
+      ♥ Romantic
+    </button>
+
+    <button data-filter="Sad">
+      ☾ Sad & Emotional
+    </button>
+
+    <button data-filter="Chill">
+      ✦ Chill & Dreamy
+    </button>
+
+    <button data-filter="Cinematic">
+      ◈ Cinematic
+    </button>
+
+    <button data-filter="EDM">
+      ⚡ Pop / EDM
+    </button>
+
+    <button data-filter="Instrumental">
+      ♪ Instrumental
+    </button>
+
   </div>
+
 </section>
+
+
+<!-- HEARTBEAT HEAVEN PROMISE -->
 
 <section class="feature">
-  <div><p class="eyebrow">THE HEARTBEAT HEAVEN PROMISE</p><h2>One home for every sound.</h2><p>From Sinhala love songs to Hindi-inspired melodies, English songs, sad stories, chill nights and cinematic moments — the collection can grow without changing the brand.</p></div>
-  <div class="quote">“Every song carries<br>a piece of a feeling.”</div>
+
+  <div>
+
+    <p class="eyebrow">
+      THE HEARTBEAT HEAVEN PROMISE
+    </p>
+
+    <h2>
+      One home for every sound.
+    </h2>
+
+    <p>
+      Discover Sinhala, Hindi, English and Tamil music,
+      love songs, romantic melodies, emotional stories,
+      remixes, nonstop mixes, chill sounds, EDM and
+      cinematic music — all in one growing music collection.
+    </p>
+
+  </div>
+
+
+  <div class="quote">
+
+    “Every song carries<br>
+    a piece of a feeling.”
+
+  </div>
+
 </section>
+
+
+<!-- ABOUT -->
 
 <section class="section about" id="about">
-  <p class="eyebrow">ABOUT</p><h2>Heartbeat Heaven</h2>
-  <p>Heartbeat Heaven is the home of original music by Madushanka — a growing collection built around emotion, melody and memorable stories.</p>
-  <div class="socials"><a href="#" aria-label="YouTube">YouTube</a><a href="#" aria-label="Facebook">Facebook</a><a href="#" aria-label="TikTok">TikTok</a></div>
+
+  <p class="eyebrow">
+    ABOUT
+  </p>
+
+  <h2>
+    Heartbeat Heaven
+  </h2>
+
+  <p>
+    Heartbeat Heaven is a growing home for music by Madushanka,
+    bringing together different languages, genres and moods.
+    From Sinhala, Hindi, English and Tamil songs to romantic,
+    emotional, chill, cinematic, remix and nonstop music,
+    every release is created to carry a feeling.
+  </p>
+
+
+  <div class="socials">
+
+    <a href="#" aria-label="YouTube">
+      YouTube
+    </a>
+
+    <a href="#" aria-label="Facebook">
+      Facebook
+    </a>
+
+    <a href="#" aria-label="TikTok">
+      TikTok
+    </a>
+
+  </div>
+
 </section>
+
 </main>
 
+
+<!-- MUSIC PLAYER -->
+
 <div id="player" class="player hidden">
-  <img id="playerCover" src="" alt="">
-  <div class="player-info"><strong id="playerTitle">Song</strong><span id="playerArtist">Madushanka</span></div>
-  <button id="playBtn" class="round">▶</button><input id="progress" type="range" min="0" max="100" value="0"><span id="time">0:00</span>
-  <button id="closePlayer" class="x">×</button>
+
+  <img
+    id="playerCover"
+    src=""
+    alt=""
+  >
+
+  <div class="player-info">
+
+    <strong id="playerTitle">
+      Song
+    </strong>
+
+    <span id="playerArtist">
+      Madushanka
+    </span>
+
+  </div>
+
+
+  <button
+    id="playBtn"
+    class="round"
+  >
+    ▶
+  </button>
+
+
+  <input
+    id="progress"
+    type="range"
+    min="0"
+    max="100"
+    value="0"
+  >
+
+
+  <span id="time">
+    0:00
+  </span>
+
+
+  <button
+    id="closePlayer"
+    class="x"
+  >
+    ×
+  </button>
+
+
   <audio id="audio"></audio>
+
 </div>
 
+
+<!-- MAIN APP -->
+
 <script src="/app.js"></script>
+
+
+<!-- MOBILE MENU -->
+
 <script>
+
 const menuToggle = document.getElementById("menuToggle");
 const mainNav = document.getElementById("mainNav");
 
 menuToggle.addEventListener("click", () => {
+
   mainNav.classList.toggle("open");
+
 });
 
+
 mainNav.querySelectorAll("a").forEach(link => {
+
   link.addEventListener("click", () => {
+
     mainNav.classList.remove("open");
+
   });
+
 });
+
 </script>
+
+
 </body>
 </html>
