@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#090909">
+  <meta name="description" content="Explore every HEARTBEAT HEAVEN release by Madushanka.">
+  <title>All Songs — HEARTBEAT HEAVEN</title>
+  <link rel="stylesheet" href="/styles.css">
+  <style>
+    .library-page{padding:70px 8vw 110px}
+    .library-hero{max-width:850px;margin-bottom:42px}
+    .library-hero h1{font-size:clamp(48px,7vw,86px);line-height:.95;letter-spacing:-4px;margin:0 0 20px}
+    .library-hero h1 em{font-family:Georgia,serif;font-weight:400;color:var(--gold2)}
+    .library-hero p:not(.eyebrow){color:#aaa;line-height:1.75;max-width:680px}
+    .library-toolbar{display:grid;grid-template-columns:minmax(220px,1fr) 180px 180px auto;gap:10px;margin-bottom:28px}
+    .library-toolbar input,.library-toolbar select,.clear-btn{
+      background:#111;color:#eee;border:1px solid #333;border-radius:12px;padding:13px 14px;font:inherit;min-width:0
+    }
+    .clear-btn{cursor:pointer}
+    .clear-btn:hover{border-color:#8b6d36;color:var(--gold2)}
+    .library-meta{display:flex;justify-content:space-between;align-items:center;margin:0 0 18px;color:#888;font-size:12px}
+    .library-meta strong{color:#ddd}
+    .library-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+    .library-card{background:linear-gradient(160deg,#171717,#0f0f0f);border:1px solid #262626;border-radius:18px;overflow:hidden;transition:.25s;cursor:pointer}
+    .library-card:hover{transform:translateY(-5px);border-color:#51442e}
+    .library-card img{width:100%;aspect-ratio:1;object-fit:cover;display:block;background:#191919}
+    .library-card-body{padding:16px}
+    .library-card h2{font-size:17px;margin:0 0 6px}
+    .library-card .meta{color:#8f8a82;font-size:11px}
+    .library-card .desc{color:#999;font-size:12px;line-height:1.55;margin:10px 0 0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+    .library-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:11px}
+    .library-tag{border:1px solid #383838;border-radius:12px;padding:4px 8px;color:#c9b37e;font-size:9px}
+    .library-empty{border:1px dashed #333;border-radius:18px;padding:50px 20px;text-align:center;color:#777}
+    @media(max-width:900px){
+      .library-page{padding:55px 6vw 90px}
+      .library-grid{grid-template-columns:repeat(2,1fr)}
+      .library-toolbar{grid-template-columns:1fr 1fr}
+    }
+    @media(max-width:560px){
+      .library-page{padding:45px 5vw 90px}
+      .library-hero h1{font-size:52px}
+      .library-grid{grid-template-columns:1fr 1fr;gap:10px}
+      .library-card-body{padding:11px}
+      .library-card h2{font-size:14px}
+      .library-toolbar{grid-template-columns:1fr}
+      .library-meta{align-items:flex-start;gap:8px;flex-direction:column}
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">
+      <span>♥</span>
+      <div><strong>HEARTBEAT HEAVEN</strong><small>Original Music by Madushanka</small></div>
+    </a>
+    <nav>
+      <a href="/songs.html">Songs</a>
+      <a href="/#genres">Genres</a>
+      <a href="/#about">About</a>
+      <a class="admin-link" href="/admin.html">Studio</a>
+    </nav>
+  </header>
+
+  <main class="library-page">
+    <section class="library-hero">
+      <p class="eyebrow">THE COMPLETE COLLECTION</p>
+      <h1>Every song.<br><em>Every feeling.</em></h1>
+      <p>Explore the full HEARTBEAT HEAVEN collection — romantic melodies, emotional stories, cinematic dreams, EDM, chill music and every sound created by Madushanka.</p>
+    </section>
+
+    <section>
+      <div class="library-toolbar">
+        <input id="search" type="search" placeholder="Search title, artist or mood…" aria-label="Search songs">
+        <select id="genre" aria-label="Filter by genre">
+          <option value="">All genres</option>
+          <option>Romantic</option>
+          <option>Sad</option>
+          <option>Chill</option>
+          <option>Cinematic</option>
+          <option>EDM</option>
+          <option>Instrumental</option>
+          <option>Pop</option>
+        </select>
+        <select id="language" aria-label="Filter by language">
+          <option value="">All languages</option>
+          <option>Sinhala</option>
+          <option>English</option>
+          <option>Hindi</option>
+          <option>Instrumental</option>
+          <option>Other</option>
+        </select>
+        <button id="clear" class="clear-btn" type="button">Clear filters</button>
+      </div>
+
+      <div class="library-meta">
+        <span id="count">Loading songs…</span>
+        <span>Newest releases first</span>
+      </div>
+
+      <div id="grid" class="library-grid">
+        <div class="library-empty">Loading the collection…</div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    let songs = [];
+
+    const grid = document.getElementById("grid");
+    const search = document.getElementById("search");
+    const genre = document.getElementById("genre");
+    const language = document.getElementById("language");
+    const count = document.getElementById("count");
+    const clear = document.getElementById("clear");
+
+    function esc(value){
+      return String(value || "").replace(/[&<>"']/g, m => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+      }[m]));
+    }
+
+    function render(){
+      const q = search.value.trim().toLowerCase();
+      const g = genre.value.toLowerCase();
+      const l = language.value.toLowerCase();
+
+      const filtered = songs.filter(s => {
+        const haystack = [
+          s.title, s.artist, s.genre, s.language, s.mood, s.description
+        ].join(" ").toLowerCase();
+
+        return (!q || haystack.includes(q))
+          && (!g || String(s.genre || "").toLowerCase().includes(g))
+          && (!l || String(s.language || "").toLowerCase() === l);
+      });
+
+      count.innerHTML = `<strong>${filtered.length}</strong> ${filtered.length === 1 ? "song" : "songs"} found`;
+
+      if(!filtered.length){
+        grid.innerHTML = `<div class="library-empty">No songs match your search. Try another filter.</div>`;
+        return;
+      }
+
+      grid.innerHTML = filtered.map(s => `
+        <article class="library-card" onclick="location.href='/song.html?id=${encodeURIComponent(s.id)}'">
+          <img src="${esc(s.cover)}" alt="${esc(s.title)} cover" loading="lazy">
+          <div class="library-card-body">
+            <h2>${esc(s.title)}</h2>
+            <div class="meta">${esc(s.artist)} • ${esc(s.language)}</div>
+            <div class="library-tags">
+              <span class="library-tag">${esc(s.genre)}</span>
+              <span class="library-tag">${esc(s.mood)}</span>
+            </div>
+            ${s.description ? `<p class="desc">${esc(s.description)}</p>` : ""}
+          </div>
+        </article>
+      `).join("");
+    }
+
+    async function load(){
+      try{
+        const response = await fetch("/api/songs");
+        if(!response.ok) throw new Error("Could not load songs");
+        songs = await response.json();
+        render();
+      }catch(error){
+        count.textContent = "";
+        grid.innerHTML = `<div class="library-empty">The music collection could not be loaded. Please refresh the page.</div>`;
+      }
+    }
+
+    search.addEventListener("input", render);
+    genre.addEventListener("change", render);
+    language.addEventListener("change", render);
+
+    clear.addEventListener("click", () => {
+      search.value = "";
+      genre.value = "";
+      language.value = "";
+      render();
+    });
+
+    load();
+  </script>
+</body>
+</html>
