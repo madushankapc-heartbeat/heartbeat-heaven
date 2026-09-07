@@ -33,9 +33,12 @@
 <section class="section songs-library">
 
   <div class="section-head">
+
     <div>
       <p class="eyebrow">THE COMPLETE COLLECTION</p>
+
       <h1>All Songs</h1>
+
       <p class="library-intro">
         Explore every original release from Heartbeat Heaven.
       </p>
@@ -49,20 +52,45 @@
         aria-label="Search songs"
       >
     </div>
+
   </div>
 
   <div class="library-filters">
-    <button class="active" data-filter="all">All</button>
-    <button data-filter="Romantic">♥ Romantic</button>
-    <button data-filter="Sad">☾ Sad</button>
-    <button data-filter="Chill">✦ Chill</button>
-    <button data-filter="Cinematic">◈ Cinematic</button>
-    <button data-filter="EDM">⚡ Pop / EDM</button>
-    <button data-filter="Instrumental">♪ Instrumental</button>
+
+    <button class="active" data-filter="all">
+      All
+    </button>
+
+    <button data-filter="Romantic">
+      ♥ Romantic
+    </button>
+
+    <button data-filter="Sad">
+      ☾ Sad
+    </button>
+
+    <button data-filter="Chill">
+      ✦ Chill
+    </button>
+
+    <button data-filter="Cinematic">
+      ◈ Cinematic
+    </button>
+
+    <button data-filter="EDM">
+      ⚡ Pop / EDM
+    </button>
+
+    <button data-filter="Instrumental">
+      ♪ Instrumental
+    </button>
+
   </div>
 
   <div id="songGrid" class="song-grid">
-    <div class="empty">Loading music…</div>
+    <div class="empty">
+      Loading music…
+    </div>
   </div>
 
 </section>
@@ -71,14 +99,31 @@
 
 <div id="player" class="player hidden">
 
-  <img id="playerCover" src="" alt="">
+  <img
+    id="playerCover"
+    src=""
+    alt=""
+  >
 
   <div class="player-info">
-    <strong id="playerTitle">Song</strong>
-    <span id="playerArtist">Madushanka</span>
+
+    <strong id="playerTitle">
+      Song
+    </strong>
+
+    <span id="playerArtist">
+      Madushanka
+    </span>
+
   </div>
 
-  <button id="playBtn" class="round" type="button">▶</button>
+  <button
+    id="playBtn"
+    class="round"
+    type="button"
+  >
+    ▶
+  </button>
 
   <input
     id="progress"
@@ -89,9 +134,17 @@
     aria-label="Song progress"
   >
 
-  <span id="time">0:00</span>
+  <span id="time">
+    0:00
+  </span>
 
-  <button id="closePlayer" class="x" type="button">×</button>
+  <button
+    id="closePlayer"
+    class="x"
+    type="button"
+  >
+    ×
+  </button>
 
   <audio id="audio"></audio>
 
@@ -99,169 +152,5 @@
 
 <script src="/app.js"></script>
 
-<script>
-document.querySelectorAll(".library-filters button").forEach(button => {
-  button.addEventListener("click", () => {
-
-    document
-      .querySelectorAll(".library-filters button")
-      .forEach(btn => btn.classList.remove("active"));
-
-    button.classList.add("active");
-
-  });
-});
-</script>
-
-</body>
-</html>      .library-grid{grid-template-columns:repeat(2,1fr)}
-      .library-toolbar{grid-template-columns:1fr 1fr}
-    }
-    @media(max-width:560px){
-      .library-page{padding:45px 5vw 90px}
-      .library-hero h1{font-size:52px}
-      .library-grid{grid-template-columns:1fr 1fr;gap:10px}
-      .library-card-body{padding:11px}
-      .library-card h2{font-size:14px}
-      .library-toolbar{grid-template-columns:1fr}
-      .library-meta{align-items:flex-start;gap:8px;flex-direction:column}
-    }
-  </style>
-</head>
-<body>
-  <header class="topbar">
-    <a class="brand" href="/">
-      <span>♥</span>
-      <div><strong>HEARTBEAT HEAVEN</strong><small>Original Music by Madushanka</small></div>
-    </a>
-    <nav>
-      <a href="/songs.html">Songs</a>
-      <a href="/#genres">Genres</a>
-      <a href="/#about">About</a>
-      <a class="admin-link" href="/admin.html">Studio</a>
-    </nav>
-  </header>
-
-  <main class="library-page">
-    <section class="library-hero">
-      <p class="eyebrow">THE COMPLETE COLLECTION</p>
-      <h1>Every song.<br><em>Every feeling.</em></h1>
-      <p>Explore the full HEARTBEAT HEAVEN collection — romantic melodies, emotional stories, cinematic dreams, EDM, chill music and every sound created by Madushanka.</p>
-    </section>
-
-    <section>
-      <div class="library-toolbar">
-        <input id="search" type="search" placeholder="Search title, artist or mood…" aria-label="Search songs">
-        <select id="genre" aria-label="Filter by genre">
-          <option value="">All genres</option>
-          <option>Romantic</option>
-          <option>Sad</option>
-          <option>Chill</option>
-          <option>Cinematic</option>
-          <option>EDM</option>
-          <option>Instrumental</option>
-          <option>Pop</option>
-        </select>
-        <select id="language" aria-label="Filter by language">
-          <option value="">All languages</option>
-          <option>Sinhala</option>
-          <option>English</option>
-          <option>Hindi</option>
-          <option>Instrumental</option>
-          <option>Other</option>
-        </select>
-        <button id="clear" class="clear-btn" type="button">Clear filters</button>
-      </div>
-
-      <div class="library-meta">
-        <span id="count">Loading songs…</span>
-        <span>Newest releases first</span>
-      </div>
-
-      <div id="grid" class="library-grid">
-        <div class="library-empty">Loading the collection…</div>
-      </div>
-    </section>
-  </main>
-
-  <script>
-    let songs = [];
-
-    const grid = document.getElementById("grid");
-    const search = document.getElementById("search");
-    const genre = document.getElementById("genre");
-    const language = document.getElementById("language");
-    const count = document.getElementById("count");
-    const clear = document.getElementById("clear");
-
-    function esc(value){
-      return String(value || "").replace(/[&<>"']/g, m => ({
-        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
-      }[m]));
-    }
-
-    function render(){
-      const q = search.value.trim().toLowerCase();
-      const g = genre.value.toLowerCase();
-      const l = language.value.toLowerCase();
-
-      const filtered = songs.filter(s => {
-        const haystack = [
-          s.title, s.artist, s.genre, s.language, s.mood, s.description
-        ].join(" ").toLowerCase();
-
-        return (!q || haystack.includes(q))
-          && (!g || String(s.genre || "").toLowerCase().includes(g))
-          && (!l || String(s.language || "").toLowerCase() === l);
-      });
-
-      count.innerHTML = `<strong>${filtered.length}</strong> ${filtered.length === 1 ? "song" : "songs"} found`;
-
-      if(!filtered.length){
-        grid.innerHTML = `<div class="library-empty">No songs match your search. Try another filter.</div>`;
-        return;
-      }
-
-      grid.innerHTML = filtered.map(s => `
-        <article class="library-card" onclick="location.href='/song.html?id=${encodeURIComponent(s.id)}'">
-          <img src="${esc(s.cover)}" alt="${esc(s.title)} cover" loading="lazy">
-          <div class="library-card-body">
-            <h2>${esc(s.title)}</h2>
-            <div class="meta">${esc(s.artist)} • ${esc(s.language)}</div>
-            <div class="library-tags">
-              <span class="library-tag">${esc(s.genre)}</span>
-              <span class="library-tag">${esc(s.mood)}</span>
-            </div>
-            ${s.description ? `<p class="desc">${esc(s.description)}</p>` : ""}
-          </div>
-        </article>
-      `).join("");
-    }
-
-    async function load(){
-      try{
-        const response = await fetch("/api/songs");
-        if(!response.ok) throw new Error("Could not load songs");
-        songs = await response.json();
-        render();
-      }catch(error){
-        count.textContent = "";
-        grid.innerHTML = `<div class="library-empty">The music collection could not be loaded. Please refresh the page.</div>`;
-      }
-    }
-
-    search.addEventListener("input", render);
-    genre.addEventListener("change", render);
-    language.addEventListener("change", render);
-
-    clear.addEventListener("click", () => {
-      search.value = "";
-      genre.value = "";
-      language.value = "";
-      render();
-    });
-
-    load();
-  </script>
 </body>
 </html>
