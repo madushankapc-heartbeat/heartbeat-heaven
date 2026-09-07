@@ -10,7 +10,8 @@
     <div class="two"><label>Genre<select name="genre"><option>Romantic</option><option>Sad</option><option>Chill</option><option>Cinematic</option><option>Pop / EDM</option><option>Instrumental</option><option>Other</option></select></label><label>Mood<input name="mood" value="Romantic"></label></div>
     <label>Short description<textarea name="description" rows="3" placeholder="A short description for the song page"></textarea></label>
     <label>Lyrics<textarea name="lyrics" rows="12" placeholder="Paste your original lyrics here"></textarea></label>
-    <div class="two"><label>Audio file<input type="file" name="audio" accept="audio/*" required></label><label>Cover image<input type="file" name="cover" accept="image/*" required></label></div>
+    <label>Release date<input type="date" name="release_date"></label>
+<div class="two"><label>Audio file<input type="file" name="audio" accept="audio/*" required></label><label>Cover image<input type="file" name="cover" accept="image/*" required></label></div>
     <button class="btn primary" type="submit">Publish Song</button><div id="status"></div>
   </form>
   <section class="admin-list"><h2>Published songs</h2><div id="adminSongs"></div></section>
