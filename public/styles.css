@@ -66,3 +66,60 @@ font-size:11px;
 }
 
 }
+/* MOBILE MENU */
+
+.menu-toggle{
+  display:none;
+  background:none;
+  border:1px solid var(--line);
+  color:var(--text);
+  width:42px;
+  height:42px;
+  border-radius:12px;
+  font-size:21px;
+  cursor:pointer;
+}
+
+@media(max-width:900px){
+
+  .topbar{
+    position:relative;
+  }
+
+  .menu-toggle{
+    display:block;
+    margin-left:auto;
+  }
+
+  .topbar nav{
+    display:none;
+    position:absolute;
+    top:calc(100% + 10px);
+    right:16px;
+    width:190px;
+    padding:10px;
+    background:#111;
+    border:1px solid #292929;
+    border-radius:16px;
+    box-shadow:0 20px 50px #000;
+    z-index:1000;
+  }
+
+  .topbar nav.open{
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+  }
+
+  .topbar nav a{
+    display:block !important;
+    padding:12px 14px;
+    border-radius:10px;
+  }
+
+  .topbar nav a:hover{
+    background:#19150e;
+    color:var(--gold2);
+  }
+
+}
