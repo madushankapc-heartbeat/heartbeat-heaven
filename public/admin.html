@@ -1,20 +1,516 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Studio — Heartbeat Heaven</title><link rel="stylesheet" href="/styles.css"></head>
+<html lang="en">
+
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#090909">
+
+<title>Studio — HEARTBEAT HEAVEN</title>
+
+<link rel="stylesheet" href="/styles.css">
+</head>
+
 <body>
-<header class="topbar"><a class="brand" href="/"><span>♥</span><div><strong>HEARTBEAT HEAVEN</strong><small>Original Music by Madushanka</small></div></a><nav><a href="/">View Website</a></nav></header>
+
+<header class="topbar">
+
+  <a class="brand" href="/">
+    <span>♥</span>
+
+    <div>
+      <strong>HEARTBEAT HEAVEN</strong>
+      <small>Original Music by Madushanka</small>
+    </div>
+  </a>
+
+  <nav>
+    <a href="/">View Website</a>
+    <a href="/songs.html">Songs</a>
+  </nav>
+
+</header>
+
+
 <main class="admin">
-  <div class="admin-head"><div><p class="eyebrow">PRIVATE STUDIO</p><h1>Upload a new song</h1><p>Add your MP3, cover art and lyrics. The website will create the song page automatically.</p></div></div>
-  <form id="uploadForm" class="upload-form" enctype="multipart/form-data">
-    <label>Song title<input name="title" required placeholder="e.g. නිහඬ රෑක හුස්ම"></label>
-    <div class="two"><label>Artist<input name="artist" value="Madushanka"></label><label>Language<select name="language"><option>Sinhala</option><option>English</option><option>Hindi</option><option>Instrumental</option><option>Other</option></select></label></div>
-    <div class="two"><label>Genre<select name="genre"><option>Romantic</option><option>Sad</option><option>Chill</option><option>Cinematic</option><option>Pop / EDM</option><option>Instrumental</option><option>Other</option></select></label><label>Mood<input name="mood" value="Romantic"></label></div>
-    <label>Short description<textarea name="description" rows="3" placeholder="A short description for the song page"></textarea></label>
-    <label>Lyrics<textarea name="lyrics" rows="12" placeholder="Paste your original lyrics here"></textarea></label>
-    <label>Release date<input type="date" name="release_date"></label>
-<div class="two"><label>Audio file<input type="file" name="audio" accept="audio/*" required></label><label>Cover image<input type="file" name="cover" accept="image/*" required></label></div>
-    <button class="btn primary" type="submit">Publish Song</button><div id="status"></div>
-  </form>
-  <section class="admin-list"><h2>Published songs</h2><div id="adminSongs"></div></section>
+
+  <!-- HEADER -->
+
+  <div class="admin-head">
+
+    <div>
+
+      <p class="eyebrow">
+        PRIVATE STUDIO
+      </p>
+
+      <h1>
+        Manage your music.
+      </h1>
+
+      <p>
+        Publish new releases or edit songs already in your collection.
+      </p>
+
+    </div>
+
+  </div>
+
+
+  <!-- NEW SONG -->
+
+  <section class="admin-panel">
+
+    <div class="admin-panel-head">
+
+      <div>
+        <p class="eyebrow">
+          NEW RELEASE
+        </p>
+
+        <h2>
+          Upload a new song
+        </h2>
+      </div>
+
+    </div>
+
+
+    <form
+      id="uploadForm"
+      class="upload-form"
+      enctype="multipart/form-data"
+    >
+
+      <label>
+        Song title
+
+        <input
+          name="title"
+          required
+          placeholder="e.g. නිහඬ රෑක හුස්ම"
+        >
+      </label>
+
+
+      <div class="two">
+
+        <label>
+          Artist
+
+          <input
+            name="artist"
+            value="Madushanka"
+          >
+        </label>
+
+
+        <label>
+          Language
+
+          <select name="language">
+
+            <option>Sinhala</option>
+            <option>English</option>
+            <option>Hindi</option>
+            <option>Instrumental</option>
+            <option>Other</option>
+
+          </select>
+
+        </label>
+
+      </div>
+
+
+      <div class="two">
+
+        <label>
+          Genre
+
+          <select name="genre">
+
+            <option>Romantic</option>
+            <option>Sad</option>
+            <option>Chill</option>
+            <option>Cinematic</option>
+            <option>Pop / EDM</option>
+            <option>Instrumental</option>
+            <option>Other</option>
+
+          </select>
+
+        </label>
+
+
+        <label>
+          Mood
+
+          <input
+            name="mood"
+            value="Romantic"
+            placeholder="Romantic"
+          >
+
+        </label>
+
+      </div>
+
+
+      <label>
+        Short description
+
+        <textarea
+          name="description"
+          rows="3"
+          placeholder="A short description for the song page"
+        ></textarea>
+
+      </label>
+
+
+      <label>
+        Lyrics
+
+        <textarea
+          name="lyrics"
+          rows="12"
+          placeholder="Paste your original lyrics here"
+        ></textarea>
+
+      </label>
+
+
+      <label>
+        Release date
+
+        <input
+          type="date"
+          name="release_date"
+        >
+
+      </label>
+
+
+      <div class="two">
+
+        <label>
+          Audio file
+
+          <input
+            type="file"
+            name="audio"
+            accept="audio/*"
+            required
+          >
+
+        </label>
+
+
+        <label>
+          Cover image
+
+          <input
+            type="file"
+            name="cover"
+            accept="image/*"
+            required
+          >
+
+        </label>
+
+      </div>
+
+
+      <button
+        class="btn primary"
+        type="submit"
+      >
+        Publish Song
+      </button>
+
+
+      <div id="status"></div>
+
+    </form>
+
+  </section>
+
+
+  <!-- EDIT SONG -->
+
+  <section
+    class="admin-panel edit-panel hidden"
+    id="editPanel"
+  >
+
+    <div class="admin-panel-head">
+
+      <div>
+
+        <p class="eyebrow">
+          EDIT RELEASE
+        </p>
+
+        <h2>
+          Edit song
+        </h2>
+
+      </div>
+
+
+      <button
+        type="button"
+        class="btn ghost"
+        id="cancelEdit"
+      >
+        Cancel
+      </button>
+
+    </div>
+
+
+    <form
+      id="editForm"
+      class="upload-form"
+      enctype="multipart/form-data"
+    >
+
+      <input
+        type="hidden"
+        name="id"
+        id="editId"
+      >
+
+
+      <label>
+        Song title
+
+        <input
+          name="title"
+          id="editTitle"
+          required
+        >
+
+      </label>
+
+
+      <div class="two">
+
+        <label>
+          Artist
+
+          <input
+            name="artist"
+            id="editArtist"
+            required
+          >
+
+        </label>
+
+
+        <label>
+          Language
+
+          <select
+            name="language"
+            id="editLanguage"
+          >
+
+            <option>Sinhala</option>
+            <option>English</option>
+            <option>Hindi</option>
+            <option>Instrumental</option>
+            <option>Other</option>
+
+          </select>
+
+        </label>
+
+      </div>
+
+
+      <div class="two">
+
+        <label>
+          Genre
+
+          <select
+            name="genre"
+            id="editGenre"
+          >
+
+            <option>Romantic</option>
+            <option>Sad</option>
+            <option>Chill</option>
+            <option>Cinematic</option>
+            <option>Pop / EDM</option>
+            <option>Instrumental</option>
+            <option>Other</option>
+
+          </select>
+
+        </label>
+
+
+        <label>
+          Mood
+
+          <input
+            name="mood"
+            id="editMood"
+          >
+
+        </label>
+
+      </div>
+
+
+      <label>
+        Short description
+
+        <textarea
+          name="description"
+          id="editDescription"
+          rows="3"
+        ></textarea>
+
+      </label>
+
+
+      <label>
+        Lyrics
+
+        <textarea
+          name="lyrics"
+          id="editLyrics"
+          rows="12"
+        ></textarea>
+
+      </label>
+
+
+      <label>
+        Release date
+
+        <input
+          type="date"
+          name="release_date"
+          id="editReleaseDate"
+        >
+
+      </label>
+
+
+      <div class="edit-media">
+
+        <div>
+
+          <p class="media-label">
+            Current cover
+          </p>
+
+          <img
+            id="editCoverPreview"
+            class="edit-cover"
+            src=""
+            alt="Current cover"
+          >
+
+        </div>
+
+
+        <div class="edit-media-info">
+
+          <p>
+            <strong>Replace cover</strong>
+          </p>
+
+          <input
+            type="file"
+            name="cover"
+            accept="image/*"
+          >
+
+          <p class="hint">
+            Leave empty to keep the current cover.
+          </p>
+
+        </div>
+
+      </div>
+
+
+      <div class="edit-audio">
+
+        <p>
+          <strong>Replace audio</strong>
+        </p>
+
+        <input
+          type="file"
+          name="audio"
+          accept="audio/*"
+        >
+
+        <p class="hint">
+          Leave empty to keep the current MP3.
+        </p>
+
+      </div>
+
+
+      <button
+        class="btn primary"
+        type="submit"
+      >
+        Save Changes
+      </button>
+
+
+      <div id="editStatus"></div>
+
+    </form>
+
+  </section>
+
+
+  <!-- SONG LIST -->
+
+  <section class="admin-list">
+
+    <div class="admin-panel-head">
+
+      <div>
+
+        <p class="eyebrow">
+          YOUR COLLECTION
+        </p>
+
+        <h2>
+          Published songs
+        </h2>
+
+      </div>
+
+    </div>
+
+
+    <div id="adminSongs">
+
+      <div class="empty">
+        Loading songs…
+      </div>
+
+    </div>
+
+  </section>
+
 </main>
+
+
 <script src="/admin.js"></script>
-</body></html>
+
+</body>
+
+</html>
