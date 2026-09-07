@@ -217,7 +217,64 @@ function storagePath(url, bucket) {
   );
 }
 
+/* =========================================================
+   GOOGLE SEO — SITEMAP
+========================================================= */
 
+app.get("/sitemap.xml", async (req, res) => {
+  try {
+    const { data: songs, error } = await supabase
+      .from("songs")
+      .select("id, release_date, created_at");
+
+    if (error) {
+      console.error("Sitemap error:", error);
+      return res.status(500).type("text/plain").send("Sitemap error");
+    }
+
+    const baseUrl = "https://heartbeat-heaven.onrender.com";
+
+    const urls = [
+      {
+        loc: `${baseUrl}/`,
+        lastmod: new Date().toISOString()
+      },
+      {
+        loc: `${baseUrl}/songs.html`,
+        lastmod: new Date().toISOString()
+      }
+    ];
+
+    (songs || []).forEach(song => {
+      urls.push({
+        loc: `${baseUrl}/song.html?id=${song.id}`,
+        lastmod: song.release_date
+          ? new Date(song.release_date).toISOString()
+          : new Date(song.created_at).toISOString()
+      });
+    });
+
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset
+  xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+
+${urls.map(url => `  <url>
+    <loc>${url.loc}</loc>
+    <lastmod>${url.lastmod}</lastmod>
+  </url>`).join("\n")}
+
+</urlset>`;
+
+    res
+      .status(200)
+      .type("application/xml")
+      .send(xml);
+
+  } catch (error) {
+    console.error("Sitemap generation failed:", error);
+    res.status(500).type("text/plain").send("Sitemap generation failed");
+  }
+});
 /* =========================================================
    HEALTH
 ========================================================= */
