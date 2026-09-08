@@ -18,25 +18,33 @@ async function load() {
 
 function render(list) {
   if (!list.length) {
-    grid.innerHTML = '<div class="empty">No songs published yet. Add your first release from Studio.</div>';
+    grid.innerHTML =
+      '<div class="empty">No songs published yet. Add your first release from Studio.</div>';
     return;
   }
 
   grid.innerHTML = list.map(s => `
-    <article class="card" onclick="openSong(${s.id})">
+    <a
+      class="card"
+      href="/song.html?id=${encodeURIComponent(s.id)}"
+      aria-label="Open ${esc(s.title)} by ${esc(s.artist)}"
+    >
       <img
         class="cover"
-        src="${s.cover_url || ""}"
+        src="${esc(s.cover_url || "")}"
         alt="${esc(s.title)} cover"
       >
+
       <div class="card-body">
         <h3>${esc(s.title)}</h3>
+
         <div class="meta">
           ${esc(s.artist)} • ${esc(s.language)}
         </div>
+
         <span class="tag">${esc(s.genre)}</span>
       </div>
-    </article>
+    </a>
   `).join("");
 }
 
@@ -51,7 +59,7 @@ function esc(x) {
 }
 
 function openSong(id) {
-  location.href = "/song.html?id=" + id;
+  location.href = "/song.html?id=" + encodeURIComponent(id);
 }
 
 function playSong(s) {
@@ -98,13 +106,18 @@ audio.ontimeupdate = () => {
 
 progress.oninput = () => {
   if (audio.duration) {
-    audio.currentTime = (progress.value / 100) * audio.duration;
+    audio.currentTime =
+      (progress.value / 100) * audio.duration;
   }
 };
 
 function fmt(n) {
   n = Math.floor(n || 0);
-  return Math.floor(n / 60) + ":" + String(n % 60).padStart(2, "0");
+  return (
+    Math.floor(n / 60) +
+    ":" +
+    String(n % 60).padStart(2, "0")
+  );
 }
 
 search.oninput = () => {
