@@ -1,3 +1,4 @@
+
 const id = new URLSearchParams(location.search).get("id");
 const root = document.getElementById("songPage");
 
@@ -19,10 +20,6 @@ async function load() {
 
     const s = await r.json();
 
-    /* =====================================================
-       GOOGLE SEO — DYNAMIC SONG SEO
-    ===================================================== */
-
     const title = s.title || "New Song";
     const artist = s.artist || "Madushanka";
     const genre = s.genre || "Music";
@@ -38,19 +35,13 @@ async function load() {
     const canonicalUrl =
       `${SITE_URL}/song.html?id=${encodeURIComponent(id)}`;
 
-    /* Page title */
-
     document.title =
       `${title} | ${language} ${genre} Song — Madushanka`;
-
-    /* Meta description */
 
     setMeta(
       "description",
       seoDescription.substring(0, 300)
     );
-
-    /* Keywords */
 
     setMeta(
       "keywords",
@@ -75,18 +66,12 @@ async function load() {
       ].filter(Boolean).join(", ")
     );
 
-    /* Canonical */
-
     const canonical =
       document.getElementById("canonicalLink");
 
     if (canonical) {
       canonical.href = canonicalUrl;
     }
-
-    /* =====================================================
-       OPEN GRAPH — FACEBOOK / WHATSAPP
-    ===================================================== */
 
     setMetaProperty(
       "og:title",
@@ -110,10 +95,6 @@ async function load() {
       );
     }
 
-    /* =====================================================
-       TWITTER / X
-    ===================================================== */
-
     setMetaName(
       "twitter:title",
       `${title} | HEARTBEAT HEAVEN`
@@ -131,23 +112,13 @@ async function load() {
       );
     }
 
-    /* =====================================================
-       GOOGLE STRUCTURED DATA
-       MusicRecording
-    ===================================================== */
-
     const schema = {
       "@context": "https://schema.org",
       "@type": "MusicRecording",
-
       "name": title,
-
       "url": canonicalUrl,
-
       "description": seoDescription,
-
       "inLanguage": language,
-
       "genre": genre,
 
       "byArtist": {
@@ -184,10 +155,6 @@ async function load() {
       schemaElement.textContent =
         JSON.stringify(schema);
     }
-
-    /* =====================================================
-       SONG PAGE
-    ===================================================== */
 
     root.innerHTML = `
       <section class="song-hero">
@@ -227,6 +194,35 @@ async function load() {
             src="${esc(s.audio_url || "")}"
           ></audio>
 
+          <!-- SHARE BUTTONS -->
+          <div class="song-share">
+
+            <button
+              class="share-btn"
+              onclick="shareSong()">
+              ↗ Share
+            </button>
+
+            <button
+              class="share-btn"
+              onclick="shareWhatsApp()">
+              WhatsApp
+            </button>
+
+            <button
+              class="share-btn"
+              onclick="shareFacebook()">
+              Facebook
+            </button>
+
+            <button
+              class="share-btn"
+              onclick="copySongLink()">
+              Copy Link
+            </button>
+
+          </div>
+
         </div>
 
       </section>
@@ -251,6 +247,103 @@ async function load() {
 
     root.innerHTML =
       "<div class='empty'>Unable to load song.</div>";
+  }
+}
+
+
+/* =========================================================
+   SHARE FUNCTIONS
+========================================================= */
+
+function getSongShareUrl() {
+  return window.location.href;
+}
+
+
+async function shareSong() {
+
+  const shareData = {
+    title: document.title,
+    text: "Listen to this song on HEARTBEAT HEAVEN 🎵",
+    url: getSongShareUrl()
+  };
+
+  if (navigator.share) {
+
+    try {
+      await navigator.share(shareData);
+    } catch (error) {
+      console.log("Share cancelled.");
+    }
+
+  } else {
+
+    await copySongLink();
+
+    alert("Song link copied!");
+  }
+}
+
+
+function shareWhatsApp() {
+
+  const url =
+    "https://wa.me/?text=" +
+    encodeURIComponent(
+      `${document.title}\n${getSongShareUrl()}`
+    );
+
+  window.open(
+    url,
+    "_blank",
+    "noopener,noreferrer"
+  );
+}
+
+
+function shareFacebook() {
+
+  const url =
+    "https://www.facebook.com/sharer/sharer.php?u=" +
+    encodeURIComponent(
+      getSongShareUrl()
+    );
+
+  window.open(
+    url,
+    "_blank",
+    "noopener,noreferrer"
+  );
+}
+
+
+async function copySongLink() {
+
+  try {
+
+    await navigator.clipboard.writeText(
+      getSongShareUrl()
+    );
+
+    alert("Song link copied!");
+
+  } catch (error) {
+
+    const temp =
+      document.createElement("input");
+
+    temp.value =
+      getSongShareUrl();
+
+    document.body.appendChild(temp);
+
+    temp.select();
+
+    document.execCommand("copy");
+
+    temp.remove();
+
+    alert("Song link copied!");
   }
 }
 
