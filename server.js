@@ -1,729 +1,425 @@
-const express = require("express");
-const multer = require("multer");
-const path = require("path");
-const crypto = require("crypto");
-const { createClient } = require("@supabase/supabase-js");
+<!DOCTYPE html>
+<html lang="en">
 
-const app = express();
-const PORT = process.env.PORT || 10000;
+<head>
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
-  {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false
-    }
-  }
-);
+<meta charset="UTF-8">
 
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 50 * 1024 * 1024
-  }
-});
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1.0"
+>
+
+<meta
+  name="robots"
+  content="noindex, nofollow"
+>
+
+<title>Studio Login | HEARTBEAT HEAVEN</title>
+
+<style>
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  font-family:
+    Inter,
+    Arial,
+    sans-serif;
+  background:
+    radial-gradient(
+      circle at top,
+      #25142b 0%,
+      #100b13 42%,
+      #070707 100%
+    );
+  color: #ffffff;
+}
+
+body {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.login-wrapper {
+  width: 100%;
+  max-width: 430px;
+}
+
+.logo {
+  text-align: center;
+  margin-bottom: 25px;
+}
+
+.logo-heart {
+  font-size: 48px;
+  line-height: 1;
+  margin-bottom: 12px;
+}
+
+.logo-title {
+  font-size: 25px;
+  font-weight: 800;
+  letter-spacing: 2px;
+}
+
+.logo-subtitle {
+  margin-top: 7px;
+  color: #aaa;
+  font-size: 13px;
+}
+
+.card {
+  background:
+    rgba(20, 20, 24, 0.94);
+  border: 1px solid
+    rgba(255,255,255,0.09);
+  border-radius: 22px;
+  padding: 30px;
+  box-shadow:
+    0 25px 80px
+    rgba(0,0,0,0.5);
+  backdrop-filter: blur(18px);
+}
+
+.heading {
+  margin: 0;
+  font-size: 23px;
+  font-weight: 750;
+}
+
+.description {
+  margin: 9px 0 25px;
+  color: #999;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.field {
+  margin-bottom: 17px;
+}
+
+label {
+  display: block;
+  margin-bottom: 8px;
+  color: #d6d6d6;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+input {
+  width: 100%;
+  height: 50px;
+  border-radius: 12px;
+  border: 1px solid
+    rgba(255,255,255,0.12);
+  outline: none;
+  background: #0c0c0f;
+  color: #ffffff;
+  padding: 0 15px;
+  font-size: 15px;
+  transition: 0.2s;
+}
+
+input:focus {
+  border-color:
+    rgba(255,255,255,0.35);
+  box-shadow:
+    0 0 0 3px
+    rgba(255,255,255,0.05);
+}
+
+button {
+  width: 100%;
+  height: 51px;
+  margin-top: 5px;
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 750;
+  background:
+    linear-gradient(
+      135deg,
+      #d946ef,
+      #8b5cf6
+    );
+  transition:
+    transform 0.15s,
+    opacity 0.15s;
+}
+
+button:hover {
+  transform: translateY(-1px);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.error {
+  display: none;
+  margin-bottom: 17px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background:
+    rgba(239,68,68,0.10);
+  border: 1px solid
+    rgba(239,68,68,0.25);
+  color: #ff9a9a;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.footer {
+  text-align: center;
+  margin-top: 20px;
+  color: #666;
+  font-size: 12px;
+}
+
+</style>
+
+</head>
 
 
-/* =========================================================
-   STUDIO SECURITY — CUSTOM LOGIN
-========================================================= */
+<body>
 
-const ADMIN_USER = process.env.ADMIN_USER;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+<div class="login-wrapper">
 
-const SESSION_COOKIE = "hh_studio_session";
-const SESSION_TTL = 8 * 60 * 60 * 1000;
+  <div class="logo">
 
-// If STUDIO_SESSION_SECRET is not set on Render,
-// ADMIN_PASSWORD is also included so changing the
-// admin password automatically invalidates old sessions.
-const SESSION_SECRET =
-  `${process.env.STUDIO_SESSION_SECRET || "heartbeat-heaven-session"}:${ADMIN_PASSWORD || ""}:heartbeat-heaven-studio`;
+    <div class="logo-heart">
+      ♥
+    </div>
+
+    <div class="logo-title">
+      HEARTBEAT HEAVEN
+    </div>
+
+    <div class="logo-subtitle">
+      Original Music by Madushanka
+    </div>
+
+  </div>
 
 
-/* =========================================================
-   SAFE STRING COMPARISON
-========================================================= */
+  <div class="card">
 
-function safeCompare(a, b) {
+    <h1 class="heading">
+      Studio Login
+    </h1>
 
-  const aBuffer = Buffer.from(
-    String(a),
-    "utf8"
+    <p class="description">
+      Sign in to manage songs, covers,
+      audio files and your music library.
+    </p>
+
+
+    <div
+      id="error"
+      class="error">
+    </div>
+
+
+    <form id="loginForm">
+
+      <div class="field">
+
+        <label for="username">
+          Username
+        </label>
+
+        <input
+          id="username"
+          name="username"
+          type="text"
+          autocomplete="username"
+          required
+          autofocus
+        >
+
+      </div>
+
+
+      <div class="field">
+
+        <label for="password">
+          Password
+        </label>
+
+        <input
+          id="password"
+          name="password"
+          type="password"
+          autocomplete="current-password"
+          required
+        >
+
+      </div>
+
+
+      <button
+        id="loginButton"
+        type="submit">
+
+        Sign In to Studio
+
+      </button>
+
+    </form>
+
+  </div>
+
+
+  <div class="footer">
+    HEARTBEAT HEAVEN • Studio
+  </div>
+
+</div>
+
+
+<script>
+
+const form =
+  document.getElementById(
+    "loginForm"
   );
 
-  const bBuffer = Buffer.from(
-    String(b),
-    "utf8"
+const username =
+  document.getElementById(
+    "username"
   );
 
-  if (aBuffer.length !== bBuffer.length) {
-    return false;
-  }
-
-  return crypto.timingSafeEqual(
-    aBuffer,
-    bBuffer
-  );
-}
-
-
-/* =========================================================
-   COOKIE HELPER
-========================================================= */
-
-function getCookie(req, name) {
-
-  const cookieHeader =
-    req.headers.cookie || "";
-
-  for (const part of cookieHeader.split(";")) {
-
-    const i =
-      part.indexOf("=");
-
-    if (i === -1) {
-      continue;
-    }
-
-    const key =
-      part
-        .slice(0, i)
-        .trim();
-
-    const value =
-      part
-        .slice(i + 1)
-        .trim();
-
-    if (key === name) {
-      return value;
-    }
-
-  }
-
-  return null;
-}
-
-
-/* =========================================================
-   CREATE STUDIO SESSION
-========================================================= */
-
-function createStudioSession() {
-
-  const payload = {
-    user: ADMIN_USER,
-    exp: Date.now() + SESSION_TTL
-  };
-
-  const data =
-    Buffer
-      .from(
-        JSON.stringify(payload),
-        "utf8"
-      )
-      .toString("base64url");
-
-
-  const signature =
-    crypto
-      .createHmac(
-        "sha256",
-        SESSION_SECRET
-      )
-      .update(data)
-      .digest("base64url");
-
-
-  return `${data}.${signature}`;
-}
-
-
-/* =========================================================
-   VERIFY STUDIO SESSION
-========================================================= */
-
-function verifyStudioSession(token) {
-
-  if (!token) {
-    return false;
-  }
-
-
-  const parts =
-    token.split(".");
-
-
-  if (parts.length !== 2) {
-    return false;
-  }
-
-
-  const [
-    data,
-    signature
-  ] = parts;
-
-
-  const expected =
-    crypto
-      .createHmac(
-        "sha256",
-        SESSION_SECRET
-      )
-      .update(data)
-      .digest("base64url");
-
-
-  const a =
-    Buffer.from(
-      signature,
-      "utf8"
-    );
-
-  const b =
-    Buffer.from(
-      expected,
-      "utf8"
-    );
-
-
-  if (a.length !== b.length) {
-    return false;
-  }
-
-
-  if (
-    !crypto.timingSafeEqual(
-      a,
-      b
-    )
-  ) {
-    return false;
-  }
-
-
-  try {
-
-    const payload =
-      JSON.parse(
-        Buffer
-          .from(
-            data,
-            "base64url"
-          )
-          .toString("utf8")
-      );
-
-
-    if (
-      !payload.user ||
-      !payload.exp
-    ) {
-      return false;
-    }
-
-
-    if (
-      !ADMIN_USER ||
-      !safeCompare(
-        payload.user,
-        ADMIN_USER
-      )
-    ) {
-      return false;
-    }
-
-
-    if (
-      Date.now() >= payload.exp
-    ) {
-      return false;
-    }
-
-
-    return true;
-
-  } catch {
-
-    return false;
-
-  }
-
-}
-
-
-/* =========================================================
-   SET SESSION COOKIE
-========================================================= */
-
-function setStudioCookie(
-  res,
-  token
-) {
-
-  res.set(
-    "Set-Cookie",
-    `${SESSION_COOKIE}=${token}; Max-Age=${Math.floor(
-      SESSION_TTL / 1000
-    )}; Path=/; HttpOnly; Secure; SameSite=Lax`
+const password =
+  document.getElementById(
+    "password"
   );
 
-}
-
-
-/* =========================================================
-   CLEAR SESSION COOKIE
-========================================================= */
-
-function clearStudioCookie(res) {
-
-  res.set(
-    "Set-Cookie",
-    `${SESSION_COOKIE}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax`
+const button =
+  document.getElementById(
+    "loginButton"
   );
 
-}
-
-
-/* =========================================================
-   API AUTH MIDDLEWARE
-========================================================= */
-
-function requireStudioAuth(
-  req,
-  res,
-  next
-) {
-
-  if (
-    !ADMIN_USER ||
-    !ADMIN_PASSWORD
-  ) {
-
-    return res
-      .status(503)
-      .json({
-        error:
-          "Studio is not configured. Please set ADMIN_USER and ADMIN_PASSWORD."
-      });
-
-  }
-
-
-  const token =
-    getCookie(
-      req,
-      SESSION_COOKIE
-    );
-
-
-  if (
-    !verifyStudioSession(token)
-  ) {
-
-    return res
-      .status(401)
-      .json({
-        error:
-          "Studio login required."
-      });
-
-  }
-
-
-  next();
-
-}
-
-
-/* =========================================================
-   STUDIO PAGE AUTH
-========================================================= */
-
-function requireStudioPage(
-  req,
-  res,
-  next
-) {
-
-  if (
-    !ADMIN_USER ||
-    !ADMIN_PASSWORD
-  ) {
-
-    return res
-      .status(503)
-      .send(
-        "Studio is not configured. Please set ADMIN_USER and ADMIN_PASSWORD."
-      );
-
-  }
-
-
-  const token =
-    getCookie(
-      req,
-      SESSION_COOKIE
-    );
-
-
-  if (
-    !verifyStudioSession(token)
-  ) {
-
-    return res.redirect(
-      "/studio-login.html"
-    );
-
-  }
-
-
-  res.set(
-    "Cache-Control",
-    "no-store"
+const errorBox =
+  document.getElementById(
+    "error"
   );
 
 
-  next();
+function showError(message) {
+
+  errorBox.textContent =
+    message;
+
+  errorBox.style.display =
+    "block";
 
 }
 
 
-/* =========================================================
-   BODY PARSERS
-========================================================= */
+function hideError() {
 
-app.use(
-  express.json({
-    limit: "2mb"
-  })
-);
+  errorBox.textContent =
+    "";
 
+  errorBox.style.display =
+    "none";
 
-app.use(
-  express.urlencoded({
-    extended: true
-  })
-);
+}
 
 
-/* =========================================================
-   STUDIO LOGIN PAGE
-========================================================= */
+form.addEventListener(
+  "submit",
+  async (event) => {
 
-app.get(
-  "/studio-login.html",
-  (req, res) => {
+    event.preventDefault();
 
-    if (
-      ADMIN_USER &&
-      ADMIN_PASSWORD &&
-      verifyStudioSession(
-        getCookie(
-          req,
-          SESSION_COOKIE
-        )
-      )
-    ) {
+    hideError();
 
-      return res.redirect(
-        "/admin.html"
-      );
+    button.disabled = true;
 
-    }
+    button.textContent =
+      "Signing in...";
 
-
-    res.set(
-      "Cache-Control",
-      "no-store"
-    );
-
-
-    res.sendFile(
-      path.join(
-        __dirname,
-        "public",
-        "studio-login.html"
-      )
-    );
-
-  }
-);
-
-
-/* =========================================================
-   STUDIO LOGIN API
-========================================================= */
-
-app.post(
-  "/api/studio/login",
-  (req, res) => {
-
-    if (
-      !ADMIN_USER ||
-      !ADMIN_PASSWORD
-    ) {
-
-      return res
-        .status(503)
-        .json({
-          success: false,
-          error:
-            "Studio is not configured. Please set ADMIN_USER and ADMIN_PASSWORD."
-        });
-
-    }
-
-
-    const username =
-      String(
-        req.body?.username || ""
-      );
-
-    const password =
-      String(
-        req.body?.password || ""
-      );
-
-
-    const userOk =
-      safeCompare(
-        username,
-        ADMIN_USER
-      );
-
-
-    const passwordOk =
-      safeCompare(
-        password,
-        ADMIN_PASSWORD
-      );
-
-
-    if (
-      !userOk ||
-      !passwordOk
-    ) {
-
-      return res
-        .status(401)
-        .json({
-          success: false,
-          error:
-            "Invalid username or password."
-        });
-
-    }
-
-
-    const token =
-      createStudioSession();
-
-
-    setStudioCookie(
-      res,
-      token
-    );
-
-
-    res.set(
-      "Cache-Control",
-      "no-store"
-    );
-
-
-    res.json({
-      success: true
-    });
-
-  }
-);
-
-
-/* =========================================================
-   STUDIO SESSION CHECK
-========================================================= */
-
-app.get(
-  "/api/studio/me",
-  (req, res) => {
-
-    if (
-      !ADMIN_USER ||
-      !ADMIN_PASSWORD
-    ) {
-
-      return res
-        .status(503)
-        .json({
-          authenticated: false,
-          error:
-            "Studio is not configured."
-        });
-
-    }
-
-
-    const authenticated =
-      verifyStudioSession(
-        getCookie(
-          req,
-          SESSION_COOKIE
-        )
-      );
-
-
-    if (!authenticated) {
-
-      return res
-        .status(401)
-        .json({
-          authenticated: false
-        });
-
-    }
-
-
-    res.set(
-      "Cache-Control",
-      "no-store"
-    );
-
-
-    res.json({
-      authenticated: true
-    });
-
-  }
-);
-
-
-/* =========================================================
-   STUDIO LOGOUT
-========================================================= */
-
-app.post(
-  "/api/studio/logout",
-  (req, res) => {
-
-    clearStudioCookie(
-      res
-    );
-
-
-    res.set(
-      "Cache-Control",
-      "no-store"
-    );
-
-
-    res.json({
-      success: true
-    });
-
-  }
-);
-
-
-/* =========================================================
-   PROTECT STUDIO
-========================================================= */
-
-app.get(
-  "/admin.html",
-  requireStudioPage,
-  (req, res) => {
-
-    res.sendFile(
-      path.join(
-        __dirname,
-        "public",
-        "admin.html"
-      )
-    );
-
-  }
-);
-
-
-app.get(
-  "/admin.js",
-  requireStudioPage,
-  (req, res) => {
-
-    res.sendFile(
-      path.join(
-        __dirname,
-        "public",
-        "admin.js"
-      )
-    );
-
-  }
-);
-
-
-/* =========================================================
-   SEO — DYNAMIC SONG PAGE
-========================================================= */
-
-app.get(
-  "/song.html",
-  async (req, res, next) => {
 
     try {
 
-      const id =
-        req.query.id;
+      const response =
+        await fetch(
+          "/api/studio/login",
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json"
+            },
+
+            credentials:
+              "same-origin",
+
+            body:
+              JSON.stringify({
+                username:
+                  username.value.trim(),
+
+                password:
+                  password.value
+              })
+          }
+        );
 
 
-      if (!id) {
-        return next();
+      const data =
+        await response.json();
+
+
+      if (!response.ok) {
+
+        throw new Error(
+          data.error ||
+          "Invalid username or password."
+        );
+
       }
 
 
-      const {
-        data: song,
-        error
-      } = await supabase
-        .from("songs")
-        .select("*")
-        .eq("id", id)
-        .single();
+      window.location.href =
+        "/admin.html";
 
 
-      if (
-        error ||
-        !song
-      ) {
-        return next();
-      }
+    } catch (error) {
 
+      showError(
+        error.message ||
+        "Login failed. Please try again."
+      );
 
-      const title =
-        song.title ||
-        "New Song";
+      button.disabled =
+        false;
 
-      const artist =
-        song.artist ||
-        "Madushanka";
+      button.textContent =
+        "Sign In to Studio";
 
-      const language =
-        song.language ||
-        "Music";
+    }
 
-      const genre =
-        song.genre ||
-        "Music";
+  }
+);
 
-      const mood =
-        song.mood ||
-        "";
+</script>
 
-      const description =
-        song.description ||
-        `Listen to ${title} by ${artist} on HEART
+</body>
+
+</html>
