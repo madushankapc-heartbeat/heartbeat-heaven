@@ -33,77 +33,147 @@ const upload = multer({
 const ADMIN_USER = process.env.ADMIN_USER;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
+
+/*
+   Compare UTF-8 strings safely.
+   This avoids problems caused by comparing JavaScript
+   string length with UTF-8 byte length.
+*/
+
+function safeCompare(a, b) {
+
+  const aBuffer = Buffer.from(
+    String(a),
+    "utf8"
+  );
+
+  const bBuffer = Buffer.from(
+    String(b),
+    "utf8"
+  );
+
+  if (aBuffer.length !== bBuffer.length) {
+    return false;
+  }
+
+  return crypto.timingSafeEqual(
+    aBuffer,
+    bBuffer
+  );
+}
+
+
 function checkAdminAuth(req, res, next) {
 
   if (!ADMIN_USER || !ADMIN_PASSWORD) {
+
     return res.status(503).send(
       "Studio is not configured. Please set ADMIN_USER and ADMIN_PASSWORD."
     );
+
   }
 
-  const header = req.headers.authorization || "";
+  const header =
+    req.headers.authorization || "";
+
 
   if (!header.startsWith("Basic ")) {
+
     res.set(
       "WWW-Authenticate",
       'Basic realm="Heartbeat Heaven Studio"'
     );
-    return res.status(401).send("Authentication required.");
+
+    return res.status(401).send(
+      "Authentication required."
+    );
+
   }
+
 
   let decoded;
 
   try {
+
     decoded = Buffer.from(
       header.slice(6),
       "base64"
     ).toString("utf8");
+
   } catch {
+
     res.set(
       "WWW-Authenticate",
       'Basic realm="Heartbeat Heaven Studio"'
     );
-    return res.status(401).send("Invalid authentication.");
+
+    return res.status(401).send(
+      "Invalid authentication."
+    );
+
   }
 
-  const separator = decoded.indexOf(":");
 
-  if (separator < 0) {
+  const separator =
+    decoded.indexOf(":");
+
+
+  if (separator === -1) {
+
     res.set(
       "WWW-Authenticate",
       'Basic realm="Heartbeat Heaven Studio"'
     );
-    return res.status(401).send("Invalid authentication.");
+
+    return res.status(401).send(
+      "Invalid authentication."
+    );
+
   }
 
-  const username = decoded.slice(0, separator);
-  const password = decoded.slice(separator + 1);
+
+  const username =
+    decoded.slice(
+      0,
+      separator
+    );
+
+  const password =
+    decoded.slice(
+      separator + 1
+    );
+
 
   const userOk =
-    username.length === ADMIN_USER.length &&
-    crypto.timingSafeEqual(
-      Buffer.from(username),
-      Buffer.from(ADMIN_USER)
+    safeCompare(
+      username,
+      ADMIN_USER
     );
+
 
   const passwordOk =
-    password.length === ADMIN_PASSWORD.length &&
-    crypto.timingSafeEqual(
-      Buffer.from(password),
-      Buffer.from(ADMIN_PASSWORD)
+    safeCompare(
+      password,
+      ADMIN_PASSWORD
     );
 
+
   if (!userOk || !passwordOk) {
+
     res.set(
       "WWW-Authenticate",
       'Basic realm="Heartbeat Heaven Studio"'
     );
+
     return res.status(401).send(
       "Invalid username or password."
     );
+
   }
 
+
   next();
+
 }
 
 
@@ -111,8 +181,17 @@ function checkAdminAuth(req, res, next) {
    BODY / STATIC
 ========================================================= */
 
-app.use(express.json({ limit: "2mb" }));
-app.use(express.urlencoded({ extended: true }));
+app.use(
+  express.json({
+    limit: "2mb"
+  })
+);
+
+app.use(
+  express.urlencoded({
+    extended: true
+  })
+);
 
 
 /* =========================================================
@@ -123,6 +202,7 @@ app.get(
   "/admin.html",
   checkAdminAuth,
   (req, res) => {
+
     res.sendFile(
       path.join(
         __dirname,
@@ -130,13 +210,16 @@ app.get(
         "admin.html"
       )
     );
+
   }
 );
+
 
 app.get(
   "/admin.js",
   checkAdminAuth,
   (req, res) => {
+
     res.sendFile(
       path.join(
         __dirname,
@@ -144,60 +227,113 @@ app.get(
         "admin.js"
       )
     );
+
   }
 );
+
 
 /* =========================================================
    SEO — DYNAMIC SONG PAGE
 ========================================================= */
 
-app.get("/song.html", async (req, res, next) => {
-  try {
-    const id = req.query.id;
+app.get(
+  "/song.html",
+  async (req, res, next) => {
 
-    if (!id) {
-      return next();
-    }
+    try {
 
-    const { data: song, error } = await supabase
-      .from("songs")
-      .select("*")
-      .eq("id", id)
-      .single();
+      const id =
+        req.query.id;
 
-    if (error || !song) {
-      return next();
-    }
 
-    const title = song.title || "New Song";
-    const artist = song.artist || "Madushanka";
-    const language = song.language || "Music";
-    const genre = song.genre || "Music";
-    const mood = song.mood || "";
-    const description =
-      song.description ||
-      `Listen to ${title} by ${artist} on HEARTBEAT HEAVEN.`;
+      if (!id) {
+        return next();
+      }
 
-    const pageUrl =
-      `https://heartbeat-heaven.onrender.com/song.html?id=${song.id}`;
 
-    const coverUrl = song.cover_url || "";
+      const {
+        data: song,
+        error
+      } = await supabase
+        .from("songs")
+        .select("*")
+        .eq("id", id)
+        .single();
 
-    const escapeHtml = (value) =>
-      String(value || "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
 
-    const seoDescription =
-      `${title} by ${artist}. ` +
-      `Listen to this original ${language} ${genre} song on HEARTBEAT HEAVEN. ` +
-      description;
+      if (error || !song) {
+        return next();
+      }
 
-    const html = `<!doctype html>
+
+      const title =
+        song.title ||
+        "New Song";
+
+      const artist =
+        song.artist ||
+        "Madushanka";
+
+      const language =
+        song.language ||
+        "Music";
+
+      const genre =
+        song.genre ||
+        "Music";
+
+      const mood =
+        song.mood ||
+        "";
+
+      const description =
+        song.description ||
+        `Listen to ${title} by ${artist} on HEARTBEAT HEAVEN.`;
+
+
+      const pageUrl =
+        `https://heartbeat-heaven.onrender.com/song.html?id=${song.id}`;
+
+
+      const coverUrl =
+        song.cover_url || "";
+
+
+      const escapeHtml =
+        (value) =>
+          String(value || "")
+            .replace(
+              /&/g,
+              "&amp;"
+            )
+            .replace(
+              /</g,
+              "&lt;"
+            )
+            .replace(
+              />/g,
+              "&gt;"
+            )
+            .replace(
+              /"/g,
+              "&quot;"
+            )
+            .replace(
+              /'/g,
+              "&#039;"
+            );
+
+
+      const seoDescription =
+        `${title} by ${artist}. ` +
+        `Listen to this original ${language} ${genre} song on HEARTBEAT HEAVEN. ` +
+        description;
+
+
+      const html =
+        `<!doctype html>
 <html lang="en">
+
 <head>
 
 <meta charset="utf-8">
@@ -212,53 +348,79 @@ app.get("/song.html", async (req, res, next) => {
       content="index, follow">
 
 <meta name="description"
-      content="${escapeHtml(seoDescription.slice(0, 300))}">
+      content="${escapeHtml(
+        seoDescription.slice(0, 300)
+      )}">
 
 <meta name="author"
-      content="${escapeHtml(artist)}">
+      content="${escapeHtml(
+        artist
+      )}">
 
 <link rel="canonical"
-      href="${escapeHtml(pageUrl)}">
+      href="${escapeHtml(
+        pageUrl
+      )}">
 
 <title>
 ${escapeHtml(title)} | ${escapeHtml(language)} ${escapeHtml(genre)} Song — ${escapeHtml(artist)}
 </title>
 
+
 <meta property="og:type"
       content="music.song">
 
 <meta property="og:title"
-      content="${escapeHtml(title)} | HEARTBEAT HEAVEN">
+      content="${escapeHtml(
+        title
+      )} | HEARTBEAT HEAVEN">
 
 <meta property="og:description"
-      content="${escapeHtml(seoDescription.slice(0, 300))}">
+      content="${escapeHtml(
+        seoDescription.slice(0, 300)
+      )}">
 
 <meta property="og:url"
-      content="${escapeHtml(pageUrl)}">
+      content="${escapeHtml(
+        pageUrl
+      )}">
 
 <meta property="og:site_name"
       content="HEARTBEAT HEAVEN">
 
+
 ${coverUrl ? `
 <meta property="og:image"
-      content="${escapeHtml(coverUrl)}">
+      content="${escapeHtml(
+        coverUrl
+      )}">
 ` : ""}
+
 
 <meta name="twitter:card"
       content="summary_large_image">
 
 <meta name="twitter:title"
-      content="${escapeHtml(title)} | HEARTBEAT HEAVEN">
+      content="${escapeHtml(
+        title
+      )} | HEARTBEAT HEAVEN">
 
 <meta name="twitter:description"
-      content="${escapeHtml(seoDescription.slice(0, 300))}">
+      content="${escapeHtml(
+        seoDescription.slice(0, 300)
+      )}">
+
 
 ${coverUrl ? `
 <meta name="twitter:image"
-      content="${escapeHtml(coverUrl)}">
+      content="${escapeHtml(
+        coverUrl
+      )}">
 ` : ""}
 
+
 <script type="application/ld+json">
+
 ${JSON.stringify({
   "@context": "https://schema.org",
   "@type": "MusicRecording",
@@ -267,57 +429,93 @@ ${JSON.stringify({
   "description": seoDescription,
   "inLanguage": language,
   "genre": genre,
+
   "byArtist": {
     "@type": "Person",
     "name": artist
   },
+
   "publisher": {
     "@type": "Organization",
     "name": "HEARTBEAT HEAVEN",
     "url": "https://heartbeat-heaven.onrender.com/"
   },
+
   ...(song.release_date
-    ? { "datePublished": song.release_date }
+    ? {
+        "datePublished":
+          song.release_date
+      }
     : {}),
+
   ...(coverUrl
-    ? { "image": coverUrl }
+    ? {
+        "image":
+          coverUrl
+      }
     : {}),
+
   ...(song.audio_url
     ? {
         "audio": {
-          "@type": "AudioObject",
-          "contentUrl": song.audio_url
+          "@type":
+            "AudioObject",
+
+          "contentUrl":
+            song.audio_url
         }
       }
     : {})
 })}
+
 </script>
+
 
 <link rel="stylesheet"
       href="/styles.css">
 
 </head>
 
+
 <body>
+
 
 <header class="topbar">
 
-<a class="brand" href="/">
+<a class="brand"
+   href="/">
+
 <span>♥</span>
 
 <div>
-<strong>HEARTBEAT HEAVEN</strong>
-<small>Original Music by Madushanka</small>
+
+<strong>
+HEARTBEAT HEAVEN
+</strong>
+
+<small>
+Original Music by Madushanka
+</small>
+
 </div>
 
 </a>
 
+
 <nav>
-<a href="/">Home</a>
-<a href="/songs.html">Songs</a>
+
+<a href="/">
+Home
+</a>
+
+<a href="/songs.html">
+Songs
+</a>
+
 </nav>
 
 </header>
+
 
 <main
   class="song-page"
@@ -325,87 +523,145 @@ ${JSON.stringify({
   itemscope
   itemtype="https://schema.org/MusicRecording">
 
-  <section class="song-hero">
 
-    ${coverUrl ? `
-    <img
-      class="song-cover"
-      src="${escapeHtml(coverUrl)}"
-      alt="${escapeHtml(title)} cover"
-      itemprop="image">
-    ` : ""}
+<section class="song-hero">
 
-    <div>
 
-      <p class="eyebrow">
-        ${escapeHtml(genre)} • ${escapeHtml(language)}
-      </p>
+${coverUrl ? `
+<img
+  class="song-cover"
+  src="${escapeHtml(
+    coverUrl
+  )}"
+  alt="${escapeHtml(
+    title
+  )} cover"
+  itemprop="image">
+` : ""}
 
-      <h1
-        class="song-title"
-        itemprop="name">
-        ${escapeHtml(title)}
-      </h1>
 
-      <p class="meta">
-        ${escapeHtml(artist)}
-        ${mood ? ` • ${escapeHtml(mood)}` : ""}
-      </p>
+<div>
 
-      <p
-        class="song-desc"
-        itemprop="description">
-        ${escapeHtml(description)}
-      </p>
 
-      ${song.audio_url ? `
-      <audio
-        controls
-        preload="metadata"
-        style="width:100%;margin-top:25px"
-        src="${escapeHtml(song.audio_url)}">
-      </audio>
-      ` : ""}
+<p class="eyebrow">
 
-    </div>
+${escapeHtml(
+  genre
+)} • ${escapeHtml(
+  language
+)}
 
-  </section>
+</p>
 
-  <section class="lyrics-wrap">
 
-    <p class="eyebrow">LYRICS</p>
+<h1
+  class="song-title"
+  itemprop="name">
 
-    <div
-      class="lyrics"
-      itemprop="lyrics">
-      ${escapeHtml(song.lyrics) ||
-        "Lyrics will be added soon."}
-    </div>
+${escapeHtml(
+  title
+)}
 
-  </section>
+</h1>
+
+
+<p class="meta">
+
+${escapeHtml(
+  artist
+)}
+
+${mood
+  ? ` • ${escapeHtml(mood)}`
+  : ""}
+
+</p>
+
+
+<p
+  class="song-desc"
+  itemprop="description">
+
+${escapeHtml(
+  description
+)}
+
+</p>
+
+
+${song.audio_url ? `
+<audio
+  controls
+  preload="metadata"
+  style="width:100%;margin-top:25px"
+  src="${escapeHtml(
+    song.audio_url
+  )}">
+</audio>
+` : ""}
+
+
+</div>
+
+</section>
+
+
+<section class="lyrics-wrap">
+
+
+<p class="eyebrow">
+LYRICS
+</p>
+
+
+<div
+  class="lyrics"
+  itemprop="lyrics">
+
+${escapeHtml(
+  song.lyrics
+) ||
+  "Lyrics will be added soon."}
+
+</div>
+
+
+</section>
+
 
 </main>
 
-<script src="/song.js"></script>
+
+<script src="/song.js">
+</script>
+
 
 </body>
+
 </html>`;
 
-    res
-      .status(200)
-      .type("html")
-      .send(html);
 
-  } catch (error) {
+      res
+        .status(200)
+        .type("html")
+        .send(html);
 
-    console.error(
-      "Song SEO page error:",
-      error
-    );
 
-    next();
+    } catch (error) {
+
+      console.error(
+        "Song SEO page error:",
+        error
+      );
+
+      next();
+
+    }
+
   }
-});
+);
+
+
 /* =========================================================
    PUBLIC FILES
 ========================================================= */
@@ -413,13 +669,20 @@ ${JSON.stringify({
 app.use(
   "/uploads",
   express.static(
-    path.join(__dirname, "uploads")
+    path.join(
+      __dirname,
+      "uploads"
+    )
   )
 );
 
+
 app.use(
   express.static(
-    path.join(__dirname, "public")
+    path.join(
+      __dirname,
+      "public"
+    )
   )
 );
 
@@ -428,14 +691,22 @@ app.use(
    HELPERS
 ========================================================= */
 
-function safeFileName(name = "file") {
+function safeFileName(
+  name = "file"
+) {
 
   const ext =
-    path.extname(name).toLowerCase();
+    path
+      .extname(name)
+      .toLowerCase();
+
 
   const base =
     path
-      .basename(name, ext)
+      .basename(
+        name,
+        ext
+      )
       .replace(
         /[^a-zA-Z0-9-_]/g,
         "-"
@@ -444,95 +715,195 @@ function safeFileName(name = "file") {
         /-+/g,
         "-"
       )
-      .slice(0, 80) || "file";
+      .slice(
+        0,
+        80
+      ) ||
+    "file";
+
 
   return `${Date.now()}-${base}${ext}`;
+
 }
 
 
-function publicUrl(bucket, file) {
+function publicUrl(
+  bucket,
+  file
+) {
 
   return `${process.env.SUPABASE_URL}/storage/v1/object/public/${bucket}/${encodeURIComponent(file).replace(/%2F/g, "/")}`;
+
 }
 
 
-function storagePath(url, bucket) {
+function storagePath(
+  url,
+  bucket
+) {
 
-  if (!url) return null;
+  if (!url) {
+    return null;
+  }
+
 
   const marker =
     `/storage/v1/object/public/${bucket}/`;
 
-  const i =
-    url.indexOf(marker);
 
-  if (i < 0) return null;
+  const i =
+    url.indexOf(
+      marker
+    );
+
+
+  if (i < 0) {
+    return null;
+  }
+
 
   return decodeURIComponent(
     url.slice(
       i + marker.length
     )
   );
+
 }
+
 
 /* =========================================================
    GOOGLE SEO — SITEMAP
 ========================================================= */
 
-app.get("/sitemap.xml", async (req, res) => {
-  try {
-    const { data: songs, error } = await supabase
-      .from("songs")
-      .select("id, release_date, created_at");
+app.get(
+  "/sitemap.xml",
+  async (req, res) => {
 
-    if (error) {
-      console.error("Sitemap error:", error);
-      return res.status(500).type("text/plain").send("Sitemap error");
-    }
+    try {
 
-    const baseUrl = "https://heartbeat-heaven.onrender.com";
+      const {
+        data: songs,
+        error
+      } = await supabase
+        .from("songs")
+        .select(
+          "id, release_date, created_at"
+        );
 
-    const urls = [
-      {
-        loc: `${baseUrl}/`,
-        lastmod: new Date().toISOString()
-      },
-      {
-        loc: `${baseUrl}/songs.html`,
-        lastmod: new Date().toISOString()
+
+      if (error) {
+
+        console.error(
+          "Sitemap error:",
+          error
+        );
+
+        return res
+          .status(500)
+          .type("text/plain")
+          .send(
+            "Sitemap error"
+          );
+
       }
-    ];
 
-    (songs || []).forEach(song => {
-      urls.push({
-        loc: `${baseUrl}/song.html?id=${song.id}`,
-        lastmod: song.release_date
-          ? new Date(song.release_date).toISOString()
-          : new Date(song.created_at).toISOString()
-      });
-    });
 
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+      const baseUrl =
+        "https://heartbeat-heaven.onrender.com";
+
+
+      const urls = [
+
+        {
+          loc:
+            `${baseUrl}/`,
+
+          lastmod:
+            new Date()
+              .toISOString()
+        },
+
+        {
+          loc:
+            `${baseUrl}/songs.html`,
+
+          lastmod:
+            new Date()
+              .toISOString()
+        }
+
+      ];
+
+
+      (songs || [])
+        .forEach(
+          (song) => {
+
+            urls.push({
+
+              loc:
+                `${baseUrl}/song.html?id=${song.id}`,
+
+              lastmod:
+                song.release_date
+                  ? new Date(
+                      song.release_date
+                    ).toISOString()
+
+                  : new Date(
+                      song.created_at
+                    ).toISOString()
+
+            });
+
+          }
+        );
+
+
+      const xml =
+        `<?xml version="1.0" encoding="UTF-8"?>
 <urlset
   xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 
-${urls.map(url => `  <url>
+${urls
+  .map(
+    (url) =>
+      `  <url>
     <loc>${url.loc}</loc>
     <lastmod>${url.lastmod}</lastmod>
-  </url>`).join("\n")}
+  </url>`
+  )
+  .join("\n")}
 
 </urlset>`;
 
-    res
-      .status(200)
-      .type("application/xml")
-      .send(xml);
 
-  } catch (error) {
-    console.error("Sitemap generation failed:", error);
-    res.status(500).type("text/plain").send("Sitemap generation failed");
+      res
+        .status(200)
+        .type("application/xml")
+        .send(xml);
+
+
+    } catch (error) {
+
+      console.error(
+        "Sitemap generation failed:",
+        error
+      );
+
+      res
+        .status(500)
+        .type("text/plain")
+        .send(
+          "Sitemap generation failed"
+        );
+
+    }
+
   }
-});
+);
+
+
 /* =========================================================
    HEALTH
 ========================================================= */
@@ -541,22 +912,31 @@ app.get(
   "/api/health",
   async (req, res) => {
 
-    const { error } =
-      await supabase
-        .from("songs")
-        .select("id")
-        .limit(1);
+    const {
+      error
+    } = await supabase
+      .from("songs")
+      .select("id")
+      .limit(1);
+
 
     if (error) {
-      return res.status(500).json({
-        ok: false,
-        error: error.message
-      });
+
+      return res
+        .status(500)
+        .json({
+          ok: false,
+          error:
+            error.message
+        });
+
     }
+
 
     res.json({
       ok: true
     });
+
   }
 );
 
@@ -569,31 +949,43 @@ app.get(
   "/api/songs",
   async (req, res) => {
 
-    const { data, error } =
-      await supabase
-        .from("songs")
-        .select("*")
-        .order(
-          "release_date",
-          {
-            ascending: false,
-            nullsFirst: false
-          }
-        )
-        .order(
-          "created_at",
-          {
-            ascending: false
-          }
-        );
+    const {
+      data,
+      error
+    } = await supabase
+      .from("songs")
+      .select("*")
+      .order(
+        "release_date",
+        {
+          ascending: false,
+          nullsFirst: false
+        }
+      )
+      .order(
+        "created_at",
+        {
+          ascending: false
+        }
+      );
+
 
     if (error) {
-      return res.status(500).json({
-        error: error.message
-      });
+
+      return res
+        .status(500)
+        .json({
+          error:
+            error.message
+        });
+
     }
 
-    res.json(data || []);
+
+    res.json(
+      data || []
+    );
+
   }
 );
 
@@ -602,23 +994,35 @@ app.get(
   "/api/songs/:id",
   async (req, res) => {
 
-    const { data, error } =
-      await supabase
-        .from("songs")
-        .select("*")
-        .eq(
-          "id",
-          req.params.id
-        )
-        .single();
+    const {
+      data,
+      error
+    } = await supabase
+      .from("songs")
+      .select("*")
+      .eq(
+        "id",
+        req.params.id
+      )
+      .single();
+
 
     if (error) {
-      return res.status(404).json({
-        error: "Song not found"
-      });
+
+      return res
+        .status(404)
+        .json({
+          error:
+            "Song not found"
+        });
+
     }
 
-    res.json(data);
+
+    res.json(
+      data
+    );
+
   }
 );
 
@@ -630,16 +1034,21 @@ app.get(
 app.post(
   "/api/songs",
   checkAdminAuth,
+
   upload.fields([
+
     {
       name: "cover",
       maxCount: 1
     },
+
     {
       name: "audio",
       maxCount: 1
     }
+
   ]),
+
   async (req, res) => {
 
     try {
@@ -655,27 +1064,43 @@ app.post(
         release_date
       } = req.body;
 
+
       if (!title || !artist) {
-        return res.status(400).json({
-          error:
-            "Title and artist are required."
-        });
+
+        return res
+          .status(400)
+          .json({
+            error:
+              "Title and artist are required."
+          });
+
       }
+
 
       const cover =
         req.files?.cover?.[0];
 
+
       const audio =
         req.files?.audio?.[0];
 
+
       let cover_url =
-        req.body.cover_url || "";
+        req.body.cover_url ||
+        "";
+
 
       let audio_url =
-        req.body.audio_url || "";
+        req.body.audio_url ||
+        "";
 
-      let coverPath = null;
-      let audioPath = null;
+
+      let coverPath =
+        null;
+
+
+      let audioPath =
+        null;
 
 
       if (cover) {
@@ -685,30 +1110,39 @@ app.post(
             cover.originalname
           );
 
-        const { error } =
-          await supabase.storage
-            .from("covers")
-            .upload(
-              coverPath,
-              cover.buffer,
-              {
-                contentType:
-                  cover.mimetype,
-                upsert: false
-              }
-            );
+
+        const {
+          error
+        } = await supabase.storage
+          .from("covers")
+          .upload(
+            coverPath,
+            cover.buffer,
+            {
+              contentType:
+                cover.mimetype,
+
+              upsert:
+                false
+            }
+          );
+
 
         if (error) {
+
           throw new Error(
             `Cover upload failed: ${error.message}`
           );
+
         }
+
 
         cover_url =
           publicUrl(
             "covers",
             coverPath
           );
+
       }
 
 
@@ -719,95 +1153,133 @@ app.post(
             audio.originalname
           );
 
-        const { error } =
-          await supabase.storage
-            .from("audio")
-            .upload(
-              audioPath,
-              audio.buffer,
-              {
-                contentType:
-                  audio.mimetype ||
-                  "audio/mpeg",
-                upsert: false
-              }
-            );
+
+        const {
+          error
+        } = await supabase.storage
+          .from("audio")
+          .upload(
+            audioPath,
+            audio.buffer,
+            {
+              contentType:
+                audio.mimetype ||
+                "audio/mpeg",
+
+              upsert:
+                false
+            }
+          );
+
 
         if (error) {
+
           throw new Error(
             `Audio upload failed: ${error.message}`
           );
+
         }
+
 
         audio_url =
           publicUrl(
             "audio",
             audioPath
           );
+
       }
 
 
-      const { data, error } =
-        await supabase
-          .from("songs")
-          .insert({
-            title,
-            artist,
-            genre: genre || "",
-            language:
-              language || "",
-            mood: mood || "",
-            description:
-              description || "",
-            lyrics:
-              lyrics || "",
-            cover_url,
-            audio_url,
-            release_date:
-              release_date || null
-          })
-          .select()
-          .single();
+      const {
+        data,
+        error
+      } = await supabase
+        .from("songs")
+        .insert({
+
+          title,
+
+          artist,
+
+          genre:
+            genre || "",
+
+          language:
+            language || "",
+
+          mood:
+            mood || "",
+
+          description:
+            description || "",
+
+          lyrics:
+            lyrics || "",
+
+          cover_url,
+
+          audio_url,
+
+          release_date:
+            release_date || null
+
+        })
+        .select()
+        .single();
 
 
       if (error) {
 
         if (coverPath) {
+
           await supabase
             .storage
             .from("covers")
             .remove([
               coverPath
             ]);
+
         }
 
+
         if (audioPath) {
+
           await supabase
             .storage
             .from("audio")
             .remove([
               audioPath
             ]);
+
         }
+
 
         throw new Error(
           `Database save failed: ${error.message}`
         );
+
       }
 
 
-      res.status(201).json(data);
+      res
+        .status(201)
+        .json(data);
+
 
     } catch (e) {
 
       console.error(e);
 
-      res.status(500).json({
-        error:
-          e.message ||
-          "Upload failed."
-      });
+      res
+        .status(500)
+        .json({
+          error:
+            e.message ||
+            "Upload failed."
+        });
+
     }
+
   }
 );
 
@@ -819,16 +1291,21 @@ app.post(
 app.put(
   "/api/songs/:id",
   checkAdminAuth,
+
   upload.fields([
+
     {
       name: "cover",
       maxCount: 1
     },
+
     {
       name: "audio",
       maxCount: 1
     }
+
   ]),
+
   async (req, res) => {
 
     try {
@@ -836,22 +1313,30 @@ app.put(
       const {
         data: oldSong,
         error: findError
-      } =
-        await supabase
-          .from("songs")
-          .select("*")
-          .eq(
-            "id",
-            req.params.id
-          )
-          .single();
+      } = await supabase
+        .from("songs")
+        .select("*")
+        .eq(
+          "id",
+          req.params.id
+        )
+        .single();
 
-      if (findError || !oldSong) {
-        return res.status(404).json({
-          error:
-            "Song not found"
-        });
+
+      if (
+        findError ||
+        !oldSong
+      ) {
+
+        return res
+          .status(404)
+          .json({
+            error:
+              "Song not found"
+          });
+
       }
+
 
       const {
         title,
@@ -864,27 +1349,43 @@ app.put(
         release_date
       } = req.body;
 
+
       if (!title || !artist) {
-        return res.status(400).json({
-          error:
-            "Title and artist are required."
-        });
+
+        return res
+          .status(400)
+          .json({
+            error:
+              "Title and artist are required."
+          });
+
       }
+
 
       const newCover =
         req.files?.cover?.[0];
 
+
       const newAudio =
         req.files?.audio?.[0];
 
+
       let cover_url =
-        oldSong.cover_url || "";
+        oldSong.cover_url ||
+        "";
+
 
       let audio_url =
-        oldSong.audio_url || "";
+        oldSong.audio_url ||
+        "";
 
-      let newCoverPath = null;
-      let newAudioPath = null;
+
+      let newCoverPath =
+        null;
+
+
+      let newAudioPath =
+        null;
 
 
       if (newCover) {
@@ -894,30 +1395,39 @@ app.put(
             newCover.originalname
           );
 
-        const { error } =
-          await supabase.storage
-            .from("covers")
-            .upload(
-              newCoverPath,
-              newCover.buffer,
-              {
-                contentType:
-                  newCover.mimetype,
-                upsert: false
-              }
-            );
+
+        const {
+          error
+        } = await supabase.storage
+          .from("covers")
+          .upload(
+            newCoverPath,
+            newCover.buffer,
+            {
+              contentType:
+                newCover.mimetype,
+
+              upsert:
+                false
+            }
+          );
+
 
         if (error) {
+
           throw new Error(
             `Cover upload failed: ${error.message}`
           );
+
         }
+
 
         cover_url =
           publicUrl(
             "covers",
             newCoverPath
           );
+
       }
 
 
@@ -928,84 +1438,115 @@ app.put(
             newAudio.originalname
           );
 
-        const { error } =
-          await supabase.storage
-            .from("audio")
-            .upload(
-              newAudioPath,
-              newAudio.buffer,
-              {
-                contentType:
-                  newAudio.mimetype ||
-                  "audio/mpeg",
-                upsert: false
-              }
-            );
+
+        const {
+          error
+        } = await supabase.storage
+          .from("audio")
+          .upload(
+            newAudioPath,
+            newAudio.buffer,
+            {
+              contentType:
+                newAudio.mimetype ||
+                "audio/mpeg",
+
+              upsert:
+                false
+            }
+          );
+
 
         if (error) {
+
           throw new Error(
             `Audio upload failed: ${error.message}`
           );
+
         }
+
 
         audio_url =
           publicUrl(
             "audio",
             newAudioPath
           );
+
       }
 
 
-      const { data, error } =
-        await supabase
-          .from("songs")
-          .update({
-            title,
-            artist,
-            genre: genre || "",
-            language:
-              language || "",
-            mood: mood || "",
-            description:
-              description || "",
-            lyrics:
-              lyrics || "",
-            cover_url,
-            audio_url,
-            release_date:
-              release_date || null
-          })
-          .eq(
-            "id",
-            req.params.id
-          )
-          .select()
-          .single();
+      const {
+        data,
+        error
+      } = await supabase
+        .from("songs")
+        .update({
+
+          title,
+
+          artist,
+
+          genre:
+            genre || "",
+
+          language:
+            language || "",
+
+          mood:
+            mood || "",
+
+          description:
+            description || "",
+
+          lyrics:
+            lyrics || "",
+
+          cover_url,
+
+          audio_url,
+
+          release_date:
+            release_date || null
+
+        })
+        .eq(
+          "id",
+          req.params.id
+        )
+        .select()
+        .single();
 
 
       if (error) {
 
         if (newCoverPath) {
+
           await supabase
             .storage
             .from("covers")
             .remove([
               newCoverPath
             ]);
+
         }
 
+
         if (newAudioPath) {
+
           await supabase
             .storage
             .from("audio")
             .remove([
               newAudioPath
             ]);
+
         }
+
 
         throw new Error(
           `Database update failed: ${error.message}`
         );
+
       }
 
 
@@ -1017,14 +1558,18 @@ app.put(
             "covers"
           );
 
+
         if (oldCoverPath) {
+
           await supabase
             .storage
             .from("covers")
             .remove([
               oldCoverPath
             ]);
+
         }
+
       }
 
 
@@ -1036,29 +1581,40 @@ app.put(
             "audio"
           );
 
+
         if (oldAudioPath) {
+
           await supabase
             .storage
             .from("audio")
             .remove([
               oldAudioPath
             ]);
+
         }
+
       }
 
 
-      res.json(data);
+      res.json(
+        data
+      );
+
 
     } catch (e) {
 
       console.error(e);
 
-      res.status(500).json({
-        error:
-          e.message ||
-          "Update failed."
-      });
+      res
+        .status(500)
+        .json({
+          error:
+            e.message ||
+            "Update failed."
+        });
+
     }
+
   }
 );
 
@@ -1070,6 +1626,7 @@ app.put(
 app.delete(
   "/api/songs/:id",
   checkAdminAuth,
+
   async (req, res) => {
 
     try {
@@ -1077,22 +1634,28 @@ app.delete(
       const {
         data: song,
         error: findError
-      } =
-        await supabase
-          .from("songs")
-          .select("*")
-          .eq(
-            "id",
-            req.params.id
-          )
-          .single();
+      } = await supabase
+        .from("songs")
+        .select("*")
+        .eq(
+          "id",
+          req.params.id
+        )
+        .single();
 
 
-      if (findError || !song) {
-        return res.status(404).json({
-          error:
-            "Song not found"
-        });
+      if (
+        findError ||
+        !song
+      ) {
+
+        return res
+          .status(404)
+          .json({
+            error:
+              "Song not found"
+          });
+
       }
 
 
@@ -1102,6 +1665,7 @@ app.delete(
           "covers"
         );
 
+
       const audioPath =
         storagePath(
           song.audio_url,
@@ -1109,41 +1673,50 @@ app.delete(
         );
 
 
-      const { error } =
-        await supabase
-          .from("songs")
-          .delete()
-          .eq(
-            "id",
-            req.params.id
-          );
+      const {
+        error
+      } = await supabase
+        .from("songs")
+        .delete()
+        .eq(
+          "id",
+          req.params.id
+        );
 
 
       if (error) {
-        return res.status(500).json({
-          error:
-            error.message
-        });
+
+        return res
+          .status(500)
+          .json({
+            error:
+              error.message
+          });
+
       }
 
 
       if (coverPath) {
+
         await supabase
           .storage
           .from("covers")
           .remove([
             coverPath
           ]);
+
       }
 
 
       if (audioPath) {
+
         await supabase
           .storage
           .from("audio")
           .remove([
             audioPath
           ]);
+
       }
 
 
@@ -1151,16 +1724,21 @@ app.delete(
         success: true
       });
 
+
     } catch (e) {
 
       console.error(e);
 
-      res.status(500).json({
-        error:
-          e.message ||
-          "Delete failed."
-      });
+      res
+        .status(500)
+        .json({
+          error:
+            e.message ||
+            "Delete failed."
+        });
+
     }
+
   }
 );
 
@@ -1172,6 +1750,7 @@ app.delete(
 app.get(
   "/{*splat}",
   (req, res) => {
+
     res.sendFile(
       path.join(
         __dirname,
@@ -1179,6 +1758,7 @@ app.get(
         "index.html"
       )
     );
+
   }
 );
 
@@ -1191,8 +1771,10 @@ app.listen(
   PORT,
   "0.0.0.0",
   () => {
+
     console.log(
       `Heartbeat Heaven running on port ${PORT}`
     );
+
   }
 );
