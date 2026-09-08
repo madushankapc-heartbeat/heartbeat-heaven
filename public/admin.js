@@ -64,30 +64,55 @@ function updateProgress(
   message
 ) {
 
-  const box = container.querySelector(".hh-progress");
+  const box =
+    container.querySelector(
+      ".hh-progress"
+    );
 
   if (!box) return;
 
-  const bar = box.querySelector(".hh-progress-bar");
-  const percentText = box.querySelector(".hh-progress-percent");
-  const stageText = box.querySelector(".hh-progress-stage");
-  const messageText = box.querySelector(".hh-progress-message");
+  const bar =
+    box.querySelector(
+      ".hh-progress-bar"
+    );
 
-  const safePercent = Math.max(
-    0,
-    Math.min(
-      100,
-      Math.round(percent)
-    )
-  );
+  const percentText =
+    box.querySelector(
+      ".hh-progress-percent"
+    );
 
-  bar.style.width = safePercent + "%";
+  const stageText =
+    box.querySelector(
+      ".hh-progress-stage"
+    );
+
+  const messageText =
+    box.querySelector(
+      ".hh-progress-message"
+    );
+
+
+  const safePercent =
+    Math.max(
+      0,
+      Math.min(
+        100,
+        Math.round(percent)
+      )
+    );
+
+
+  bar.style.width =
+    safePercent + "%";
+
 
   percentText.textContent =
     safePercent + "%";
 
+
   stageText.textContent =
     stage || "";
+
 
   messageText.textContent =
     message || "";
@@ -100,20 +125,41 @@ function finishProgress(
   message = ""
 ) {
 
-  const box = container.querySelector(".hh-progress");
+  const box =
+    container.querySelector(
+      ".hh-progress"
+    );
 
   if (!box) return;
 
-  const bar = box.querySelector(".hh-progress-bar");
-  const percentText = box.querySelector(".hh-progress-percent");
-  const stageText = box.querySelector(".hh-progress-stage");
-  const messageText = box.querySelector(".hh-progress-message");
+  const bar =
+    box.querySelector(
+      ".hh-progress-bar"
+    );
+
+  const percentText =
+    box.querySelector(
+      ".hh-progress-percent"
+    );
+
+  const stageText =
+    box.querySelector(
+      ".hh-progress-stage"
+    );
+
+  const messageText =
+    box.querySelector(
+      ".hh-progress-message"
+    );
+
 
   if (success) {
 
-    bar.style.width = "100%";
+    bar.style.width =
+      "100%";
 
-    percentText.textContent = "100%";
+    percentText.textContent =
+      "100%";
 
     stageText.textContent =
       "Published successfully";
@@ -122,7 +168,9 @@ function finishProgress(
       message ||
       "Your song is now live.";
 
-    box.classList.add("success");
+    box.classList.add(
+      "success"
+    );
 
   } else {
 
@@ -133,8 +181,12 @@ function finishProgress(
       message ||
       "Please try again.";
 
-    box.classList.add("error");
+    box.classList.add(
+      "error"
+    );
+
   }
+
 }
 
 
@@ -152,9 +204,11 @@ function finishProgress(
     return;
   }
 
-  const style = document.createElement("style");
+  const style =
+    document.createElement("style");
 
-  style.id = "hh-progress-styles";
+  style.id =
+    "hh-progress-styles";
 
   style.textContent = `
 
@@ -243,13 +297,15 @@ function finishProgress(
 
   `;
 
-  document.head.appendChild(style);
+  document.head.appendChild(
+    style
+  );
 
 })();
 
 
 /* =========================================================
-   GET SUPABASE SIGNED UPLOAD URL
+   GET SIGNED SUPABASE UPLOAD URL
 ========================================================= */
 
 async function getUploadUrl(
@@ -257,35 +313,42 @@ async function getUploadUrl(
   bucket
 ) {
 
-  const response = await fetch(
-    "/api/studio/upload-url",
-    {
-      method: "POST",
+  const response =
+    await fetch(
+      "/api/studio/upload-url",
+      {
 
-      headers: {
-        "Content-Type":
-          "application/json",
+        method: "POST",
 
-        "Accept":
-          "application/json"
-      },
+        headers: {
 
-      credentials: "same-origin",
+          "Content-Type":
+            "application/json",
 
-      body: JSON.stringify({
+          "Accept":
+            "application/json"
 
-        bucket,
+        },
 
-        name:
-          file.name,
+        credentials:
+          "same-origin",
 
-        contentType:
-          file.type ||
-          "application/octet-stream"
+        body:
+          JSON.stringify({
 
-      })
-    }
-  );
+            bucket,
+
+            name:
+              file.name,
+
+            contentType:
+              file.type ||
+              "application/octet-stream"
+
+          })
+
+      }
+    );
 
 
   let data = {};
@@ -313,18 +376,6 @@ async function getUploadUrl(
   }
 
 
-  /*
-    NEW SERVER RESPONSE:
-
-    {
-      bucket,
-      path,
-      signed_url,
-      public_url,
-      content_type
-    }
-  */
-
   if (
     !data.signed_url ||
     !data.path
@@ -348,7 +399,7 @@ async function getUploadUrl(
 
 
 /* =========================================================
-   DIRECT SUPABASE SIGNED URL PUT UPLOAD
+   DIRECT SUPABASE SIGNED URL UPLOAD
 ========================================================= */
 
 function uploadToSupabase(
@@ -363,15 +414,6 @@ function uploadToSupabase(
       const xhr =
         new XMLHttpRequest();
 
-
-      /*
-        IMPORTANT:
-
-        This is NOT going through Render.
-
-        The browser uploads directly to
-        the temporary Supabase signed URL.
-      */
 
       xhr.open(
         "PUT",
@@ -394,9 +436,7 @@ function uploadToSupabase(
       );
 
 
-      /* =====================================================
-         REAL UPLOAD PROGRESS
-      ===================================================== */
+      /* REAL UPLOAD PROGRESS */
 
       xhr.upload.addEventListener(
         "progress",
@@ -423,98 +463,108 @@ function uploadToSupabase(
       );
 
 
-      /* =====================================================
-         SUCCESS / ERROR
-      ===================================================== */
+      /* SUCCESS */
 
-      xhr.onload = function() {
+      xhr.onload =
+        function() {
 
-        let responseData = {};
+          let responseData = {};
 
-        try {
+          try {
 
-          responseData =
+            responseData =
+              xhr.responseText
+                ? JSON.parse(
+                    xhr.responseText
+                  )
+                : {};
+
+          } catch {
+
+            responseData = {};
+
+          }
+
+
+          if (
+            xhr.status >= 200 &&
+            xhr.status < 300
+          ) {
+
+            resolve(
+              uploadInfo
+            );
+
+            return;
+
+          }
+
+
+          console.error(
+            "Supabase upload failed:",
+            xhr.status,
             xhr.responseText
-              ? JSON.parse(
-                  xhr.responseText
-                )
-              : {};
-
-        } catch {
-
-          responseData = {};
-
-        }
+          );
 
 
-        if (
-          xhr.status >= 200 &&
-          xhr.status < 300
-        ) {
+          reject(
+            new Error(
+              responseData.message ||
+              responseData.error ||
+              `Storage upload failed (${xhr.status}).`
+            )
+          );
 
-          resolve(uploadInfo);
-
-          return;
-        }
-
-
-        console.error(
-          "Supabase upload failed:",
-          xhr.status,
-          xhr.responseText
-        );
+        };
 
 
-        reject(
-          new Error(
-            responseData.message ||
-            responseData.error ||
-            `Storage upload failed (${xhr.status}).`
-          )
-        );
+      /* NETWORK ERROR */
 
-      };
+      xhr.onerror =
+        function() {
 
+          reject(
+            new Error(
+              "Network error while uploading the file to Supabase."
+            )
+          );
 
-      xhr.onerror = function() {
-
-        reject(
-          new Error(
-            "Network error while uploading the file to Supabase."
-          )
-        );
-
-      };
+        };
 
 
-      xhr.onabort = function() {
+      /* ABORT */
 
-        reject(
-          new Error(
-            "Upload was cancelled."
-          )
-        );
+      xhr.onabort =
+        function() {
 
-      };
+          reject(
+            new Error(
+              "Upload was cancelled."
+            )
+          );
 
-
-      xhr.ontimeout = function() {
-
-        reject(
-          new Error(
-            "Upload timed out. Please try again."
-          )
-        );
-
-      };
+        };
 
 
-      /*
-        Send the actual file directly
-        to Supabase Storage.
-      */
+      /* TIMEOUT */
 
-      xhr.send(file);
+      xhr.ontimeout =
+        function() {
+
+          reject(
+            new Error(
+              "Upload timed out. Please try again."
+            )
+          );
+
+        };
+
+
+      /* SEND FILE DIRECTLY TO SUPABASE */
+
+      xhr.send(
+        file
+      );
 
     }
   );
@@ -603,6 +653,50 @@ async function uploadFile(
 
 
 /* =========================================================
+   GET FORM VALUE
+========================================================= */
+
+function getFormValue(
+  form,
+  name,
+  fallback = ""
+) {
+
+  if (!form) {
+    return fallback;
+  }
+
+
+  const data =
+    new FormData(
+      form
+    );
+
+
+  const value =
+    data.get(
+      name
+    );
+
+
+  if (
+    value === null ||
+    value === undefined
+  ) {
+
+    return fallback;
+
+  }
+
+
+  return String(
+    value
+  ).trim();
+
+}
+
+
+/* =========================================================
    LOAD SONGS
 ========================================================= */
 
@@ -633,7 +727,9 @@ async function load() {
 
   } catch (error) {
 
-    console.error(error);
+    console.error(
+      error
+    );
 
     list.innerHTML =
       '<div class="empty">Unable to load songs.</div>';
@@ -659,74 +755,76 @@ function renderSongs() {
 
 
   list.innerHTML =
-    songs.map(song => `
+    songs.map(
+      song => `
 
-      <div class="admin-row">
+        <div class="admin-row">
 
-        <div class="admin-song-info">
+          <div class="admin-song-info">
 
-          <img
-            class="admin-thumb"
-            src="${esc(song.cover_url || "")}"
-            alt=""
-          >
+            <img
+              class="admin-thumb"
+              src="${esc(song.cover_url || "")}"
+              alt=""
+            >
 
-          <div>
+            <div>
 
-            <b>
-              ${esc(song.title)}
-            </b>
+              <b>
+                ${esc(song.title)}
+              </b>
 
-            <small class="meta">
+              <small class="meta">
 
-              ${esc(
-                song.artist ||
-                "Madushanka"
-              )}
+                ${esc(
+                  song.artist ||
+                  "Madushanka"
+                )}
 
-              •
+                •
 
-              ${esc(
-                song.genre ||
-                ""
-              )}
+                ${esc(
+                  song.genre ||
+                  ""
+                )}
 
-              •
+                •
 
-              ${esc(
-                song.language ||
-                ""
-              )}
+                ${esc(
+                  song.language ||
+                  ""
+                )}
 
-            </small>
+              </small>
+
+            </div>
+
+          </div>
+
+
+          <div class="admin-actions">
+
+            <button
+              class="btn ghost edit-btn"
+              onclick="editSong(${song.id})"
+            >
+              Edit
+            </button>
+
+
+            <button
+              class="delete"
+              onclick="deleteSong(${song.id})"
+            >
+              Delete
+            </button>
 
           </div>
 
         </div>
 
-
-        <div class="admin-actions">
-
-          <button
-            class="btn ghost edit-btn"
-            onclick="editSong(${song.id})"
-          >
-            Edit
-          </button>
-
-
-          <button
-            class="delete"
-            onclick="deleteSong(${song.id})"
-          >
-            Delete
-          </button>
-
-        </div>
-
-      </div>
-
-    `).join("");
+      `
+    ).join("");
 
 }
 
@@ -823,13 +921,10 @@ uploadForm.onsubmit =
 
     try {
 
-      /*
-        =====================================================
-        COVER
-
-        0% → 15%
-        =====================================================
-      */
+      /* =====================================================
+         COVER
+         0% → 15%
+      ===================================================== */
 
       const coverPath =
         await uploadFile(
@@ -842,13 +937,10 @@ uploadForm.onsubmit =
         );
 
 
-      /*
-        =====================================================
-        AUDIO
-
-        15% → 95%
-        =====================================================
-      */
+      /* =====================================================
+         AUDIO
+         15% → 95%
+      ===================================================== */
 
       const audioPath =
         await uploadFile(
@@ -861,13 +953,9 @@ uploadForm.onsubmit =
         );
 
 
-      /*
-        =====================================================
-        FINAL DATABASE PUBLICATION
-
-        Only metadata travels through Render.
-        =====================================================
-      */
+      /* =====================================================
+         FINAL DATABASE PUBLICATION
+      ===================================================== */
 
       updateProgress(
         uploadForm,
@@ -877,55 +965,64 @@ uploadForm.onsubmit =
       );
 
 
+      /*
+        IMPORTANT:
+        Use FormData ONLY for reading text fields.
+
+        The actual files are NOT sent to Render.
+      */
+
       const metadata = {
 
         title:
-          document.getElementById(
+          getFormValue(
+            uploadForm,
             "title"
-          )?.value ||
-          "",
+          ),
 
         artist:
-          document.getElementById(
-            "artist"
-          )?.value ||
+          getFormValue(
+            uploadForm,
+            "artist",
+            "Madushanka"
+          ) ||
           "Madushanka",
 
         language:
-          document.getElementById(
+          getFormValue(
+            uploadForm,
             "language"
-          )?.value ||
-          "",
+          ),
 
         genre:
-          document.getElementById(
+          getFormValue(
+            uploadForm,
             "genre"
-          )?.value ||
-          "",
+          ),
 
         mood:
-          document.getElementById(
+          getFormValue(
+            uploadForm,
             "mood"
-          )?.value ||
-          "",
+          ),
 
         description:
-          document.getElementById(
+          getFormValue(
+            uploadForm,
             "description"
-          )?.value ||
-          "",
+          ),
 
         lyrics:
-          document.getElementById(
+          getFormValue(
+            uploadForm,
             "lyrics"
-          )?.value ||
-          "",
+          ),
 
         release_date:
-          document.getElementById(
+          getFormValue(
+            uploadForm,
             "release_date"
-          )?.value ||
-          "",
+          ),
 
         cover_path:
           coverPath,
@@ -934,6 +1031,12 @@ uploadForm.onsubmit =
           audioPath
 
       };
+
+
+      console.log(
+        "Publishing metadata:",
+        metadata
+      );
 
 
       const response =
@@ -990,13 +1093,7 @@ uploadForm.onsubmit =
       }
 
 
-      updateProgress(
-        uploadForm,
-        100,
-        "Published successfully",
-        "Your song is now live."
-      );
-
+      /* SUCCESS */
 
       finishProgress(
         uploadForm,
@@ -1173,7 +1270,9 @@ function editSong(id) {
 
 
   if (oldProgress) {
+
     oldProgress.remove();
+
   }
 
 
@@ -1194,32 +1293,35 @@ function editSong(id) {
    CANCEL EDIT
 ========================================================= */
 
-cancelEdit.onclick = function() {
+cancelEdit.onclick =
+  function() {
 
-  editPanel.classList.add(
-    "hidden"
-  );
-
-
-  editForm.reset();
-
-
-  editStatus.className = "";
-
-  editStatus.textContent = "";
-
-
-  const progress =
-    editForm.querySelector(
-      ".hh-progress"
+    editPanel.classList.add(
+      "hidden"
     );
 
 
-  if (progress) {
-    progress.remove();
-  }
+    editForm.reset();
 
-};
+
+    editStatus.className = "";
+
+    editStatus.textContent = "";
+
+
+    const progress =
+      editForm.querySelector(
+        ".hh-progress"
+      );
+
+
+    if (progress) {
+
+      progress.remove();
+
+    }
+
+  };
 
 
 /* =========================================================
@@ -1282,10 +1384,9 @@ editForm.onsubmit =
       !!cover;
 
 
-    const progress =
-      createProgressUI(
-        editForm
-      );
+    createProgressUI(
+      editForm
+    );
 
 
     editForm.classList.add(
@@ -1318,13 +1419,10 @@ editForm.onsubmit =
       let coverPath = null;
 
 
-      /*
-        =====================================================
-        REPLACEMENT COVER
-
-        0% → 20%
-        =====================================================
-      */
+      /* =====================================================
+         REPLACEMENT COVER
+         0% → 20%
+      ===================================================== */
 
       if (hasCover) {
 
@@ -1341,17 +1439,9 @@ editForm.onsubmit =
       }
 
 
-      /*
-        =====================================================
-        REPLACEMENT AUDIO
-
-        If cover:
-        20% → 95%
-
-        If no cover:
-        0% → 95%
-        =====================================================
-      */
+      /* =====================================================
+         REPLACEMENT AUDIO
+      ===================================================== */
 
       let audioPath = null;
 
@@ -1382,11 +1472,9 @@ editForm.onsubmit =
       }
 
 
-      /*
-        =====================================================
-        NO FILE CHANGES
-        =====================================================
-      */
+      /* =====================================================
+         NO FILE CHANGES
+      ===================================================== */
 
       if (
         !hasAudio &&
@@ -1403,11 +1491,9 @@ editForm.onsubmit =
       }
 
 
-      /*
-        =====================================================
-        FINAL DATABASE UPDATE
-        =====================================================
-      */
+      /* =====================================================
+         FINAL DATABASE UPDATE
+      ===================================================== */
 
       updateProgress(
         editForm,
@@ -1417,55 +1503,63 @@ editForm.onsubmit =
       );
 
 
+      /*
+        Read metadata from the form.
+
+        Files are NOT included in this request.
+      */
+
       const metadata = {
 
         title:
-          document.getElementById(
-            "editTitle"
-          )?.value ||
-          "",
+          getFormValue(
+            editForm,
+            "title"
+          ),
 
         artist:
-          document.getElementById(
-            "editArtist"
-          )?.value ||
+          getFormValue(
+            editForm,
+            "artist",
+            "Madushanka"
+          ) ||
           "Madushanka",
 
         language:
-          document.getElementById(
-            "editLanguage"
-          )?.value ||
-          "",
+          getFormValue(
+            editForm,
+            "language"
+          ),
 
         genre:
-          document.getElementById(
-            "editGenre"
-          )?.value ||
-          "",
+          getFormValue(
+            editForm,
+            "genre"
+          ),
 
         mood:
-          document.getElementById(
-            "editMood"
-          )?.value ||
-          "",
+          getFormValue(
+            editForm,
+            "mood"
+          ),
 
         description:
-          document.getElementById(
-            "editDescription"
-          )?.value ||
-          "",
+          getFormValue(
+            editForm,
+            "description"
+          ),
 
         lyrics:
-          document.getElementById(
-            "editLyrics"
-          )?.value ||
-          "",
+          getFormValue(
+            editForm,
+            "lyrics"
+          ),
 
         release_date:
-          document.getElementById(
-            "editReleaseDate"
-          )?.value ||
-          ""
+          getFormValue(
+            editForm,
+            "release_date"
+          )
 
       };
 
@@ -1484,6 +1578,12 @@ editForm.onsubmit =
           audioPath;
 
       }
+
+
+      console.log(
+        "Updating metadata:",
+        metadata
+      );
 
 
       const response =
@@ -1540,6 +1640,8 @@ editForm.onsubmit =
       }
 
 
+      /* SUCCESS */
+
       finishProgress(
         editForm,
         true,
@@ -1579,7 +1681,9 @@ editForm.onsubmit =
 
 
           if (progress) {
+
             progress.remove();
+
           }
 
         },
@@ -1654,7 +1758,9 @@ async function deleteSong(id) {
       `Delete "${title}" and its files?`
     )
   ) {
+
     return;
+
   }
 
 
@@ -1664,10 +1770,12 @@ async function deleteSong(id) {
       await fetch(
         "/api/songs/" + id,
         {
+
           method: "DELETE",
 
           credentials:
             "same-origin"
+
         }
       );
 
@@ -1695,6 +1803,7 @@ async function deleteSong(id) {
       );
 
       return;
+
     }
 
 
@@ -1707,6 +1816,7 @@ async function deleteSong(id) {
       "Delete error:",
       error
     );
+
 
     alert(
       "Something went wrong while deleting."
