@@ -23,8 +23,8 @@ const supabase = createClient(
 
 /* =========================================================
    LEGACY MULTIPART UPLOAD
-   Kept only for compatibility.
-   New Studio uploads will use direct Supabase upload.
+   Kept for compatibility.
+   New Studio uploads DO NOT use this.
 ========================================================= */
 
 const upload = multer({
@@ -39,11 +39,17 @@ const upload = multer({
    STUDIO SECURITY — CUSTOM LOGIN
 ========================================================= */
 
-const ADMIN_USER = process.env.ADMIN_USER;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
+const ADMIN_USER =
+  process.env.ADMIN_USER;
 
-const SESSION_COOKIE = "hh_studio_session";
-const SESSION_TTL = 8 * 60 * 60 * 1000;
+const ADMIN_PASSWORD =
+  process.env.ADMIN_PASSWORD;
+
+const SESSION_COOKIE =
+  "hh_studio_session";
+
+const SESSION_TTL =
+  8 * 60 * 60 * 1000;
 
 const SESSION_SECRET =
   `${process.env.STUDIO_SESSION_SECRET || "heartbeat-heaven-session"}:${ADMIN_PASSWORD || ""}:heartbeat-heaven-studio`;
@@ -55,17 +61,22 @@ const SESSION_SECRET =
 
 function safeCompare(a, b) {
 
-  const aBuffer = Buffer.from(
-    String(a),
-    "utf8"
-  );
+  const aBuffer =
+    Buffer.from(
+      String(a),
+      "utf8"
+    );
 
-  const bBuffer = Buffer.from(
-    String(b),
-    "utf8"
-  );
+  const bBuffer =
+    Buffer.from(
+      String(b),
+      "utf8"
+    );
 
-  if (aBuffer.length !== bBuffer.length) {
+  if (
+    aBuffer.length !==
+    bBuffer.length
+  ) {
     return false;
   }
 
@@ -85,23 +96,33 @@ function getCookie(req, name) {
   const cookieHeader =
     req.headers.cookie || "";
 
-  for (const part of cookieHeader.split(";")) {
+  for (
+    const part of
+    cookieHeader.split(";")
+  ) {
 
-    const i = part.indexOf("=");
+    const i =
+      part.indexOf("=");
 
     if (i === -1) {
       continue;
     }
 
     const key =
-      part.slice(0, i).trim();
+      part.slice(
+        0,
+        i
+      ).trim();
 
     const value =
-      part.slice(i + 1).trim();
+      part.slice(
+        i + 1
+      ).trim();
 
     if (key === name) {
       return value;
     }
+
   }
 
   return null;
@@ -115,9 +136,16 @@ function getCookie(req, name) {
 function createStudioSession() {
 
   const payload = {
-    user: ADMIN_USER,
-    exp: Date.now() + SESSION_TTL
+
+    user:
+      ADMIN_USER,
+
+    exp:
+      Date.now() +
+      SESSION_TTL
+
   };
+
 
   const data =
     Buffer
@@ -125,7 +153,10 @@ function createStudioSession() {
         JSON.stringify(payload),
         "utf8"
       )
-      .toString("base64url");
+      .toString(
+        "base64url"
+      );
+
 
   const signature =
     crypto
@@ -134,7 +165,10 @@ function createStudioSession() {
         SESSION_SECRET
       )
       .update(data)
-      .digest("base64url");
+      .digest(
+        "base64url"
+      );
+
 
   return `${data}.${signature}`;
 }
@@ -150,17 +184,23 @@ function verifyStudioSession(token) {
     return false;
   }
 
+
   const parts =
     token.split(".");
 
-  if (parts.length !== 2) {
+
+  if (
+    parts.length !== 2
+  ) {
     return false;
   }
+
 
   const [
     data,
     signature
   ] = parts;
+
 
   const expected =
     crypto
@@ -169,7 +209,10 @@ function verifyStudioSession(token) {
         SESSION_SECRET
       )
       .update(data)
-      .digest("base64url");
+      .digest(
+        "base64url"
+      );
+
 
   const a =
     Buffer.from(
@@ -183,9 +226,14 @@ function verifyStudioSession(token) {
       "utf8"
     );
 
-  if (a.length !== b.length) {
+
+  if (
+    a.length !==
+    b.length
+  ) {
     return false;
   }
+
 
   if (
     !crypto.timingSafeEqual(
@@ -195,6 +243,7 @@ function verifyStudioSession(token) {
   ) {
     return false;
   }
+
 
   try {
 
@@ -208,12 +257,14 @@ function verifyStudioSession(token) {
           .toString("utf8")
       );
 
+
     if (
       !payload.user ||
       !payload.exp
     ) {
       return false;
     }
+
 
     if (
       !ADMIN_USER ||
@@ -225,11 +276,14 @@ function verifyStudioSession(token) {
       return false;
     }
 
+
     if (
-      Date.now() >= payload.exp
+      Date.now() >=
+      payload.exp
     ) {
       return false;
     }
+
 
     return true;
 
@@ -238,6 +292,7 @@ function verifyStudioSession(token) {
     return false;
 
   }
+
 }
 
 
@@ -298,11 +353,13 @@ function requireStudioAuth(
 
   }
 
+
   const token =
     getCookie(
       req,
       SESSION_COOKIE
     );
+
 
   if (
     !verifyStudioSession(token)
@@ -316,6 +373,7 @@ function requireStudioAuth(
       });
 
   }
+
 
   next();
 
@@ -345,11 +403,13 @@ function requireStudioPage(
 
   }
 
+
   const token =
     getCookie(
       req,
       SESSION_COOKIE
     );
+
 
   if (
     !verifyStudioSession(token)
@@ -361,10 +421,12 @@ function requireStudioPage(
 
   }
 
+
   res.set(
     "Cache-Control",
     "no-store"
   );
+
 
   next();
 
@@ -380,6 +442,7 @@ app.use(
     limit: "2mb"
   })
 );
+
 
 app.use(
   express.urlencoded({
@@ -413,10 +476,12 @@ app.get(
 
     }
 
+
     res.set(
       "Cache-Control",
       "no-store"
     );
+
 
     res.sendFile(
       path.join(
@@ -453,15 +518,18 @@ app.post(
 
     }
 
+
     const username =
       String(
         req.body?.username || ""
       );
 
+
     const password =
       String(
         req.body?.password || ""
       );
+
 
     const userOk =
       safeCompare(
@@ -469,11 +537,13 @@ app.post(
         ADMIN_USER
       );
 
+
     const passwordOk =
       safeCompare(
         password,
         ADMIN_PASSWORD
       );
+
 
     if (
       !userOk ||
@@ -490,18 +560,22 @@ app.post(
 
     }
 
+
     const token =
       createStudioSession();
+
 
     setStudioCookie(
       res,
       token
     );
 
+
     res.set(
       "Cache-Control",
       "no-store"
     );
+
 
     res.json({
       success: true
@@ -534,6 +608,7 @@ app.get(
 
     }
 
+
     const authenticated =
       verifyStudioSession(
         getCookie(
@@ -541,6 +616,7 @@ app.get(
           SESSION_COOKIE
         )
       );
+
 
     if (!authenticated) {
 
@@ -552,10 +628,12 @@ app.get(
 
     }
 
+
     res.set(
       "Cache-Control",
       "no-store"
     );
+
 
     res.json({
       authenticated: true
@@ -577,10 +655,12 @@ app.post(
       res
     );
 
+
     res.set(
       "Cache-Control",
       "no-store"
     );
+
 
     res.json({
       success: true
@@ -641,9 +721,11 @@ app.get(
       const id =
         req.query.id;
 
+
       if (!id) {
         return next();
       }
+
 
       const {
         data: song,
@@ -654,6 +736,7 @@ app.get(
         .eq("id", id)
         .single();
 
+
       if (
         error ||
         !song
@@ -661,49 +744,75 @@ app.get(
         return next();
       }
 
+
       const title =
         song.title ||
         "New Song";
+
 
       const artist =
         song.artist ||
         "Madushanka";
 
+
       const language =
         song.language ||
         "Music";
+
 
       const genre =
         song.genre ||
         "Music";
 
+
       const mood =
         song.mood ||
         "";
+
 
       const description =
         song.description ||
         `Listen to ${title} by ${artist} on HEARTBEAT HEAVEN.`;
 
+
       const pageUrl =
         `https://heartbeat-heaven.onrender.com/song.html?id=${song.id}`;
+
 
       const coverUrl =
         song.cover_url || "";
 
+
       const escapeHtml =
         (value) =>
           String(value || "")
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
+            .replace(
+              /&/g,
+              "&amp;"
+            )
+            .replace(
+              /</g,
+              "&lt;"
+            )
+            .replace(
+              />/g,
+              "&gt;"
+            )
+            .replace(
+              /"/g,
+              "&quot;"
+            )
+            .replace(
+              /'/g,
+              "&#039;"
+            );
+
 
       const seoDescription =
         `${title} by ${artist}. ` +
         `Listen to this original ${language} ${genre} song on HEARTBEAT HEAVEN. ` +
         description;
+
 
       const html =
         `<!doctype html>
@@ -792,23 +901,45 @@ ${coverUrl ? `
 <script type="application/ld+json">
 
 ${JSON.stringify({
-  "@context": "https://schema.org",
-  "@type": "MusicRecording",
-  "name": title,
-  "url": pageUrl,
-  "description": seoDescription,
-  "inLanguage": language,
-  "genre": genre,
+
+  "@context":
+    "https://schema.org",
+
+  "@type":
+    "MusicRecording",
+
+  "name":
+    title,
+
+  "url":
+    pageUrl,
+
+  "description":
+    seoDescription,
+
+  "inLanguage":
+    language,
+
+  "genre":
+    genre,
 
   "byArtist": {
-    "@type": "Person",
-    "name": artist
+    "@type":
+      "Person",
+
+    "name":
+      artist
   },
 
   "publisher": {
-    "@type": "Organization",
-    "name": "HEARTBEAT HEAVEN",
-    "url": "https://heartbeat-heaven.onrender.com/"
+    "@type":
+      "Organization",
+
+    "name":
+      "HEARTBEAT HEAVEN",
+
+    "url":
+      "https://heartbeat-heaven.onrender.com/"
   },
 
   ...(song.release_date
@@ -830,11 +961,13 @@ ${JSON.stringify({
         "audio": {
           "@type":
             "AudioObject",
+
           "contentUrl":
             song.audio_url
         }
       }
     : {})
+
 })}
 
 </script>
@@ -988,10 +1121,12 @@ ${escapeHtml(
 
 </html>`;
 
+
       res
         .status(200)
         .type("html")
         .send(html);
+
 
     } catch (error) {
 
@@ -1022,6 +1157,7 @@ app.use(
   )
 );
 
+
 app.use(
   express.static(
     path.join(
@@ -1045,6 +1181,7 @@ function safeFileName(
       .extname(name)
       .toLowerCase();
 
+
   const base =
     path
       .basename(
@@ -1064,6 +1201,7 @@ function safeFileName(
         80
       ) ||
     "file";
+
 
   return `${Date.now()}-${base}${ext}`;
 
@@ -1089,17 +1227,21 @@ function storagePath(
     return null;
   }
 
+
   const marker =
     `/storage/v1/object/public/${bucket}/`;
+
 
   const i =
     url.indexOf(
       marker
     );
 
+
   if (i < 0) {
     return null;
   }
+
 
   return decodeURIComponent(
     url.slice(
@@ -1112,20 +1254,23 @@ function storagePath(
 
 /* =========================================================
    DIRECT SUPABASE STORAGE
-   SIGNED TUS UPLOAD URL
+   SIGNED UPLOAD URL
 ========================================================= */
 
 /*
-  Browser requests this endpoint first.
+  IMPORTANT:
 
-  Render creates a short-lived signed upload token.
-  The actual file bytes then go directly from:
+  Browser requests this endpoint.
+
+  Render creates the signed upload URL.
+
+  The actual file then travels:
 
       Browser
           ↓
       Supabase Storage
 
-  They do NOT travel through Render.
+  The large file does NOT travel through Render.
 */
 
 app.post(
@@ -1141,10 +1286,12 @@ app.post(
           req.body?.bucket || ""
         ).trim();
 
+
       const originalName =
         String(
           req.body?.name || "file"
         ).trim();
+
 
       const contentType =
         String(
@@ -1153,7 +1300,7 @@ app.post(
 
 
       /* ---------------------------------------------------
-         ONLY ALLOW OUR TWO STORAGE BUCKETS
+         ONLY ALLOW OUR TWO BUCKETS
       --------------------------------------------------- */
 
       if (
@@ -1172,13 +1319,15 @@ app.post(
 
 
       /* ---------------------------------------------------
-         BASIC FILE TYPE VALIDATION
+         AUDIO VALIDATION
       --------------------------------------------------- */
 
       if (
         bucket === "audio" &&
         contentType &&
-        !contentType.startsWith("audio/")
+        !contentType.startsWith(
+          "audio/"
+        )
       ) {
 
         return res
@@ -1191,10 +1340,16 @@ app.post(
       }
 
 
+      /* ---------------------------------------------------
+         COVER VALIDATION
+      --------------------------------------------------- */
+
       if (
         bucket === "covers" &&
         contentType &&
-        !contentType.startsWith("image/")
+        !contentType.startsWith(
+          "image/"
+        )
       ) {
 
         return res
@@ -1208,7 +1363,7 @@ app.post(
 
 
       /* ---------------------------------------------------
-         SERVER GENERATES THE STORAGE PATH
+         SERVER GENERATES SAFE STORAGE PATH
       --------------------------------------------------- */
 
       const filePath =
@@ -1239,6 +1394,7 @@ app.post(
           error
         );
 
+
         return res
           .status(500)
           .json({
@@ -1249,58 +1405,35 @@ app.post(
       }
 
 
+      /* ---------------------------------------------------
+         CHECK SUPABASE RESPONSE
+      --------------------------------------------------- */
+
       if (
         !data ||
-        !data.token ||
+        !data.signedUrl ||
         !data.path
       ) {
+
+        console.error(
+          "Invalid signed upload response:",
+          data
+        );
+
 
         return res
           .status(500)
           .json({
             error:
-              "Supabase did not return a valid upload token."
+              "Supabase did not return a valid signed upload URL."
           });
 
       }
 
 
       /* ---------------------------------------------------
-         SUPABASE DIRECT STORAGE HOSTNAME
+         RETURN DIRECT SIGNED URL
       --------------------------------------------------- */
-
-      let projectHost = "";
-
-      try {
-
-        projectHost =
-          new URL(
-            SUPABASE_URL
-          ).hostname;
-
-      } catch {
-
-        return res
-          .status(500)
-          .json({
-            error:
-              "Invalid SUPABASE_URL."
-          });
-
-      }
-
-
-      const projectId =
-        projectHost
-          .replace(
-            ".supabase.co",
-            ""
-          );
-
-
-      const resumableEndpoint =
-        `https://${projectId}.storage.supabase.co/storage/v1/upload/resumable`;
-
 
       res.json({
 
@@ -1309,11 +1442,11 @@ app.post(
         path:
           data.path,
 
-        token:
-          data.token,
+        signed_url:
+          data.signedUrl,
 
-        endpoint:
-          resumableEndpoint,
+        token:
+          data.token || null,
 
         public_url:
           publicUrl(
@@ -1331,12 +1464,14 @@ app.post(
 
       });
 
+
     } catch (error) {
 
       console.error(
         "Direct upload URL error:",
         error
       );
+
 
       res
         .status(500)
@@ -1354,16 +1489,16 @@ app.post(
 
 /* =========================================================
    ADMIN — CREATE SONG
-   NEW DIRECT-UPLOAD VERSION
 ========================================================= */
 
 /*
-  IMPORTANT:
+  This endpoint receives ONLY:
 
-  This endpoint receives ONLY metadata and
-  already-uploaded Supabase storage paths.
+  - Song metadata
+  - cover_path
+  - audio_path
 
-  No large audio/image file is sent through Render.
+  No large files are sent here.
 */
 
 app.post(
@@ -1403,10 +1538,6 @@ app.post(
       }
 
 
-      /* ---------------------------------------------------
-         VALIDATE STORAGE PATHS
-      --------------------------------------------------- */
-
       function validStoragePath(
         value
       ) {
@@ -1415,11 +1546,14 @@ app.post(
           return true;
         }
 
+
         if (
-          typeof value !== "string"
+          typeof value !==
+          "string"
         ) {
           return false;
         }
+
 
         if (
           value.includes("/") ||
@@ -1428,6 +1562,7 @@ app.post(
         ) {
           return false;
         }
+
 
         return true;
 
@@ -1485,7 +1620,7 @@ app.post(
 
 
       /* ---------------------------------------------------
-         SAVE DATABASE ROW
+         SAVE SONG
       --------------------------------------------------- */
 
       const {
@@ -1529,7 +1664,7 @@ app.post(
       if (error) {
 
         /* -----------------------------------------------
-           CLEANUP DIRECTLY UPLOADED FILES
+           CLEANUP UPLOADED FILES
         ------------------------------------------------ */
 
         if (cover_path) {
@@ -1567,12 +1702,14 @@ app.post(
         .status(201)
         .json(data);
 
+
     } catch (e) {
 
       console.error(
         "Create song error:",
         e
       );
+
 
       res
         .status(500)
@@ -1590,7 +1727,6 @@ app.post(
 
 /* =========================================================
    ADMIN — EDIT SONG
-   NEW DIRECT-UPLOAD VERSION
 ========================================================= */
 
 app.put(
@@ -1666,11 +1802,14 @@ app.put(
           return true;
         }
 
+
         if (
-          typeof value !== "string"
+          typeof value !==
+          "string"
         ) {
           return false;
         }
+
 
         if (
           value.includes("/") ||
@@ -1679,6 +1818,7 @@ app.put(
         ) {
           return false;
         }
+
 
         return true;
 
@@ -1705,11 +1845,12 @@ app.put(
 
 
       /* ---------------------------------------------------
-         Keep old files if no replacement uploaded
+         KEEP OLD FILES IF NO REPLACEMENT
       --------------------------------------------------- */
 
       let finalCoverUrl =
         oldSong.cover_url || "";
+
 
       let finalAudioUrl =
         oldSong.audio_url || "";
@@ -1788,7 +1929,7 @@ app.put(
       if (error) {
 
         /* -----------------------------------------------
-           REMOVE NEW FILES IF DB UPDATE FAILS
+           CLEANUP NEW FILES
         ------------------------------------------------ */
 
         if (cover_path) {
@@ -1823,7 +1964,7 @@ app.put(
 
 
       /* ---------------------------------------------------
-         DELETE OLD COVER ONLY AFTER DB SUCCESS
+         DELETE OLD COVER
       --------------------------------------------------- */
 
       if (cover_path) {
@@ -1834,9 +1975,11 @@ app.put(
             "covers"
           );
 
+
         if (
           oldCoverPath &&
-          oldCoverPath !== cover_path
+          oldCoverPath !==
+            cover_path
         ) {
 
           await supabase
@@ -1852,7 +1995,7 @@ app.put(
 
 
       /* ---------------------------------------------------
-         DELETE OLD AUDIO ONLY AFTER DB SUCCESS
+         DELETE OLD AUDIO
       --------------------------------------------------- */
 
       if (audio_path) {
@@ -1863,9 +2006,11 @@ app.put(
             "audio"
           );
 
+
         if (
           oldAudioPath &&
-          oldAudioPath !== audio_path
+          oldAudioPath !==
+            audio_path
         ) {
 
           await supabase
@@ -1884,12 +2029,14 @@ app.put(
         data
       );
 
+
     } catch (e) {
 
       console.error(
         "Edit song error:",
         e
       );
+
 
       res
         .status(500)
@@ -2018,6 +2165,7 @@ app.delete(
         e
       );
 
+
       res
         .status(500)
         .json({
@@ -2058,6 +2206,7 @@ app.get(
           "Sitemap error:",
           error
         );
+
 
         return res
           .status(500)
@@ -2151,6 +2300,7 @@ ${urls
         "Sitemap generation failed:",
         error
       );
+
 
       res
         .status(500)
