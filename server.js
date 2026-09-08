@@ -147,7 +147,265 @@ app.get(
   }
 );
 
+/* =========================================================
+   SEO — DYNAMIC SONG PAGE
+========================================================= */
 
+app.get("/song.html", async (req, res, next) => {
+  try {
+    const id = req.query.id;
+
+    if (!id) {
+      return next();
+    }
+
+    const { data: song, error } = await supabase
+      .from("songs")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (error || !song) {
+      return next();
+    }
+
+    const title = song.title || "New Song";
+    const artist = song.artist || "Madushanka";
+    const language = song.language || "Music";
+    const genre = song.genre || "Music";
+    const mood = song.mood || "";
+    const description =
+      song.description ||
+      `Listen to ${title} by ${artist} on HEARTBEAT HEAVEN.`;
+
+    const pageUrl =
+      `https://heartbeat-heaven.onrender.com/song.html?id=${song.id}`;
+
+    const coverUrl = song.cover_url || "";
+
+    const escapeHtml = (value) =>
+      String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+
+    const seoDescription =
+      `${title} by ${artist}. ` +
+      `Listen to this original ${language} ${genre} song on HEARTBEAT HEAVEN. ` +
+      description;
+
+    const html = `<!doctype html>
+<html lang="en">
+<head>
+
+<meta charset="utf-8">
+
+<meta name="viewport"
+      content="width=device-width,initial-scale=1">
+
+<meta name="theme-color"
+      content="#090909">
+
+<meta name="robots"
+      content="index, follow">
+
+<meta name="description"
+      content="${escapeHtml(seoDescription.slice(0, 300))}">
+
+<meta name="author"
+      content="${escapeHtml(artist)}">
+
+<link rel="canonical"
+      href="${escapeHtml(pageUrl)}">
+
+<title>
+${escapeHtml(title)} | ${escapeHtml(language)} ${escapeHtml(genre)} Song — ${escapeHtml(artist)}
+</title>
+
+<meta property="og:type"
+      content="music.song">
+
+<meta property="og:title"
+      content="${escapeHtml(title)} | HEARTBEAT HEAVEN">
+
+<meta property="og:description"
+      content="${escapeHtml(seoDescription.slice(0, 300))}">
+
+<meta property="og:url"
+      content="${escapeHtml(pageUrl)}">
+
+<meta property="og:site_name"
+      content="HEARTBEAT HEAVEN">
+
+${coverUrl ? `
+<meta property="og:image"
+      content="${escapeHtml(coverUrl)}">
+` : ""}
+
+<meta name="twitter:card"
+      content="summary_large_image">
+
+<meta name="twitter:title"
+      content="${escapeHtml(title)} | HEARTBEAT HEAVEN">
+
+<meta name="twitter:description"
+      content="${escapeHtml(seoDescription.slice(0, 300))}">
+
+${coverUrl ? `
+<meta name="twitter:image"
+      content="${escapeHtml(coverUrl)}">
+` : ""}
+
+<script type="application/ld+json">
+${JSON.stringify({
+  "@context": "https://schema.org",
+  "@type": "MusicRecording",
+  "name": title,
+  "url": pageUrl,
+  "description": seoDescription,
+  "inLanguage": language,
+  "genre": genre,
+  "byArtist": {
+    "@type": "Person",
+    "name": artist
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "HEARTBEAT HEAVEN",
+    "url": "https://heartbeat-heaven.onrender.com/"
+  },
+  ...(song.release_date
+    ? { "datePublished": song.release_date }
+    : {}),
+  ...(coverUrl
+    ? { "image": coverUrl }
+    : {}),
+  ...(song.audio_url
+    ? {
+        "audio": {
+          "@type": "AudioObject",
+          "contentUrl": song.audio_url
+        }
+      }
+    : {})
+})}
+</script>
+
+<link rel="stylesheet"
+      href="/styles.css">
+
+</head>
+
+<body>
+
+<header class="topbar">
+
+<a class="brand" href="/">
+<span>♥</span>
+
+<div>
+<strong>HEARTBEAT HEAVEN</strong>
+<small>Original Music by Madushanka</small>
+</div>
+
+</a>
+
+<nav>
+<a href="/">Home</a>
+<a href="/songs.html">Songs</a>
+</nav>
+
+</header>
+
+<main
+  class="song-page"
+  id="songPage"
+  itemscope
+  itemtype="https://schema.org/MusicRecording">
+
+  <section class="song-hero">
+
+    ${coverUrl ? `
+    <img
+      class="song-cover"
+      src="${escapeHtml(coverUrl)}"
+      alt="${escapeHtml(title)} cover"
+      itemprop="image">
+    ` : ""}
+
+    <div>
+
+      <p class="eyebrow">
+        ${escapeHtml(genre)} • ${escapeHtml(language)}
+      </p>
+
+      <h1
+        class="song-title"
+        itemprop="name">
+        ${escapeHtml(title)}
+      </h1>
+
+      <p class="meta">
+        ${escapeHtml(artist)}
+        ${mood ? ` • ${escapeHtml(mood)}` : ""}
+      </p>
+
+      <p
+        class="song-desc"
+        itemprop="description">
+        ${escapeHtml(description)}
+      </p>
+
+      ${song.audio_url ? `
+      <audio
+        controls
+        preload="metadata"
+        style="width:100%;margin-top:25px"
+        src="${escapeHtml(song.audio_url)}">
+      </audio>
+      ` : ""}
+
+    </div>
+
+  </section>
+
+  <section class="lyrics-wrap">
+
+    <p class="eyebrow">LYRICS</p>
+
+    <div
+      class="lyrics"
+      itemprop="lyrics">
+      ${escapeHtml(song.lyrics) ||
+        "Lyrics will be added soon."}
+    </div>
+
+  </section>
+
+</main>
+
+<script src="/song.js"></script>
+
+</body>
+</html>`;
+
+    res
+      .status(200)
+      .type("html")
+      .send(html);
+
+  } catch (error) {
+
+    console.error(
+      "Song SEO page error:",
+      error
+    );
+
+    next();
+  }
+});
 /* =========================================================
    PUBLIC FILES
 ========================================================= */
