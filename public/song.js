@@ -38,10 +38,7 @@ async function load() {
     document.title =
       `${title} | ${language} ${genre} Song — Madushanka`;
 
-    setMeta(
-      "description",
-      seoDescription.substring(0, 300)
-    );
+    setMeta("description", seoDescription.substring(0, 300));
 
     setMeta(
       "keywords",
@@ -66,50 +63,22 @@ async function load() {
       ].filter(Boolean).join(", ")
     );
 
-    const canonical =
-      document.getElementById("canonicalLink");
+    const canonical = document.getElementById("canonicalLink");
+    if (canonical) canonical.href = canonicalUrl;
 
-    if (canonical) {
-      canonical.href = canonicalUrl;
-    }
-
-    setMetaProperty(
-      "og:title",
-      `${title} | HEARTBEAT HEAVEN`
-    );
-
-    setMetaProperty(
-      "og:description",
-      seoDescription.substring(0, 300)
-    );
-
-    setMetaProperty(
-      "og:url",
-      canonicalUrl
-    );
+    setMetaProperty("og:title", `${title} | HEARTBEAT HEAVEN`);
+    setMetaProperty("og:description", seoDescription.substring(0, 300));
+    setMetaProperty("og:url", canonicalUrl);
 
     if (s.cover_url) {
-      setMetaProperty(
-        "og:image",
-        s.cover_url
-      );
+      setMetaProperty("og:image", s.cover_url);
     }
 
-    setMetaName(
-      "twitter:title",
-      `${title} | HEARTBEAT HEAVEN`
-    );
-
-    setMetaName(
-      "twitter:description",
-      seoDescription.substring(0, 300)
-    );
+    setMetaName("twitter:title", `${title} | HEARTBEAT HEAVEN`);
+    setMetaName("twitter:description", seoDescription.substring(0, 300));
 
     if (s.cover_url) {
-      setMetaName(
-        "twitter:image",
-        s.cover_url
-      );
+      setMetaName("twitter:image", s.cover_url);
     }
 
     const schema = {
@@ -120,12 +89,10 @@ async function load() {
       "description": seoDescription,
       "inLanguage": language,
       "genre": genre,
-
       "byArtist": {
         "@type": "Person",
         "name": artist
       },
-
       "publisher": {
         "@type": "Organization",
         "name": "HEARTBEAT HEAVEN",
@@ -148,13 +115,69 @@ async function load() {
       };
     }
 
-    const schemaElement =
-      document.getElementById("songSchema");
+    const schemaElement = document.getElementById("songSchema");
 
     if (schemaElement) {
-      schemaElement.textContent =
-        JSON.stringify(schema);
+      schemaElement.textContent = JSON.stringify(schema);
     }
+
+    /*
+      LOAD ALL SONGS
+      Used for Previous / Next and Related Songs
+    */
+    let allSongs = [];
+
+    try {
+      const songsResponse = await fetch("/api/songs");
+
+      if (songsResponse.ok) {
+        allSongs = await songsResponse.json();
+      }
+    } catch (error) {
+      console.error("Unable to load song library:", error);
+    }
+
+    /*
+      Sort songs:
+      newest release date first,
+      then newest ID as fallback.
+    */
+    allSongs.sort((a, b) => {
+      const dateA = a.release_date || a.created_at || "";
+      const dateB = b.release_date || b.created_at || "";
+
+      if (dateA && dateB) {
+        return new Date(dateB) - new Date(dateA);
+      }
+
+      return Number(b.id || 0) - Number(a.id || 0);
+    });
+
+    const currentIndex = allSongs.findIndex(
+      song => String(song.id) === String(id)
+    );
+
+    let previousSong = null;
+    let nextSong = null;
+
+    if (currentIndex !== -1) {
+      previousSong = allSongs[currentIndex + 1] || null;
+      nextSong = allSongs[currentIndex - 1] || null;
+    }
+
+    /*
+      RELATED SONGS
+      Prefer same genre or same language.
+    */
+    const relatedSongs = allSongs
+      .filter(song => String(song.id) !== String(id))
+      .sort((a, b) => {
+        const scoreA = getRelatedScore(a, s);
+        const scoreB = getRelatedScore(b, s);
+
+        return scoreB - scoreA;
+      })
+      .slice(0, 3);
 
     root.innerHTML = `
       <section class="song-hero">
@@ -177,47 +200,41 @@ async function load() {
           </h1>
 
           <p class="meta">
-            ${esc(artist)} • ${esc(mood)}
+            ${esc(artist)}${mood ? " • " + esc(mood) : ""}
           </p>
 
-          <p
-            class="song-desc"
-            itemprop="description"
-          >
+          <p class="song-desc" itemprop="description">
             ${esc(description)}
           </p>
 
-          <audio
-            controls
-            preload="metadata"
-            style="width:100%;margin-top:25px"
-            src="${esc(s.audio_url || "")}"
-          ></audio>
+          ${
+            s.audio_url
+              ? `
+                <audio
+                  controls
+                  preload="metadata"
+                  style="width:100%;margin-top:25px"
+                  src="${esc(s.audio_url)}">
+                </audio>
+              `
+              : ""
+          }
 
-          <!-- SHARE BUTTONS -->
           <div class="song-share">
 
-            <button
-              class="share-btn"
-              onclick="shareSong()">
+            <button class="share-btn" onclick="shareSong()">
               ↗ Share
             </button>
 
-            <button
-              class="share-btn"
-              onclick="shareWhatsApp()">
+            <button class="share-btn" onclick="shareWhatsApp()">
               WhatsApp
             </button>
 
-            <button
-              class="share-btn"
-              onclick="shareFacebook()">
+            <button class="share-btn" onclick="shareFacebook()">
               Facebook
             </button>
 
-            <button
-              class="share-btn"
-              onclick="copySongLink()">
+            <button class="share-btn" onclick="copySongLink()">
               Copy Link
             </button>
 
@@ -227,38 +244,203 @@ async function load() {
 
       </section>
 
+      ${renderSongNavigation(previousSong, nextSong)}
+
       <section class="lyrics-wrap">
 
-        <p class="eyebrow">LYRICS</p>
+        <p class="eyebrow">
+          LYRICS
+        </p>
 
-        <div
-          class="lyrics"
-          itemprop="lyrics"
-        >
+        <div class="lyrics" itemprop="lyrics">
           ${esc(s.lyrics) || "Lyrics will be added soon."}
         </div>
 
       </section>
+
+      ${renderRelatedSongs(relatedSongs)}
+
     `;
 
   } catch (error) {
-
     console.error(error);
-
     root.innerHTML =
       "<div class='empty'>Unable to load song.</div>";
   }
 }
 
 
-/* =========================================================
-   SHARE FUNCTIONS
-========================================================= */
+/* ================================
+   PREVIOUS / NEXT NAVIGATION
+================================ */
+
+function renderSongNavigation(previousSong, nextSong) {
+
+  if (!previousSong && !nextSong) {
+    return "";
+  }
+
+  return `
+    <div class="song-navigation">
+
+      ${
+        previousSong
+          ? `
+            <a
+              class="song-nav-btn"
+              href="/song.html?id=${encodeURIComponent(previousSong.id)}"
+            >
+              <span class="song-nav-label">← PREVIOUS</span>
+              <strong>${esc(previousSong.title || "Previous Song")}</strong>
+            </a>
+          `
+          : `
+            <div class="song-nav-btn disabled">
+              <span class="song-nav-label">← PREVIOUS</span>
+              <strong>First Song</strong>
+            </div>
+          `
+      }
+
+      <a
+        class="song-nav-center"
+        href="/songs.html"
+      >
+        ALL SONGS
+      </a>
+
+      ${
+        nextSong
+          ? `
+            <a
+              class="song-nav-btn next"
+              href="/song.html?id=${encodeURIComponent(nextSong.id)}"
+            >
+              <span class="song-nav-label">NEXT →</span>
+              <strong>${esc(nextSong.title || "Next Song")}</strong>
+            </a>
+          `
+          : `
+            <div class="song-nav-btn disabled">
+              <span class="song-nav-label">NEXT →</span>
+              <strong>Latest Song</strong>
+            </div>
+          `
+      }
+
+    </div>
+  `;
+}
+
+
+/* ================================
+   RELATED SONGS
+================================ */
+
+function renderRelatedSongs(songs) {
+
+  if (!songs.length) {
+    return "";
+  }
+
+  return `
+    <section class="related-section">
+
+      <div class="related-head">
+        <div>
+          <p class="eyebrow">KEEP LISTENING</p>
+          <h2>Related Songs</h2>
+        </div>
+
+        <a href="/songs.html" class="related-all">
+          View All →
+        </a>
+      </div>
+
+      <div class="related-grid">
+
+        ${songs.map(song => `
+          <a
+            class="related-card"
+            href="/song.html?id=${encodeURIComponent(song.id)}"
+          >
+
+            <img
+              src="${esc(song.cover_url || "")}"
+              alt="${esc(song.title || "Song")} cover"
+              loading="lazy"
+            >
+
+            <div class="related-card-body">
+
+              <p class="related-genre">
+                ${esc(song.genre || "Music")}
+                ${song.language ? " • " + esc(song.language) : ""}
+              </p>
+
+              <h3>
+                ${esc(song.title || "Untitled Song")}
+              </h3>
+
+              <p class="related-artist">
+                ${esc(song.artist || "Madushanka")}
+              </p>
+
+            </div>
+
+          </a>
+        `).join("")}
+
+      </div>
+
+    </section>
+  `;
+}
+
+
+/* ================================
+   RELATED SCORE
+================================ */
+
+function getRelatedScore(song, current) {
+
+  let score = 0;
+
+  if (
+    song.genre &&
+    current.genre &&
+    song.genre.toLowerCase() === current.genre.toLowerCase()
+  ) {
+    score += 5;
+  }
+
+  if (
+    song.language &&
+    current.language &&
+    song.language.toLowerCase() === current.language.toLowerCase()
+  ) {
+    score += 4;
+  }
+
+  if (
+    song.mood &&
+    current.mood &&
+    song.mood.toLowerCase() === current.mood.toLowerCase()
+  ) {
+    score += 2;
+  }
+
+  return score;
+}
+
+
+/* ================================
+   SHARE
+================================ */
 
 function getSongShareUrl() {
   return window.location.href;
 }
-
 
 async function shareSong() {
 
@@ -279,8 +461,8 @@ async function shareSong() {
   } else {
 
     await copySongLink();
-
     alert("Song link copied!");
+
   }
 }
 
@@ -293,11 +475,7 @@ function shareWhatsApp() {
       `${document.title}\n${getSongShareUrl()}`
     );
 
-  window.open(
-    url,
-    "_blank",
-    "noopener,noreferrer"
-  );
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 
@@ -305,15 +483,9 @@ function shareFacebook() {
 
   const url =
     "https://www.facebook.com/sharer/sharer.php?u=" +
-    encodeURIComponent(
-      getSongShareUrl()
-    );
+    encodeURIComponent(getSongShareUrl());
 
-  window.open(
-    url,
-    "_blank",
-    "noopener,noreferrer"
-  );
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 
@@ -329,11 +501,9 @@ async function copySongLink() {
 
   } catch (error) {
 
-    const temp =
-      document.createElement("input");
+    const temp = document.createElement("input");
 
-    temp.value =
-      getSongShareUrl();
+    temp.value = getSongShareUrl();
 
     document.body.appendChild(temp);
 
@@ -344,13 +514,14 @@ async function copySongLink() {
     temp.remove();
 
     alert("Song link copied!");
+
   }
 }
 
 
-/* =========================================================
-   SEO HELPER FUNCTIONS
-========================================================= */
+/* ================================
+   SEO META HELPERS
+================================ */
 
 function setMeta(name, content) {
 
@@ -376,7 +547,6 @@ function setMeta(name, content) {
 
 
 function setMetaName(name, content) {
-
   setMeta(name, content);
 }
 
@@ -407,23 +577,23 @@ function setMetaProperty(property, content) {
 }
 
 
-/* =========================================================
+/* ================================
    HTML ESCAPE
-========================================================= */
+================================ */
 
 function esc(x) {
 
-  return String(x || "")
-    .replace(
-      /[&<>"']/g,
-      m => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#039;"
-      }[m])
-    );
+  return String(x || "").replace(
+    /[&<>"']/g,
+    m => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;"
+    }[m])
+  );
+
 }
 
 
