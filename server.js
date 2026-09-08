@@ -7,8 +7,10 @@ const { createClient } = require("@supabase/supabase-js");
 const app = express();
 const PORT = process.env.PORT || 10000;
 
+const SUPABASE_URL = process.env.SUPABASE_URL;
+
 const supabase = createClient(
-  process.env.SUPABASE_URL,
+  SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY,
   {
     auth: {
@@ -17,6 +19,13 @@ const supabase = createClient(
     }
   }
 );
+
+
+/* =========================================================
+   LEGACY MULTIPART UPLOAD
+   Kept only for compatibility.
+   New Studio uploads will use direct Supabase upload.
+========================================================= */
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -36,9 +45,6 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const SESSION_COOKIE = "hh_studio_session";
 const SESSION_TTL = 8 * 60 * 60 * 1000;
 
-// If STUDIO_SESSION_SECRET is not set on Render,
-// ADMIN_PASSWORD is also included so changing the
-// admin password automatically invalidates old sessions.
 const SESSION_SECRET =
   `${process.env.STUDIO_SESSION_SECRET || "heartbeat-heaven-session"}:${ADMIN_PASSWORD || ""}:heartbeat-heaven-studio`;
 
@@ -81,27 +87,21 @@ function getCookie(req, name) {
 
   for (const part of cookieHeader.split(";")) {
 
-    const i =
-      part.indexOf("=");
+    const i = part.indexOf("=");
 
     if (i === -1) {
       continue;
     }
 
     const key =
-      part
-        .slice(0, i)
-        .trim();
+      part.slice(0, i).trim();
 
     const value =
-      part
-        .slice(i + 1)
-        .trim();
+      part.slice(i + 1).trim();
 
     if (key === name) {
       return value;
     }
-
   }
 
   return null;
@@ -127,7 +127,6 @@ function createStudioSession() {
       )
       .toString("base64url");
 
-
   const signature =
     crypto
       .createHmac(
@@ -136,7 +135,6 @@ function createStudioSession() {
       )
       .update(data)
       .digest("base64url");
-
 
   return `${data}.${signature}`;
 }
@@ -152,21 +150,17 @@ function verifyStudioSession(token) {
     return false;
   }
 
-
   const parts =
     token.split(".");
-
 
   if (parts.length !== 2) {
     return false;
   }
 
-
   const [
     data,
     signature
   ] = parts;
-
 
   const expected =
     crypto
@@ -176,7 +170,6 @@ function verifyStudioSession(token) {
       )
       .update(data)
       .digest("base64url");
-
 
   const a =
     Buffer.from(
@@ -190,11 +183,9 @@ function verifyStudioSession(token) {
       "utf8"
     );
 
-
   if (a.length !== b.length) {
     return false;
   }
-
 
   if (
     !crypto.timingSafeEqual(
@@ -204,7 +195,6 @@ function verifyStudioSession(token) {
   ) {
     return false;
   }
-
 
   try {
 
@@ -218,14 +208,12 @@ function verifyStudioSession(token) {
           .toString("utf8")
       );
 
-
     if (
       !payload.user ||
       !payload.exp
     ) {
       return false;
     }
-
 
     if (
       !ADMIN_USER ||
@@ -237,13 +225,11 @@ function verifyStudioSession(token) {
       return false;
     }
 
-
     if (
       Date.now() >= payload.exp
     ) {
       return false;
     }
-
 
     return true;
 
@@ -252,7 +238,6 @@ function verifyStudioSession(token) {
     return false;
 
   }
-
 }
 
 
@@ -313,13 +298,11 @@ function requireStudioAuth(
 
   }
 
-
   const token =
     getCookie(
       req,
       SESSION_COOKIE
     );
-
 
   if (
     !verifyStudioSession(token)
@@ -333,7 +316,6 @@ function requireStudioAuth(
       });
 
   }
-
 
   next();
 
@@ -363,13 +345,11 @@ function requireStudioPage(
 
   }
 
-
   const token =
     getCookie(
       req,
       SESSION_COOKIE
     );
-
 
   if (
     !verifyStudioSession(token)
@@ -381,12 +361,10 @@ function requireStudioPage(
 
   }
 
-
   res.set(
     "Cache-Control",
     "no-store"
   );
-
 
   next();
 
@@ -402,7 +380,6 @@ app.use(
     limit: "2mb"
   })
 );
-
 
 app.use(
   express.urlencoded({
@@ -436,12 +413,10 @@ app.get(
 
     }
 
-
     res.set(
       "Cache-Control",
       "no-store"
     );
-
 
     res.sendFile(
       path.join(
@@ -478,7 +453,6 @@ app.post(
 
     }
 
-
     const username =
       String(
         req.body?.username || ""
@@ -489,20 +463,17 @@ app.post(
         req.body?.password || ""
       );
 
-
     const userOk =
       safeCompare(
         username,
         ADMIN_USER
       );
 
-
     const passwordOk =
       safeCompare(
         password,
         ADMIN_PASSWORD
       );
-
 
     if (
       !userOk ||
@@ -519,22 +490,18 @@ app.post(
 
     }
 
-
     const token =
       createStudioSession();
-
 
     setStudioCookie(
       res,
       token
     );
 
-
     res.set(
       "Cache-Control",
       "no-store"
     );
-
 
     res.json({
       success: true
@@ -567,7 +534,6 @@ app.get(
 
     }
 
-
     const authenticated =
       verifyStudioSession(
         getCookie(
@@ -575,7 +541,6 @@ app.get(
           SESSION_COOKIE
         )
       );
-
 
     if (!authenticated) {
 
@@ -587,12 +552,10 @@ app.get(
 
     }
 
-
     res.set(
       "Cache-Control",
       "no-store"
     );
-
 
     res.json({
       authenticated: true
@@ -614,12 +577,10 @@ app.post(
       res
     );
 
-
     res.set(
       "Cache-Control",
       "no-store"
     );
-
 
     res.json({
       success: true
@@ -680,11 +641,9 @@ app.get(
       const id =
         req.query.id;
 
-
       if (!id) {
         return next();
       }
-
 
       const {
         data: song,
@@ -695,14 +654,12 @@ app.get(
         .eq("id", id)
         .single();
 
-
       if (
         error ||
         !song
       ) {
         return next();
       }
-
 
       const title =
         song.title ||
@@ -728,45 +685,25 @@ app.get(
         song.description ||
         `Listen to ${title} by ${artist} on HEARTBEAT HEAVEN.`;
 
-
       const pageUrl =
         `https://heartbeat-heaven.onrender.com/song.html?id=${song.id}`;
-
 
       const coverUrl =
         song.cover_url || "";
 
-
       const escapeHtml =
         (value) =>
           String(value || "")
-            .replace(
-              /&/g,
-              "&amp;"
-            )
-            .replace(
-              /</g,
-              "&lt;"
-            )
-            .replace(
-              />/g,
-              "&gt;"
-            )
-            .replace(
-              /"/g,
-              "&quot;"
-            )
-            .replace(
-              /'/g,
-              "&#039;"
-            );
-
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
 
       const seoDescription =
         `${title} by ${artist}. ` +
         `Listen to this original ${language} ${genre} song on HEARTBEAT HEAVEN. ` +
         description;
-
 
       const html =
         `<!doctype html>
@@ -804,7 +741,6 @@ app.get(
 ${escapeHtml(title)} | ${escapeHtml(language)} ${escapeHtml(genre)} Song — ${escapeHtml(artist)}
 </title>
 
-
 <meta property="og:type"
       content="music.song">
 
@@ -826,14 +762,12 @@ ${escapeHtml(title)} | ${escapeHtml(language)} ${escapeHtml(genre)} Song — ${e
 <meta property="og:site_name"
       content="HEARTBEAT HEAVEN">
 
-
 ${coverUrl ? `
 <meta property="og:image"
       content="${escapeHtml(
         coverUrl
       )}">
 ` : ""}
-
 
 <meta name="twitter:card"
       content="summary_large_image">
@@ -848,14 +782,12 @@ ${coverUrl ? `
         seoDescription.slice(0, 300)
       )}">
 
-
 ${coverUrl ? `
 <meta name="twitter:image"
       content="${escapeHtml(
         coverUrl
       )}">
 ` : ""}
-
 
 <script type="application/ld+json">
 
@@ -898,7 +830,6 @@ ${JSON.stringify({
         "audio": {
           "@type":
             "AudioObject",
-
           "contentUrl":
             song.audio_url
         }
@@ -908,15 +839,12 @@ ${JSON.stringify({
 
 </script>
 
-
 <link rel="stylesheet"
       href="/styles.css">
 
 </head>
 
-
 <body>
-
 
 <header class="topbar">
 
@@ -939,7 +867,6 @@ Original Music by Madushanka
 
 </a>
 
-
 <nav>
 
 <a href="/">
@@ -954,16 +881,13 @@ Songs
 
 </header>
 
-
 <main
   class="song-page"
   id="songPage"
   itemscope
   itemtype="https://schema.org/MusicRecording">
 
-
 <section class="song-hero">
-
 
 ${coverUrl ? `
 <img
@@ -977,9 +901,7 @@ ${coverUrl ? `
   itemprop="image">
 ` : ""}
 
-
 <div>
-
 
 <p class="eyebrow">
 
@@ -991,7 +913,6 @@ ${escapeHtml(
 
 </p>
 
-
 <h1
   class="song-title"
   itemprop="name">
@@ -1001,7 +922,6 @@ ${escapeHtml(
 )}
 
 </h1>
-
 
 <p class="meta">
 
@@ -1015,7 +935,6 @@ ${mood
 
 </p>
 
-
 <p
   class="song-desc"
   itemprop="description">
@@ -1025,7 +944,6 @@ ${escapeHtml(
 )}
 
 </p>
-
 
 ${song.audio_url ? `
 <audio
@@ -1038,19 +956,15 @@ ${song.audio_url ? `
 </audio>
 ` : ""}
 
-
 </div>
 
 </section>
 
-
 <section class="lyrics-wrap">
-
 
 <p class="eyebrow">
 LYRICS
 </p>
-
 
 <div
   class="lyrics"
@@ -1063,27 +977,21 @@ ${escapeHtml(
 
 </div>
 
-
 </section>
-
 
 </main>
 
-
 <script src="/song.js">
 </script>
-
 
 </body>
 
 </html>`;
 
-
       res
         .status(200)
         .type("html")
         .send(html);
-
 
     } catch (error) {
 
@@ -1114,7 +1022,6 @@ app.use(
   )
 );
 
-
 app.use(
   express.static(
     path.join(
@@ -1138,7 +1045,6 @@ function safeFileName(
       .extname(name)
       .toLowerCase();
 
-
   const base =
     path
       .basename(
@@ -1159,7 +1065,6 @@ function safeFileName(
       ) ||
     "file";
 
-
   return `${Date.now()}-${base}${ext}`;
 
 }
@@ -1170,7 +1075,7 @@ function publicUrl(
   file
 ) {
 
-  return `${process.env.SUPABASE_URL}/storage/v1/object/public/${bucket}/${encodeURIComponent(file).replace(/%2F/g, "/")}`;
+  return `${SUPABASE_URL}/storage/v1/object/public/${bucket}/${encodeURIComponent(file).replace(/%2F/g, "/")}`;
 
 }
 
@@ -1184,21 +1089,17 @@ function storagePath(
     return null;
   }
 
-
   const marker =
     `/storage/v1/object/public/${bucket}/`;
-
 
   const i =
     url.indexOf(
       marker
     );
 
-
   if (i < 0) {
     return null;
   }
-
 
   return decodeURIComponent(
     url.slice(
@@ -1207,6 +1108,928 @@ function storagePath(
   );
 
 }
+
+
+/* =========================================================
+   DIRECT SUPABASE STORAGE
+   SIGNED TUS UPLOAD URL
+========================================================= */
+
+/*
+  Browser requests this endpoint first.
+
+  Render creates a short-lived signed upload token.
+  The actual file bytes then go directly from:
+
+      Browser
+          ↓
+      Supabase Storage
+
+  They do NOT travel through Render.
+*/
+
+app.post(
+  "/api/studio/upload-url",
+  requireStudioAuth,
+
+  async (req, res) => {
+
+    try {
+
+      const bucket =
+        String(
+          req.body?.bucket || ""
+        ).trim();
+
+      const originalName =
+        String(
+          req.body?.name || "file"
+        ).trim();
+
+      const contentType =
+        String(
+          req.body?.contentType || ""
+        ).trim();
+
+
+      /* ---------------------------------------------------
+         ONLY ALLOW OUR TWO STORAGE BUCKETS
+      --------------------------------------------------- */
+
+      if (
+        bucket !== "audio" &&
+        bucket !== "covers"
+      ) {
+
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid storage bucket."
+          });
+
+      }
+
+
+      /* ---------------------------------------------------
+         BASIC FILE TYPE VALIDATION
+      --------------------------------------------------- */
+
+      if (
+        bucket === "audio" &&
+        contentType &&
+        !contentType.startsWith("audio/")
+      ) {
+
+        return res
+          .status(400)
+          .json({
+            error:
+              "The selected file is not an audio file."
+          });
+
+      }
+
+
+      if (
+        bucket === "covers" &&
+        contentType &&
+        !contentType.startsWith("image/")
+      ) {
+
+        return res
+          .status(400)
+          .json({
+            error:
+              "The selected file is not an image file."
+          });
+
+      }
+
+
+      /* ---------------------------------------------------
+         SERVER GENERATES THE STORAGE PATH
+      --------------------------------------------------- */
+
+      const filePath =
+        safeFileName(
+          originalName
+        );
+
+
+      /* ---------------------------------------------------
+         CREATE SIGNED UPLOAD URL
+      --------------------------------------------------- */
+
+      const {
+        data,
+        error
+      } = await supabase
+        .storage
+        .from(bucket)
+        .createSignedUploadUrl(
+          filePath
+        );
+
+
+      if (error) {
+
+        console.error(
+          "Signed upload URL error:",
+          error
+        );
+
+        return res
+          .status(500)
+          .json({
+            error:
+              `Could not create upload URL: ${error.message}`
+          });
+
+      }
+
+
+      if (
+        !data ||
+        !data.token ||
+        !data.path
+      ) {
+
+        return res
+          .status(500)
+          .json({
+            error:
+              "Supabase did not return a valid upload token."
+          });
+
+      }
+
+
+      /* ---------------------------------------------------
+         SUPABASE DIRECT STORAGE HOSTNAME
+      --------------------------------------------------- */
+
+      let projectHost = "";
+
+      try {
+
+        projectHost =
+          new URL(
+            SUPABASE_URL
+          ).hostname;
+
+      } catch {
+
+        return res
+          .status(500)
+          .json({
+            error:
+              "Invalid SUPABASE_URL."
+          });
+
+      }
+
+
+      const projectId =
+        projectHost
+          .replace(
+            ".supabase.co",
+            ""
+          );
+
+
+      const resumableEndpoint =
+        `https://${projectId}.storage.supabase.co/storage/v1/upload/resumable`;
+
+
+      res.json({
+
+        bucket,
+
+        path:
+          data.path,
+
+        token:
+          data.token,
+
+        endpoint:
+          resumableEndpoint,
+
+        public_url:
+          publicUrl(
+            bucket,
+            data.path
+          ),
+
+        content_type:
+          contentType ||
+          (
+            bucket === "audio"
+              ? "audio/mpeg"
+              : "image/jpeg"
+          )
+
+      });
+
+    } catch (error) {
+
+      console.error(
+        "Direct upload URL error:",
+        error
+      );
+
+      res
+        .status(500)
+        .json({
+          error:
+            error.message ||
+            "Could not prepare upload."
+        });
+
+    }
+
+  }
+);
+
+
+/* =========================================================
+   ADMIN — CREATE SONG
+   NEW DIRECT-UPLOAD VERSION
+========================================================= */
+
+/*
+  IMPORTANT:
+
+  This endpoint receives ONLY metadata and
+  already-uploaded Supabase storage paths.
+
+  No large audio/image file is sent through Render.
+*/
+
+app.post(
+  "/api/songs",
+  requireStudioAuth,
+
+  async (req, res) => {
+
+    try {
+
+      const {
+        title,
+        artist,
+        genre,
+        language,
+        mood,
+        description,
+        lyrics,
+        release_date,
+        cover_path,
+        audio_path
+      } = req.body || {};
+
+
+      if (
+        !title ||
+        !artist
+      ) {
+
+        return res
+          .status(400)
+          .json({
+            error:
+              "Title and artist are required."
+          });
+
+      }
+
+
+      /* ---------------------------------------------------
+         VALIDATE STORAGE PATHS
+      --------------------------------------------------- */
+
+      function validStoragePath(
+        value
+      ) {
+
+        if (!value) {
+          return true;
+        }
+
+        if (
+          typeof value !== "string"
+        ) {
+          return false;
+        }
+
+        if (
+          value.includes("/") ||
+          value.includes("\\") ||
+          value.includes("..")
+        ) {
+          return false;
+        }
+
+        return true;
+
+      }
+
+
+      if (
+        !validStoragePath(
+          cover_path
+        )
+      ) {
+
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid cover storage path."
+          });
+
+      }
+
+
+      if (
+        !validStoragePath(
+          audio_path
+        )
+      ) {
+
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid audio storage path."
+          });
+
+      }
+
+
+      const cover_url =
+        cover_path
+          ? publicUrl(
+              "covers",
+              cover_path
+            )
+          : "";
+
+
+      const audio_url =
+        audio_path
+          ? publicUrl(
+              "audio",
+              audio_path
+            )
+          : "";
+
+
+      /* ---------------------------------------------------
+         SAVE DATABASE ROW
+      --------------------------------------------------- */
+
+      const {
+        data,
+        error
+      } = await supabase
+        .from("songs")
+        .insert({
+
+          title,
+
+          artist,
+
+          genre:
+            genre || "",
+
+          language:
+            language || "",
+
+          mood:
+            mood || "",
+
+          description:
+            description || "",
+
+          lyrics:
+            lyrics || "",
+
+          cover_url,
+
+          audio_url,
+
+          release_date:
+            release_date || null
+
+        })
+        .select()
+        .single();
+
+
+      if (error) {
+
+        /* -----------------------------------------------
+           CLEANUP DIRECTLY UPLOADED FILES
+        ------------------------------------------------ */
+
+        if (cover_path) {
+
+          await supabase
+            .storage
+            .from("covers")
+            .remove([
+              cover_path
+            ]);
+
+        }
+
+
+        if (audio_path) {
+
+          await supabase
+            .storage
+            .from("audio")
+            .remove([
+              audio_path
+            ]);
+
+        }
+
+
+        throw new Error(
+          `Database save failed: ${error.message}`
+        );
+
+      }
+
+
+      res
+        .status(201)
+        .json(data);
+
+    } catch (e) {
+
+      console.error(
+        "Create song error:",
+        e
+      );
+
+      res
+        .status(500)
+        .json({
+          error:
+            e.message ||
+            "Song creation failed."
+        });
+
+    }
+
+  }
+);
+
+
+/* =========================================================
+   ADMIN — EDIT SONG
+   NEW DIRECT-UPLOAD VERSION
+========================================================= */
+
+app.put(
+  "/api/songs/:id",
+  requireStudioAuth,
+
+  async (req, res) => {
+
+    try {
+
+      const {
+        data: oldSong,
+        error: findError
+      } = await supabase
+        .from("songs")
+        .select("*")
+        .eq(
+          "id",
+          req.params.id
+        )
+        .single();
+
+
+      if (
+        findError ||
+        !oldSong
+      ) {
+
+        return res
+          .status(404)
+          .json({
+            error:
+              "Song not found."
+          });
+
+      }
+
+
+      const {
+        title,
+        artist,
+        genre,
+        language,
+        mood,
+        description,
+        lyrics,
+        release_date,
+        cover_path,
+        audio_path
+      } = req.body || {};
+
+
+      if (
+        !title ||
+        !artist
+      ) {
+
+        return res
+          .status(400)
+          .json({
+            error:
+              "Title and artist are required."
+          });
+
+      }
+
+
+      function validStoragePath(
+        value
+      ) {
+
+        if (!value) {
+          return true;
+        }
+
+        if (
+          typeof value !== "string"
+        ) {
+          return false;
+        }
+
+        if (
+          value.includes("/") ||
+          value.includes("\\") ||
+          value.includes("..")
+        ) {
+          return false;
+        }
+
+        return true;
+
+      }
+
+
+      if (
+        !validStoragePath(
+          cover_path
+        ) ||
+        !validStoragePath(
+          audio_path
+        )
+      ) {
+
+        return res
+          .status(400)
+          .json({
+            error:
+              "Invalid storage path."
+          });
+
+      }
+
+
+      /* ---------------------------------------------------
+         Keep old files if no replacement uploaded
+      --------------------------------------------------- */
+
+      let finalCoverUrl =
+        oldSong.cover_url || "";
+
+      let finalAudioUrl =
+        oldSong.audio_url || "";
+
+
+      if (cover_path) {
+
+        finalCoverUrl =
+          publicUrl(
+            "covers",
+            cover_path
+          );
+
+      }
+
+
+      if (audio_path) {
+
+        finalAudioUrl =
+          publicUrl(
+            "audio",
+            audio_path
+          );
+
+      }
+
+
+      /* ---------------------------------------------------
+         UPDATE DATABASE
+      --------------------------------------------------- */
+
+      const {
+        data,
+        error
+      } = await supabase
+        .from("songs")
+        .update({
+
+          title,
+
+          artist,
+
+          genre:
+            genre || "",
+
+          language:
+            language || "",
+
+          mood:
+            mood || "",
+
+          description:
+            description || "",
+
+          lyrics:
+            lyrics || "",
+
+          cover_url:
+            finalCoverUrl,
+
+          audio_url:
+            finalAudioUrl,
+
+          release_date:
+            release_date || null
+
+        })
+        .eq(
+          "id",
+          req.params.id
+        )
+        .select()
+        .single();
+
+
+      if (error) {
+
+        /* -----------------------------------------------
+           REMOVE NEW FILES IF DB UPDATE FAILS
+        ------------------------------------------------ */
+
+        if (cover_path) {
+
+          await supabase
+            .storage
+            .from("covers")
+            .remove([
+              cover_path
+            ]);
+
+        }
+
+
+        if (audio_path) {
+
+          await supabase
+            .storage
+            .from("audio")
+            .remove([
+              audio_path
+            ]);
+
+        }
+
+
+        throw new Error(
+          `Database update failed: ${error.message}`
+        );
+
+      }
+
+
+      /* ---------------------------------------------------
+         DELETE OLD COVER ONLY AFTER DB SUCCESS
+      --------------------------------------------------- */
+
+      if (cover_path) {
+
+        const oldCoverPath =
+          storagePath(
+            oldSong.cover_url,
+            "covers"
+          );
+
+        if (
+          oldCoverPath &&
+          oldCoverPath !== cover_path
+        ) {
+
+          await supabase
+            .storage
+            .from("covers")
+            .remove([
+              oldCoverPath
+            ]);
+
+        }
+
+      }
+
+
+      /* ---------------------------------------------------
+         DELETE OLD AUDIO ONLY AFTER DB SUCCESS
+      --------------------------------------------------- */
+
+      if (audio_path) {
+
+        const oldAudioPath =
+          storagePath(
+            oldSong.audio_url,
+            "audio"
+          );
+
+        if (
+          oldAudioPath &&
+          oldAudioPath !== audio_path
+        ) {
+
+          await supabase
+            .storage
+            .from("audio")
+            .remove([
+              oldAudioPath
+            ]);
+
+        }
+
+      }
+
+
+      res.json(
+        data
+      );
+
+    } catch (e) {
+
+      console.error(
+        "Edit song error:",
+        e
+      );
+
+      res
+        .status(500)
+        .json({
+          error:
+            e.message ||
+            "Update failed."
+        });
+
+    }
+
+  }
+);
+
+
+/* =========================================================
+   ADMIN — DELETE SONG
+========================================================= */
+
+app.delete(
+  "/api/songs/:id",
+  requireStudioAuth,
+
+  async (req, res) => {
+
+    try {
+
+      const {
+        data: song,
+        error: findError
+      } = await supabase
+        .from("songs")
+        .select("*")
+        .eq(
+          "id",
+          req.params.id
+        )
+        .single();
+
+
+      if (
+        findError ||
+        !song
+      ) {
+
+        return res
+          .status(404)
+          .json({
+            error:
+              "Song not found"
+          });
+
+      }
+
+
+      const coverPath =
+        storagePath(
+          song.cover_url,
+          "covers"
+        );
+
+
+      const audioPath =
+        storagePath(
+          song.audio_url,
+          "audio"
+        );
+
+
+      const {
+        error
+      } = await supabase
+        .from("songs")
+        .delete()
+        .eq(
+          "id",
+          req.params.id
+        );
+
+
+      if (error) {
+
+        return res
+          .status(500)
+          .json({
+            error:
+              error.message
+          });
+
+      }
+
+
+      if (coverPath) {
+
+        await supabase
+          .storage
+          .from("covers")
+          .remove([
+            coverPath
+          ]);
+
+      }
+
+
+      if (audioPath) {
+
+        await supabase
+          .storage
+          .from("audio")
+          .remove([
+            audioPath
+          ]);
+
+      }
+
+
+      res.json({
+        success: true
+      });
+
+
+    } catch (e) {
+
+      console.error(
+        "Delete song error:",
+        e
+      );
+
+      res
+        .status(500)
+        .json({
+          error:
+            e.message ||
+            "Delete failed."
+        });
+
+    }
+
+  }
+);
 
 
 /* =========================================================
@@ -1460,722 +2283,6 @@ app.get(
     res.json(
       data
     );
-
-  }
-);
-
-
-/* =========================================================
-   ADMIN — UPLOAD SONG
-========================================================= */
-
-app.post(
-  "/api/songs",
-  requireStudioAuth,
-
-  upload.fields([
-
-    {
-      name: "cover",
-      maxCount: 1
-    },
-
-    {
-      name: "audio",
-      maxCount: 1
-    }
-
-  ]),
-
-  async (req, res) => {
-
-    try {
-
-      const {
-        title,
-        artist,
-        genre,
-        language,
-        mood,
-        description,
-        lyrics,
-        release_date
-      } = req.body;
-
-
-      if (!title || !artist) {
-
-        return res
-          .status(400)
-          .json({
-            error:
-              "Title and artist are required."
-          });
-
-      }
-
-
-      const cover =
-        req.files?.cover?.[0];
-
-
-      const audio =
-        req.files?.audio?.[0];
-
-
-      let cover_url =
-        req.body.cover_url ||
-        "";
-
-
-      let audio_url =
-        req.body.audio_url ||
-        "";
-
-
-      let coverPath =
-        null;
-
-
-      let audioPath =
-        null;
-
-
-      if (cover) {
-
-        coverPath =
-          safeFileName(
-            cover.originalname
-          );
-
-
-        const {
-          error
-        } = await supabase.storage
-          .from("covers")
-          .upload(
-            coverPath,
-            cover.buffer,
-            {
-              contentType:
-                cover.mimetype,
-
-              upsert:
-                false
-            }
-          );
-
-
-        if (error) {
-
-          throw new Error(
-            `Cover upload failed: ${error.message}`
-          );
-
-        }
-
-
-        cover_url =
-          publicUrl(
-            "covers",
-            coverPath
-          );
-
-      }
-
-
-      if (audio) {
-
-        audioPath =
-          safeFileName(
-            audio.originalname
-          );
-
-
-        const {
-          error
-        } = await supabase.storage
-          .from("audio")
-          .upload(
-            audioPath,
-            audio.buffer,
-            {
-              contentType:
-                audio.mimetype ||
-                "audio/mpeg",
-
-              upsert:
-                false
-            }
-          );
-
-
-        if (error) {
-
-          throw new Error(
-            `Audio upload failed: ${error.message}`
-          );
-
-        }
-
-
-        audio_url =
-          publicUrl(
-            "audio",
-            audioPath
-          );
-
-      }
-
-
-      const {
-        data,
-        error
-      } = await supabase
-        .from("songs")
-        .insert({
-
-          title,
-
-          artist,
-
-          genre:
-            genre || "",
-
-          language:
-            language || "",
-
-          mood:
-            mood || "",
-
-          description:
-            description || "",
-
-          lyrics:
-            lyrics || "",
-
-          cover_url,
-
-          audio_url,
-
-          release_date:
-            release_date || null
-
-        })
-        .select()
-        .single();
-
-
-      if (error) {
-
-        if (coverPath) {
-
-          await supabase
-            .storage
-            .from("covers")
-            .remove([
-              coverPath
-            ]);
-
-        }
-
-
-        if (audioPath) {
-
-          await supabase
-            .storage
-            .from("audio")
-            .remove([
-              audioPath
-            ]);
-
-        }
-
-
-        throw new Error(
-          `Database save failed: ${error.message}`
-        );
-
-      }
-
-
-      res
-        .status(201)
-        .json(data);
-
-
-    } catch (e) {
-
-      console.error(e);
-
-      res
-        .status(500)
-        .json({
-          error:
-            e.message ||
-            "Upload failed."
-        });
-
-    }
-
-  }
-);
-
-
-/* =========================================================
-   ADMIN — EDIT SONG
-========================================================= */
-
-app.put(
-  "/api/songs/:id",
-  requireStudioAuth,
-
-  upload.fields([
-
-    {
-      name: "cover",
-      maxCount: 1
-    },
-
-    {
-      name: "audio",
-      maxCount: 1
-    }
-
-  ]),
-
-  async (req, res) => {
-
-    try {
-
-      const {
-        data: oldSong,
-        error: findError
-      } = await supabase
-        .from("songs")
-        .select("*")
-        .eq(
-          "id",
-          req.params.id
-        )
-        .single();
-
-
-      if (
-        findError ||
-        !oldSong
-      ) {
-
-        return res
-          .status(404)
-          .json({
-            error:
-              "Song not found"
-          });
-
-      }
-
-
-      const {
-        title,
-        artist,
-        genre,
-        language,
-        mood,
-        description,
-        lyrics,
-        release_date
-      } = req.body;
-
-
-      if (!title || !artist) {
-
-        return res
-          .status(400)
-          .json({
-            error:
-              "Title and artist are required."
-          });
-
-      }
-
-
-      const newCover =
-        req.files?.cover?.[0];
-
-
-      const newAudio =
-        req.files?.audio?.[0];
-
-
-      let cover_url =
-        oldSong.cover_url ||
-        "";
-
-
-      let audio_url =
-        oldSong.audio_url ||
-        "";
-
-
-      let newCoverPath =
-        null;
-
-
-      let newAudioPath =
-        null;
-
-
-      if (newCover) {
-
-        newCoverPath =
-          safeFileName(
-            newCover.originalname
-          );
-
-
-        const {
-          error
-        } = await supabase.storage
-          .from("covers")
-          .upload(
-            newCoverPath,
-            newCover.buffer,
-            {
-              contentType:
-                newCover.mimetype,
-
-              upsert:
-                false
-            }
-          );
-
-
-        if (error) {
-
-          throw new Error(
-            `Cover upload failed: ${error.message}`
-          );
-
-        }
-
-
-        cover_url =
-          publicUrl(
-            "covers",
-            newCoverPath
-          );
-
-      }
-
-
-      if (newAudio) {
-
-        newAudioPath =
-          safeFileName(
-            newAudio.originalname
-          );
-
-
-        const {
-          error
-        } = await supabase.storage
-          .from("audio")
-          .upload(
-            newAudioPath,
-            newAudio.buffer,
-            {
-              contentType:
-                newAudio.mimetype ||
-                "audio/mpeg",
-
-              upsert:
-                false
-            }
-          );
-
-
-        if (error) {
-
-          throw new Error(
-            `Audio upload failed: ${error.message}`
-          );
-
-        }
-
-
-        audio_url =
-          publicUrl(
-            "audio",
-            newAudioPath
-          );
-
-      }
-
-
-      const {
-        data,
-        error
-      } = await supabase
-        .from("songs")
-        .update({
-
-          title,
-
-          artist,
-
-          genre:
-            genre || "",
-
-          language:
-            language || "",
-
-          mood:
-            mood || "",
-
-          description:
-            description || "",
-
-          lyrics:
-            lyrics || "",
-
-          cover_url,
-
-          audio_url,
-
-          release_date:
-            release_date || null
-
-        })
-        .eq(
-          "id",
-          req.params.id
-        )
-        .select()
-        .single();
-
-
-      if (error) {
-
-        if (newCoverPath) {
-
-          await supabase
-            .storage
-            .from("covers")
-            .remove([
-              newCoverPath
-            ]);
-
-        }
-
-
-        if (newAudioPath) {
-
-          await supabase
-            .storage
-            .from("audio")
-            .remove([
-              newAudioPath
-            ]);
-
-        }
-
-
-        throw new Error(
-          `Database update failed: ${error.message}`
-        );
-
-      }
-
-
-      if (newCoverPath) {
-
-        const oldCoverPath =
-          storagePath(
-            oldSong.cover_url,
-            "covers"
-          );
-
-
-        if (oldCoverPath) {
-
-          await supabase
-            .storage
-            .from("covers")
-            .remove([
-              oldCoverPath
-            ]);
-
-        }
-
-      }
-
-
-      if (newAudioPath) {
-
-        const oldAudioPath =
-          storagePath(
-            oldSong.audio_url,
-            "audio"
-          );
-
-
-        if (oldAudioPath) {
-
-          await supabase
-            .storage
-            .from("audio")
-            .remove([
-              oldAudioPath
-            ]);
-
-        }
-
-      }
-
-
-      res.json(
-        data
-      );
-
-
-    } catch (e) {
-
-      console.error(e);
-
-      res
-        .status(500)
-        .json({
-          error:
-            e.message ||
-            "Update failed."
-        });
-
-    }
-
-  }
-);
-
-
-/* =========================================================
-   ADMIN — DELETE SONG
-========================================================= */
-
-app.delete(
-  "/api/songs/:id",
-  requireStudioAuth,
-
-  async (req, res) => {
-
-    try {
-
-      const {
-        data: song,
-        error: findError
-      } = await supabase
-        .from("songs")
-        .select("*")
-        .eq(
-          "id",
-          req.params.id
-        )
-        .single();
-
-
-      if (
-        findError ||
-        !song
-      ) {
-
-        return res
-          .status(404)
-          .json({
-            error:
-              "Song not found"
-          });
-
-      }
-
-
-      const coverPath =
-        storagePath(
-          song.cover_url,
-          "covers"
-        );
-
-
-      const audioPath =
-        storagePath(
-          song.audio_url,
-          "audio"
-        );
-
-
-      const {
-        error
-      } = await supabase
-        .from("songs")
-        .delete()
-        .eq(
-          "id",
-          req.params.id
-        );
-
-
-      if (error) {
-
-        return res
-          .status(500)
-          .json({
-            error:
-              error.message
-          });
-
-      }
-
-
-      if (coverPath) {
-
-        await supabase
-          .storage
-          .from("covers")
-          .remove([
-            coverPath
-          ]);
-
-      }
-
-
-      if (audioPath) {
-
-        await supabase
-          .storage
-          .from("audio")
-          .remove([
-            audioPath
-          ]);
-
-      }
-
-
-      res.json({
-        success: true
-      });
-
-
-    } catch (e) {
-
-      console.error(e);
-
-      res
-        .status(500)
-        .json({
-          error:
-            e.message ||
-            "Delete failed."
-        });
-
-    }
 
   }
 );
