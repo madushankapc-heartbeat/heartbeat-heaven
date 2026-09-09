@@ -14,6 +14,126 @@ Module._extensions[".js"] = function (module, filename) {
     const injection = `
 
 /* =========================================================
+   ADMIN LOGIN RATE LIMITING
+   ========================================================= */
+
+app.set("trust proxy", 1);
+
+const loginAttempts = new Map();
+const LOGIN_WINDOW_MS = 60 * 60 * 1000;
+const LOGIN_SHORT_WINDOW_MS = 10 * 60 * 1000;
+const LOGIN_SHORT_LIMIT = 5;
+const LOGIN_LONG_LIMIT = 15;
+const LOGIN_SHORT_BLOCK_MS = 10 * 60 * 1000;
+const LOGIN_LONG_BLOCK_MS = 60 * 60 * 1000;
+
+function getLoginClientKey(req) {
+  return String(req.ip || "unknown");
+}
+
+function getLoginAttemptState(key, now) {
+  const existing = loginAttempts.get(key) || {
+    failures: [],
+    blockedUntil: 0
+  };
+
+  existing.failures = existing.failures.filter(
+    (timestamp) => now - timestamp < LOGIN_WINDOW_MS
+  );
+
+  if (
+    existing.blockedUntil &&
+    now >= existing.blockedUntil
+  ) {
+    existing.blockedUntil = 0;
+  }
+
+  if (
+    existing.failures.length === 0 &&
+    !existing.blockedUntil
+  ) {
+    loginAttempts.delete(key);
+    return null;
+  }
+
+  loginAttempts.set(key, existing);
+  return existing;
+}
+
+function loginRateLimit(req, res, next) {
+  const key = getLoginClientKey(req);
+  const now = Date.now();
+  const state = getLoginAttemptState(key, now);
+
+  if (state?.blockedUntil && now < state.blockedUntil) {
+    const retryAfter = Math.max(
+      1,
+      Math.ceil((state.blockedUntil - now) / 1000)
+    );
+
+    res.set("Retry-After", String(retryAfter));
+
+    return res.status(429).json({
+      success: false,
+      error: "Too many login attempts. Please try again later."
+    });
+  }
+
+  let recorded = false;
+
+  res.on("finish", () => {
+    if (recorded) return;
+    recorded = true;
+
+    const finishedAt = Date.now();
+
+    if (res.statusCode === 401) {
+      const current = getLoginAttemptState(key, finishedAt) || {
+        failures: [],
+        blockedUntil: 0
+      };
+
+      current.failures.push(finishedAt);
+
+      const recentFailures = current.failures.filter(
+        (timestamp) =>
+          finishedAt - timestamp < LOGIN_SHORT_WINDOW_MS
+      );
+
+      if (recentFailures.length >= LOGIN_SHORT_LIMIT) {
+        current.blockedUntil = Math.max(
+          current.blockedUntil || 0,
+          finishedAt + LOGIN_SHORT_BLOCK_MS
+        );
+      }
+
+      if (current.failures.length >= LOGIN_LONG_LIMIT) {
+        current.blockedUntil = Math.max(
+          current.blockedUntil || 0,
+          finishedAt + LOGIN_LONG_BLOCK_MS
+        );
+      }
+
+      loginAttempts.set(key, current);
+    } else if (res.statusCode === 200) {
+      loginAttempts.delete(key);
+    }
+  });
+
+  next();
+}
+
+const originalAppPost = app.post.bind(app);
+
+app.post = function (route, ...handlers) {
+  if (route === "/api/studio/login") {
+    handlers.unshift(loginRateLimit);
+  }
+
+  return originalAppPost(route, ...handlers);
+};
+
+/* =========================================================
    PUBLIC VISITOR COUNTER
    ========================================================= */
 
