@@ -28,18 +28,7 @@ async function getVisitorTotal() {
   return Number(data?.total_visitors ?? 0);
 }
 
-app.get("/api/visitor-count", async (req, res) => {
-  try {
-    const totalVisitors = await getVisitorTotal();
-    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-    res.json({ total_visitors: totalVisitors });
-  } catch (error) {
-    console.error("Visitor counter GET error:", error);
-    res.status(503).json({ error: "visitor_counter_unavailable" });
-  }
-});
-
-app.post("/api/visitor-count", async (req, res) => {
+async function handleVisitorCount(req, res) {
   try {
     const userAgent = String(req.headers["user-agent"] || "").toLowerCase();
     const likelyBot = /bot|crawler|spider|slurp|bingpreview|facebookexternalhit|linkedinbot|whatsapp|telegrambot|headless/i.test(userAgent);
@@ -68,12 +57,15 @@ app.post("/api/visitor-count", async (req, res) => {
 
     const totalVisitors = await getVisitorTotal();
     res.set("Cache-Control", "no-store, no-cache, must-revalidate");
-    res.json({ total_visitors: totalVisitors });
+    return res.json({ total_visitors: totalVisitors });
   } catch (error) {
-    console.error("Visitor counter POST error:", error);
-    res.status(503).json({ error: "visitor_counter_unavailable" });
+    console.error("Visitor counter request error:", error);
+    return res.status(503).json({ error: "visitor_counter_unavailable" });
   }
-});`;
+}
+
+app.get("/api/visitor-count", handleVisitorCount);
+app.post("/api/visitor-count", handleVisitorCount);`;
 
     if (!source.includes('app.post("/api/visitor-count"')) {
       if (!source.includes(marker)) {
