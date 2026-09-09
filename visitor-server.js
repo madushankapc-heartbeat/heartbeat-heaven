@@ -14,10 +14,97 @@ Module._extensions[".js"] = function (module, filename) {
     const injection = `
 
 /* =========================================================
-   ADMIN LOGIN RATE LIMITING
+   ADMIN LOGIN RATE LIMITING + SECURITY HEADERS + CSRF
    ========================================================= */
 
 app.set("trust proxy", 1);
+
+/*
+ * Security headers are applied globally. CSP intentionally allows
+ * existing same-origin inline scripts/styles used by the current site,
+ * while still blocking object/plugin content and framing.
+ */
+app.use((req, res, next) => {
+  res.set("X-Content-Type-Options", "nosniff");
+  res.set("X-Frame-Options", "DENY");
+  res.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.set(
+    "Permissions-Policy",
+    "geolocation=(), microphone=(), camera=()"
+  );
+  res.set(
+    "Content-Security-Policy",
+    "default-src 'self'; " +
+      "base-uri 'self'; " +
+      "object-src 'none'; " +
+      "frame-ancestors 'none'; " +
+      "form-action 'self'; " +
+      "img-src 'self' data: https:; " +
+      "media-src 'self' https: blob:; " +
+      "script-src 'self' 'unsafe-inline'; " +
+      "style-src 'self' 'unsafe-inline'; " +
+      "connect-src 'self' https:; " +
+      "font-src 'self' https: data:"
+  );
+
+  if (req.secure) {
+    res.set(
+      "Strict-Transport-Security",
+      "max-age=31536000; includeSubDomains"
+    );
+  }
+
+  next();
+});
+
+function isSameOriginRequest(req) {
+  const origin = String(req.get("origin") || "").trim();
+  const referer = String(req.get("referer") || "").trim();
+  const forwardedProto = String(
+    req.get("x-forwarded-proto") || req.protocol || "https"
+  )
+    .split(",")[0]
+    .trim();
+  const host = String(req.get("host") || "").trim();
+
+  if (!host || !forwardedProto) return false;
+
+  const expectedOrigin = `${forwardedProto}://${host}`;
+
+  if (origin) {
+    return origin === expectedOrigin;
+  }
+
+  if (referer) {
+    try {
+      return new URL(referer).origin === expectedOrigin;
+    } catch {
+      return false;
+    }
+  }
+
+  return false;
+}
+
+function csrfProtection(req, res, next) {
+  if (!isSameOriginRequest(req)) {
+    return res.status(403).json({
+      error: "Cross-site request blocked."
+    });
+  }
+
+  next();
+}
+
+function isProtectedMutationRoute(route) {
+  return (
+    route === "/api/studio/login" ||
+    route === "/api/studio/logout" ||
+    route === "/api/studio/upload-url" ||
+    route === "/api/songs" ||
+    route === "/api/songs/:id"
+  );
+}
 
 const loginAttempts = new Map();
 const LOGIN_WINDOW_MS = 60 * 60 * 1000;
@@ -126,11 +213,35 @@ function loginRateLimit(req, res, next) {
 const originalAppPost = app.post.bind(app);
 
 app.post = function (route, ...handlers) {
+  if (isProtectedMutationRoute(route)) {
+    handlers.unshift(csrfProtection);
+  }
+
   if (route === "/api/studio/login") {
     handlers.unshift(loginRateLimit);
   }
 
   return originalAppPost(route, ...handlers);
+};
+
+const originalAppPut = app.put.bind(app);
+
+app.put = function (route, ...handlers) {
+  if (isProtectedMutationRoute(route)) {
+    handlers.unshift(csrfProtection);
+  }
+
+  return originalAppPut(route, ...handlers);
+};
+
+const originalAppDelete = app.delete.bind(app);
+
+app.delete = function (route, ...handlers) {
+  if (isProtectedMutationRoute(route)) {
+    handlers.unshift(csrfProtection);
+  }
+
+  return originalAppDelete(route, ...handlers);
 };
 
 /* =========================================================
