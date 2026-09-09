@@ -245,6 +245,61 @@ app.delete = function (route, ...handlers) {
 };
 
 /* =========================================================
+   API ERROR RESPONSE SANITIZATION
+   ========================================================= */
+
+app.use((req, res, next) => {
+  const originalJson = res.json.bind(res);
+
+  res.json = function (body) {
+    if (
+      res.statusCode >= 500 &&
+      body &&
+      typeof body === "object" &&
+      body.error
+    ) {
+      body = {
+        ...body,
+        error: "Internal server error."
+      };
+    }
+
+    return originalJson(body);
+  };
+
+  next();
+});
+
+/*
+ * Express 5 forwards rejected async route handlers here.
+ * Detailed errors stay in server logs; clients receive only a
+ * generic API error so database/provider internals are not exposed.
+ * The handler is installed through the app.listen wrapper below so
+ * it runs after all routes have been registered by server.js.
+ */
+const originalAppListen = app.listen.bind(app);
+
+app.listen = function (...args) {
+  app.use((error, req, res, next) => {
+    console.error("Unhandled server error:", error);
+
+    if (res.headersSent) {
+      return next(error);
+    }
+
+    if (req.path && req.path.startsWith("/api/")) {
+      return res.status(500).json({
+        error: "Internal server error."
+      });
+    }
+
+    return res.status(500).send("Internal server error.");
+  });
+
+  return originalAppListen(...args);
+};
+
+/* =========================================================
    PUBLIC VISITOR COUNTER
    ========================================================= */
 
