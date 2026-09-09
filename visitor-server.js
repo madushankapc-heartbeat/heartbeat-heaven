@@ -65,7 +65,123 @@ async function handleVisitorCount(req, res) {
 }
 
 app.get("/api/visitor-count", handleVisitorCount);
-app.post("/api/visitor-count", handleVisitorCount);`;
+app.post("/api/visitor-count", handleVisitorCount);
+
+/* =========================================================
+   SONG LIKES
+   ========================================================= */
+
+function validSongId(value) {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+function getLikeVisitorId(req) {
+  return getCookie(req, "hh_like_visitor_id");
+}
+
+async function ensureLikeVisitorId(req, res) {
+  let visitorId = getLikeVisitorId(req);
+
+  if (!visitorId) {
+    visitorId = crypto.randomBytes(24).toString("hex");
+    res.set(
+      "Set-Cookie",
+      "hh_like_visitor_id=" + visitorId + "; Max-Age=31536000; Path=/; HttpOnly; Secure; SameSite=Lax"
+    );
+  }
+
+  return visitorId;
+}
+
+async function getSongLikeState(songId, visitorId) {
+  const { count, error: countError } = await supabase
+    .from("song_likes")
+    .select("id", { count: "exact", head: true })
+    .eq("song_id", songId);
+
+  if (countError) throw countError;
+
+  let liked = false;
+
+  if (visitorId) {
+    const { data, error } = await supabase
+      .from("song_likes")
+      .select("id")
+      .eq("song_id", songId)
+      .eq("visitor_id", visitorId)
+      .maybeSingle();
+
+    if (error) throw error;
+    liked = Boolean(data);
+  }
+
+  return {
+    like_count: Number(count || 0),
+    liked
+  };
+}
+
+app.get("/api/song-likes/:id", async (req, res) => {
+  try {
+    const songId = validSongId(req.params.id);
+    if (!songId) return res.status(400).json({ error: "invalid_song_id" });
+
+    const state = await getSongLikeState(songId, getLikeVisitorId(req));
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.json(state);
+  } catch (error) {
+    console.error("Song likes GET error:", error);
+    res.status(503).json({ error: "song_likes_unavailable" });
+  }
+});
+
+app.post("/api/song-likes/:id", async (req, res) => {
+  try {
+    const songId = validSongId(req.params.id);
+    if (!songId) return res.status(400).json({ error: "invalid_song_id" });
+
+    const visitorId = await ensureLikeVisitorId(req, res);
+
+    const { error } = await supabase
+      .from("song_likes")
+      .insert({ song_id: songId, visitor_id: visitorId });
+
+    if (error && error.code !== "23505") throw error;
+
+    const state = await getSongLikeState(songId, visitorId);
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.json(state);
+  } catch (error) {
+    console.error("Song likes POST error:", error);
+    res.status(503).json({ error: "song_likes_unavailable" });
+  }
+});
+
+app.delete("/api/song-likes/:id", async (req, res) => {
+  try {
+    const songId = validSongId(req.params.id);
+    if (!songId) return res.status(400).json({ error: "invalid_song_id" });
+
+    const visitorId = getLikeVisitorId(req);
+    if (visitorId) {
+      const { error } = await supabase
+        .from("song_likes")
+        .delete()
+        .eq("song_id", songId)
+        .eq("visitor_id", visitorId);
+
+      if (error) throw error;
+    }
+
+    const state = await getSongLikeState(songId, visitorId);
+    res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.json(state);
+  } catch (error) {
+    console.error("Song likes DELETE error:", error);
+    res.status(503).json({ error: "song_likes_unavailable" });
+  }
+});`;
 
     if (!source.includes('app.post("/api/visitor-count"')) {
       if (!source.includes(marker)) {
