@@ -31,7 +31,7 @@ function render(list) {
     >
       <img
         class="cover"
-        src="${esc(s.cover_url || "")}"
+        src="${esc(s.cover_url || "")}" 
         alt="${esc(s.title)} cover"
       >
 
@@ -139,6 +139,11 @@ search.oninput = () => {
 document.querySelectorAll("[data-filter]").forEach(b => {
   b.onclick = () => {
     const f = b.dataset.filter.toLowerCase();
+
+    if (f === "all") {
+      render(songs);
+      return;
+    }
 
     render(
       songs.filter(s =>
