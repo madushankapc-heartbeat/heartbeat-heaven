@@ -44,7 +44,7 @@ app.post("/api/visitor-count", async (req, res) => {
     const userAgent = String(req.headers["user-agent"] || "").toLowerCase();
     const likelyBot = /bot|crawler|spider|slurp|bingpreview|facebookexternalhit|linkedinbot|whatsapp|telegrambot|headless/i.test(userAgent);
 
-    const cookieName = "hh_visitor_id";
+    const cookieName = "hh_visitor_id_v2";
     const existingVisitor = getCookie(req, cookieName);
 
     if (!existingVisitor && !likelyBot) {
