@@ -4,7 +4,7 @@
   "description": "Heartbeat Heaven music website",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node visitor-server.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.0",
