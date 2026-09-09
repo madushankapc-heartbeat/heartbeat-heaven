@@ -34,6 +34,8 @@ function render(list) {
         class="cover"
         src="${esc(s.cover_url || "")}" 
         alt="${esc(s.title)} cover"
+        loading="lazy"
+        decoding="async"
       >
 
       <div class="card-body">
