@@ -19,27 +19,12 @@
     document.head.appendChild(style);
   }
 
-  function render(data) {
-    if (document.getElementById("songLikeWrap")) return;
-    const hero = root.querySelector(".song-hero");
-    if (!hero) return;
-
-    addStyles();
-
-    const wrap = document.createElement("div");
-    wrap.id = "songLikeWrap";
-    wrap.className = "song-like-wrap";
-    wrap.innerHTML = `
-      <button type="button" class="song-like-btn${data.liked ? " liked" : ""}" id="songLikeBtn" aria-pressed="${data.liked ? "true" : "false"}">
-        ${data.liked ? "♥ Liked" : "♡ Like"}
-      </button>
-      <span class="song-like-count" id="songLikeCount">${Number(data.like_count || 0)} ${Number(data.like_count || 0) === 1 ? "Like" : "Likes"}</span>
-    `;
-
-    hero.insertAdjacentElement("afterend", wrap);
-
+  function bindButton() {
     const btn = document.getElementById("songLikeBtn");
     const count = document.getElementById("songLikeCount");
+    if (!btn || !count || btn.dataset.bound === "true") return;
+
+    btn.dataset.bound = "true";
 
     btn.addEventListener("click", async function () {
       btn.disabled = true;
@@ -51,6 +36,7 @@
           headers: { Accept: "application/json" },
           cache: "no-store"
         });
+
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || "Like request failed");
 
@@ -68,6 +54,29 @@
     });
   }
 
+  function render(data) {
+    const hero = root.querySelector(".song-hero");
+    if (!hero) return;
+
+    if (document.getElementById("songLikeWrap")) {
+      bindButton();
+      return;
+    }
+
+    addStyles();
+
+    const wrap = document.createElement("div");
+    wrap.id = "songLikeWrap";
+    wrap.className = "song-like-wrap";
+    wrap.innerHTML = `
+      <button type="button" class="song-like-btn${data.liked ? " liked" : ""}" id="songLikeBtn" aria-pressed="${data.liked ? "true" : "false"}">${data.liked ? "♥ Liked" : "♡ Like"}</button>
+      <span class="song-like-count" id="songLikeCount">${Number(data.like_count || 0)} ${Number(data.like_count || 0) === 1 ? "Like" : "Likes"}</span>
+    `;
+
+    hero.insertAdjacentElement("afterend", wrap);
+    bindButton();
+  }
+
   async function loadLikeState() {
     try {
       const response = await fetch("/api/song-likes/" + encodeURIComponent(songId), {
@@ -83,9 +92,13 @@
     }
   }
 
+  /*
+   * Keep observing because song.js replaces #songPage.innerHTML
+   * after its API request. The previous implementation disconnected
+   * too early, so the button could appear briefly and then disappear.
+   */
   const observer = new MutationObserver(function () {
-    if (root.querySelector(".song-hero")) {
-      observer.disconnect();
+    if (root.querySelector(".song-hero") && !document.getElementById("songLikeWrap")) {
       loadLikeState();
     }
   });
@@ -93,7 +106,6 @@
   observer.observe(root, { childList: true, subtree: true });
 
   if (root.querySelector(".song-hero")) {
-    observer.disconnect();
     loadLikeState();
   }
 })();
