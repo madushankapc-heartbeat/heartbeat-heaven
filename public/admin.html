@@ -49,7 +49,7 @@
       </h1>
 
       <p>
-        Publish new releases or edit songs already in your collection.
+        Publish new releases, versions, remixes or edit songs already in your collection.
       </p>
 
     </div>
@@ -57,7 +57,7 @@
   </div>
 
 
-  <!-- NEW SONG -->
+  <!-- NEW SONG / VERSION -->
 
   <section class="admin-panel">
 
@@ -69,7 +69,7 @@
         </p>
 
         <h2>
-          Upload a new song
+          Upload music
         </h2>
       </div>
 
@@ -82,30 +82,132 @@
       enctype="multipart/form-data"
     >
 
+      <!-- CONTENT TYPE -->
+
+      <div class="content-type-box">
+
+        <p class="field-title">
+          Content type
+        </p>
+
+        <div class="content-type-options">
+
+          <label class="content-type-option">
+
+            <input
+              type="radio"
+              name="content_type"
+              value="original"
+              checked
+            >
+
+            <span>
+              <strong>Original Song</strong>
+              <small>
+                Create a new main song / Song Hub
+              </small>
+            </span>
+
+          </label>
+
+
+          <label class="content-type-option">
+
+            <input
+              type="radio"
+              name="content_type"
+              value="version"
+            >
+
+            <span>
+              <strong>Version of Existing Song</strong>
+              <small>
+                Add a Slow, Remix, Acoustic, Dance or other version
+              </small>
+            </span>
+
+          </label>
+
+        </div>
+
+      </div>
+
+
+      <!-- VERSION SETTINGS -->
+
+      <div
+        id="versionSettings"
+        class="version-settings hidden"
+      >
+
+        <label>
+
+          Original song
+
+          <select
+            name="parent_song_id"
+            id="parentSongSelect"
+          >
+
+            <option value="">
+              Select original song
+            </option>
+
+          </select>
+
+          <span class="hint">
+            This version will automatically appear inside that song's Song Hub.
+          </span>
+
+        </label>
+
+
+        <label>
+
+          Version name
+
+          <input
+            name="version_name"
+            id="versionName"
+            placeholder="e.g. Slow Version, Remix Version, Acoustic Version"
+          >
+
+        </label>
+
+      </div>
+
+
+      <!-- TITLE -->
+
       <label>
+
         Song title
 
         <input
           name="title"
           required
-          placeholder="e.g. නිහඬ රෑක හුස්ම"
+          placeholder="e.g. Eternal Whispers"
         >
+
       </label>
 
 
       <div class="two">
 
         <label>
+
           Artist
 
           <input
             name="artist"
             value="Madushanka"
           >
+
         </label>
 
 
         <label>
+
           Language
 
           <select name="language">
@@ -126,6 +228,7 @@
       <div class="two">
 
         <label>
+
           Genre
 
           <select name="genre">
@@ -144,6 +247,7 @@
 
 
         <label>
+
           Mood
 
           <input
@@ -158,6 +262,7 @@
 
 
       <label>
+
         Short description
 
         <textarea
@@ -170,6 +275,7 @@
 
 
       <label>
+
         Lyrics
 
         <textarea
@@ -182,6 +288,7 @@
 
 
       <label>
+
         Release date
 
         <input
@@ -192,9 +299,12 @@
       </label>
 
 
+      <!-- MEDIA -->
+
       <div class="two">
 
         <label>
+
           Audio file
 
           <input
@@ -208,14 +318,22 @@
 
 
         <label>
+
           Cover image
 
           <input
             type="file"
             name="cover"
             accept="image/*"
-            required
+            id="uploadCover"
           >
+
+          <span
+            id="coverHint"
+            class="hint"
+          >
+            Required for an original song.
+          </span>
 
         </label>
 
@@ -283,7 +401,43 @@
       >
 
 
+      <!-- VERSION INFORMATION -->
+
+      <div
+        id="editVersionInfo"
+        class="version-info hidden"
+      >
+
+        <p class="eyebrow">
+          SONG VERSION
+        </p>
+
+        <p>
+          This release belongs to:
+
+          <strong id="editParentTitle">
+            —
+          </strong>
+        </p>
+
+
+        <label>
+
+          Version name
+
+          <input
+            name="version_name"
+            id="editVersionName"
+            placeholder="e.g. Slow Version"
+          >
+
+        </label>
+
+      </div>
+
+
       <label>
+
         Song title
 
         <input
@@ -298,6 +452,7 @@
       <div class="two">
 
         <label>
+
           Artist
 
           <input
@@ -310,6 +465,7 @@
 
 
         <label>
+
           Language
 
           <select
@@ -333,6 +489,7 @@
       <div class="two">
 
         <label>
+
           Genre
 
           <select
@@ -354,6 +511,7 @@
 
 
         <label>
+
           Mood
 
           <input
@@ -367,6 +525,7 @@
 
 
       <label>
+
         Short description
 
         <textarea
@@ -379,6 +538,7 @@
 
 
       <label>
+
         Lyrics
 
         <textarea
@@ -391,6 +551,7 @@
 
 
       <label>
+
         Release date
 
         <input
