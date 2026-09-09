@@ -1,4 +1,5 @@
 let songs = [], current = null;
+let currentFilter = "all";
 
 const grid = document.getElementById("songGrid");
 const search = document.getElementById("search");
@@ -9,7 +10,7 @@ async function load() {
   try {
     const response = await fetch("/api/songs");
     songs = await response.json();
-    render(songs);
+    applyFilters();
   } catch (error) {
     console.error(error);
     grid.innerHTML = '<div class="empty">Unable to load songs.</div>';
@@ -19,7 +20,7 @@ async function load() {
 function render(list) {
   if (!list.length) {
     grid.innerHTML =
-      '<div class="empty">No songs published yet. Add your first release from Studio.</div>';
+      '<div class="empty">No matching songs found.</div>';
     return;
   }
 
@@ -120,37 +121,45 @@ function fmt(n) {
   );
 }
 
-search.oninput = () => {
-  const q = search.value.toLowerCase();
+function applyFilters() {
+  const q = (search?.value || "").trim().toLowerCase();
+  const f = currentFilter.toLowerCase();
 
-  render(
-    songs.filter(s =>
-      (
-        (s.title || "") + " " +
-        (s.artist || "") + " " +
-        (s.genre || "") + " " +
-        (s.language || "") + " " +
-        (s.mood || "")
-      ).toLowerCase().includes(q)
-    )
-  );
-};
+  const filtered = songs.filter(s => {
+    const matchesFilter =
+      f === "all" ||
+      (s.genre || "").toLowerCase().includes(f) ||
+      (s.mood || "").toLowerCase().includes(f);
 
-document.querySelectorAll("[data-filter]").forEach(b => {
-  b.onclick = () => {
-    const f = b.dataset.filter.toLowerCase();
+    const searchText = (
+      (s.title || "") + " " +
+      (s.artist || "") + " " +
+      (s.genre || "") + " " +
+      (s.language || "") + " " +
+      (s.mood || "")
+    ).toLowerCase();
 
-    if (f === "all") {
-      render(songs);
-      return;
-    }
+    return matchesFilter && searchText.includes(q);
+  });
 
-    render(
-      songs.filter(s =>
-        (s.genre || "").toLowerCase().includes(f) ||
-        (s.mood || "").toLowerCase().includes(f)
-      )
+  render(filtered);
+
+  document.querySelectorAll("[data-filter]").forEach(button => {
+    button.classList.toggle(
+      "active",
+      button.dataset.filter.toLowerCase() === f
     );
+  });
+}
+
+if (search) {
+  search.oninput = applyFilters;
+}
+
+document.querySelectorAll("[data-filter]").forEach(button => {
+  button.onclick = () => {
+    currentFilter = button.dataset.filter || "all";
+    applyFilters();
   };
 });
 
