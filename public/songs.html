@@ -8,170 +8,57 @@
 <title>Songs — HEARTBEAT HEAVEN</title>
 <link rel="stylesheet" href="/styles.css">
 </head>
-
 <body>
-
 <header class="topbar">
   <a class="brand" href="/">
-    <img
-      src="/heartbeat-heaven-logo.png"
-      alt="HEARTBEAT HEAVEN logo"
-      style="width:40px;height:40px;object-fit:cover;border-radius:50%;display:block;"
-    >
-    <div>
-      <strong>HEARTBEAT HEAVEN</strong>
-      <small>Original Music by Madushanka</small>
-    </div>
+    <img src="/heartbeat-heaven-logo.png" alt="HEARTBEAT HEAVEN logo" style="width:40px;height:40px;object-fit:cover;border-radius:50%;display:block;">
+    <div><strong>HEARTBEAT HEAVEN</strong><small>Original Music by Madushanka</small></div>
   </a>
-
-<button class="menu-toggle" id="menuToggle" aria-label="Open menu">
-  ☰
-</button>
-
-<nav id="mainNav">
-  <a href="/">Home</a>
-  <a href="/songs.html">Songs</a>
-  <a href="/#genres">Genres</a>
-  <a href="/#about">About</a>
-</nav>
+  <button class="menu-toggle" id="menuToggle" aria-label="Open menu" aria-expanded="false" aria-controls="mainNav" type="button">☰</button>
+  <nav id="mainNav">
+    <a href="/">Home</a><a href="/songs.html">Songs</a><a href="/#genres">Genres</a><a href="/#about">About</a>
+  </nav>
 </header>
-
 <main>
-
 <section class="section songs-library">
-
   <div class="section-head">
-
-    <div>
-      <p class="eyebrow">THE COMPLETE COLLECTION</p>
-
-      <h1>All Songs</h1>
-
-      <p class="library-intro">
-        Explore every original release from Heartbeat Heaven.
-      </p>
-    </div>
-
-    <div class="search-wrap">
-      <input
-        id="search"
-        type="search"
-        placeholder="Search songs..."
-        aria-label="Search songs"
-      >
-    </div>
-
+    <div><p class="eyebrow">THE COMPLETE COLLECTION</p><h1>All Songs</h1><p class="library-intro">Explore every original release from Heartbeat Heaven.</p></div>
+    <div class="search-wrap"><input id="search" type="search" placeholder="Search songs..." aria-label="Search songs"></div>
   </div>
-
   <div class="library-filters">
-
-    <button class="active" data-filter="all">
-      All
-    </button>
-
-    <button data-filter="Romantic">
-      ♥ Romantic
-    </button>
-
-    <button data-filter="Sad">
-      ☾ Sad
-    </button>
-
-    <button data-filter="Chill">
-      ✦ Chill
-    </button>
-
-    <button data-filter="Cinematic">
-      ◈ Cinematic
-    </button>
-
-    <button data-filter="EDM">
-      ⚡ Pop / EDM
-    </button>
-
-    <button data-filter="Instrumental">
-      ♪ Instrumental
-    </button>
-
+    <button type="button" class="active" data-filter="all">All</button>
+    <button type="button" data-filter="Romantic">♥ Romantic</button>
+    <button type="button" data-filter="Sad">☾ Sad</button>
+    <button type="button" data-filter="Chill">✦ Chill</button>
+    <button type="button" data-filter="Cinematic">◈ Cinematic</button>
+    <button type="button" data-filter="EDM">⚡ Pop / EDM</button>
+    <button type="button" data-filter="Instrumental">♪ Instrumental</button>
   </div>
-
-  <div id="songGrid" class="song-grid">
-    <div class="empty">
-      Loading music…
-    </div>
-  </div>
-
+  <div id="songGrid" class="song-grid"><div class="empty">Loading music…</div></div>
 </section>
-
 </main>
-
 <div id="player" class="player hidden">
-
-  <img
-    id="playerCover"
-    src=""
-    alt=""
-  >
-
-  <div class="player-info">
-
-    <strong id="playerTitle">
-      Song
-    </strong>
-
-    <span id="playerArtist">
-      Madushanka
-    </span>
-
-  </div>
-
-  <button
-    id="playBtn"
-    class="round"
-    type="button"
-  >
-    ▶
-  </button>
-
-  <input
-    id="progress"
-    type="range"
-    min="0"
-    max="100"
-    value="0"
-    aria-label="Song progress"
-  >
-
-  <span id="time">
-    0:00
-  </span>
-
-  <button
-    id="closePlayer"
-    class="x"
-    type="button"
-  >
-    ×
-  </button>
-
+  <img id="playerCover" src="" alt="">
+  <div class="player-info"><strong id="playerTitle">Song</strong><span id="playerArtist">Madushanka</span></div>
+  <button id="playBtn" class="round" type="button">▶</button>
+  <input id="progress" type="range" min="0" max="100" value="0" aria-label="Song progress">
+  <span id="time">0:00</span>
+  <button id="closePlayer" class="x" type="button" aria-label="Close audio player">×</button>
   <audio id="audio"></audio>
-
 </div>
-
 <script src="/app.js"></script>
 <script>
-const menuToggle = document.getElementById("menuToggle");
-const mainNav = document.getElementById("mainNav");
-
-menuToggle.addEventListener("click", () => {
-  mainNav.classList.toggle("open");
+const menuToggle=document.getElementById("menuToggle"),mainNav=document.getElementById("mainNav");
+menuToggle.addEventListener("click",()=>{
+  const open=mainNav.classList.toggle("open");
+  menuToggle.setAttribute("aria-expanded",String(open));
+  menuToggle.setAttribute("aria-label",open?"Close menu":"Open menu");
 });
-
-mainNav.querySelectorAll("a").forEach(link => {
-  link.addEventListener("click", () => {
-    mainNav.classList.remove("open");
-  });
-});
+mainNav.querySelectorAll("a").forEach(link=>link.addEventListener("click",()=>{
+  mainNav.classList.remove("open");
+  menuToggle.setAttribute("aria-expanded","false");
+  menuToggle.setAttribute("aria-label","Open menu");
+}));
 </script>
 </body>
 </html>
