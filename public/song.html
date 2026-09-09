@@ -22,6 +22,28 @@
 <meta id="twitterImage" name="twitter:image" content="https://heartbeat-heaven.onrender.com/">
 <title id="pageTitle">Song — HEARTBEAT HEAVEN | Original Music by Madushanka</title>
 <link rel="stylesheet" href="/styles.css">
+<style>
+.song-page{padding-bottom:110px}
+.song-share{display:flex;flex-wrap:wrap;gap:10px;margin:28px 0}
+.song-share .share-btn{min-height:42px;cursor:pointer}
+.versions-list{display:grid;gap:18px}
+.version-card{display:grid;grid-template-columns:150px 1fr;gap:20px;align-items:center}
+.version-cover{width:150px;aspect-ratio:1/1;object-fit:cover;border-radius:14px;display:block}
+.version-audio{width:100%;min-width:0}
+.song-navigation{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:28px 0}
+.song-nav-btn{min-width:0}
+.lyrics{white-space:pre-wrap;line-height:1.9}
+@media(max-width:700px){
+  .song-page{padding-bottom:90px}
+  .version-card{grid-template-columns:1fr;gap:14px}
+  .version-cover{width:min(220px,100%);margin:0 auto}
+  .version-info{text-align:left}
+  .version-audio{width:100%}
+  .song-navigation{grid-template-columns:1fr}
+  .song-share{gap:8px}
+  .song-share .share-btn{flex:1 1 calc(50% - 8px)}
+}
+</style>
 </head>
 <body>
 <header class="topbar">
