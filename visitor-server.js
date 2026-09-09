@@ -181,6 +181,32 @@ app.delete("/api/song-likes/:id", async (req, res) => {
     console.error("Song likes DELETE error:", error);
     res.status(503).json({ error: "song_likes_unavailable" });
   }
+});
+
+/* =========================================================
+   SONG LIKE SCRIPT FOR SERVER-RENDERED SONG HUB
+   ========================================================= */
+
+app.use((req, res, next) => {
+  const originalSend = res.send.bind(res);
+
+  res.send = function (body) {
+    if (
+      req.path === "/song.html" &&
+      typeof body === "string" &&
+      body.includes('id="songPage"') &&
+      !body.includes('/song-likes.js')
+    ) {
+      body = body.replace(
+        "</body>",
+        '<script src="/song-likes.js"></script>\\n</body>'
+      );
+    }
+
+    return originalSend(body);
+  };
+
+  next();
 });`;
 
     if (!source.includes('app.post("/api/visitor-count"')) {
