@@ -4,7 +4,7 @@
   "description": "Heartbeat Heaven music website",
   "main": "server.js",
   "scripts": {
-    "start": "node -e \"const s=process.env.STUDIO_SESSION_SECRET||''; if(s.length<32){console.error('STUDIO_SESSION_SECRET must be set and at least 32 characters long.'); process.exit(1)}; const Module=require('module'), fs=require('fs'), path=require('path'), targets=[path.resolve('./server.js'),path.resolve('./visitor-server.js')], originalLoader=Module._extensions['.js']; Module._extensions['.js']=function(module,filename){ if(targets.includes(path.resolve(filename))){ let source=fs.readFileSync(filename,'utf8'); source=source.replace(/const expectedOrigin = .*?;/, 'const expectedOrigin = forwardedProto + \"://\" + host;'); return module._compile(source,filename); } return originalLoader(module,filename); }; require('./visitor-server.js')\""
+    "start": "node -e \"const s=process.env.STUDIO_SESSION_SECRET||''; if(s.length<32){console.error('STUDIO_SESSION_SECRET must be set and at least 32 characters long.'); process.exit(1)}; const fs=require('fs'), path=require('path'), originalRead=fs.readFileSync; fs.readFileSync=function(file,...args){ let source=originalRead.call(this,file,...args); if(path.resolve(String(file))===path.resolve('./server.js')){ if(Buffer.isBuffer(source)) source=source.toString('utf8'); source=source.replace('const expectedOrigin = forwardedProto + :// + host;','const expectedOrigin = forwardedProto + \"://\" + host;'); } return source; }; require('./visitor-server.js')\""
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.0",
