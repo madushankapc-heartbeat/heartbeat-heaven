@@ -9,7 +9,32 @@ const list = document.getElementById("adminSongs");
 const editPanel = document.getElementById("editPanel");
 const cancelEdit = document.getElementById("cancelEdit");
 
+const versionSettings =
+  document.getElementById("versionSettings");
+
+const parentSongSelect =
+  document.getElementById("parentSongSelect");
+
+const versionName =
+  document.getElementById("versionName");
+
+const uploadCover =
+  document.getElementById("uploadCover");
+
+const coverHint =
+  document.getElementById("coverHint");
+
+const editVersionInfo =
+  document.getElementById("editVersionInfo");
+
+const editParentTitle =
+  document.getElementById("editParentTitle");
+
+const editVersionName =
+  document.getElementById("editVersionName");
+
 let songs = [];
+let allStudioSongs = [];
 
 
 /* =========================================================
@@ -65,31 +90,21 @@ function updateProgress(
 ) {
 
   const box =
-    container.querySelector(
-      ".hh-progress"
-    );
+    container.querySelector(".hh-progress");
 
   if (!box) return;
 
   const bar =
-    box.querySelector(
-      ".hh-progress-bar"
-    );
+    box.querySelector(".hh-progress-bar");
 
   const percentText =
-    box.querySelector(
-      ".hh-progress-percent"
-    );
+    box.querySelector(".hh-progress-percent");
 
   const stageText =
-    box.querySelector(
-      ".hh-progress-stage"
-    );
+    box.querySelector(".hh-progress-stage");
 
   const messageText =
-    box.querySelector(
-      ".hh-progress-message"
-    );
+    box.querySelector(".hh-progress-message");
 
 
   const safePercent =
@@ -126,31 +141,21 @@ function finishProgress(
 ) {
 
   const box =
-    container.querySelector(
-      ".hh-progress"
-    );
+    container.querySelector(".hh-progress");
 
   if (!box) return;
 
   const bar =
-    box.querySelector(
-      ".hh-progress-bar"
-    );
+    box.querySelector(".hh-progress-bar");
 
   const percentText =
-    box.querySelector(
-      ".hh-progress-percent"
-    );
+    box.querySelector(".hh-progress-percent");
 
   const stageText =
-    box.querySelector(
-      ".hh-progress-stage"
-    );
+    box.querySelector(".hh-progress-stage");
 
   const messageText =
-    box.querySelector(
-      ".hh-progress-message"
-    );
+    box.querySelector(".hh-progress-message");
 
 
   if (success) {
@@ -168,9 +173,7 @@ function finishProgress(
       message ||
       "Your song is now live.";
 
-    box.classList.add(
-      "success"
-    );
+    box.classList.add("success");
 
   } else {
 
@@ -181,9 +184,7 @@ function finishProgress(
       message ||
       "Please try again.";
 
-    box.classList.add(
-      "error"
-    );
+    box.classList.add("error");
 
   }
 
@@ -279,6 +280,124 @@ function finishProgress(
       pointer-events: none;
     }
 
+    .content-type-box {
+      margin-bottom: 20px;
+      padding: 15px;
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius: 14px;
+      background: rgba(255,255,255,.025);
+    }
+
+    .field-title {
+      margin: 0 0 12px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .content-type-options {
+      display: grid;
+      gap: 10px;
+    }
+
+    .content-type-option {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,.08);
+      cursor: pointer;
+    }
+
+    .content-type-option input {
+      margin-top: 3px;
+      flex: 0 0 auto;
+    }
+
+    .content-type-option span {
+      display: grid;
+      gap: 3px;
+    }
+
+    .content-type-option small {
+      opacity: .62;
+      line-height: 1.4;
+    }
+
+    .version-settings,
+    .version-info {
+      margin-bottom: 20px;
+      padding: 15px;
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius: 14px;
+      background: rgba(255,255,255,.025);
+    }
+
+    .version-info > p {
+      margin-top: 0;
+    }
+
+    .version-badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      border-radius: 999px;
+      background: rgba(255,255,255,.08);
+      font-size: 11px;
+      margin-top: 6px;
+    }
+
+    .version-list {
+      margin: 10px 0 0 56px;
+      display: grid;
+      gap: 7px;
+    }
+
+    .version-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 9px 11px;
+      border-radius: 10px;
+      background: rgba(255,255,255,.035);
+      border: 1px solid rgba(255,255,255,.06);
+    }
+
+    .version-row-info {
+      min-width: 0;
+    }
+
+    .version-row-info strong {
+      display: block;
+      font-size: 13px;
+    }
+
+    .version-row-info small {
+      display: block;
+      opacity: .58;
+      margin-top: 2px;
+    }
+
+    .version-actions {
+      display: flex;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .admin-original {
+      border-bottom: 1px solid rgba(255,255,255,.08);
+      padding-bottom: 10px;
+    }
+
+    .admin-original-label {
+      font-size: 10px;
+      letter-spacing: .08em;
+      opacity: .55;
+      margin-top: 5px;
+      text-transform: uppercase;
+    }
+
     @media (max-width: 600px) {
 
       .hh-progress {
@@ -293,15 +412,112 @@ function finishProgress(
         font-size: 13px;
       }
 
+      .version-list {
+        margin-left: 0;
+      }
+
+      .version-row {
+        align-items: flex-start;
+      }
+
+      .version-actions {
+        flex-direction: column;
+      }
+
     }
 
   `;
 
-  document.head.appendChild(
-    style
-  );
+  document.head.appendChild(style);
 
 })();
+
+
+/* =========================================================
+   CONTENT TYPE
+========================================================= */
+
+function getContentType() {
+
+  const selected =
+    uploadForm.querySelector(
+      'input[name="content_type"]:checked'
+    );
+
+  return selected?.value || "original";
+}
+
+
+function updateContentTypeUI() {
+
+  const type =
+    getContentType();
+
+
+  const isVersion =
+    type === "version";
+
+
+  if (versionSettings) {
+
+    versionSettings.classList.toggle(
+      "hidden",
+      !isVersion
+    );
+
+  }
+
+
+  if (parentSongSelect) {
+
+    parentSongSelect.required =
+      isVersion;
+
+  }
+
+
+  if (versionName) {
+
+    versionName.required =
+      isVersion;
+
+  }
+
+
+  if (uploadCover) {
+
+    uploadCover.required =
+      !isVersion;
+
+  }
+
+
+  if (coverHint) {
+
+    coverHint.textContent =
+      isVersion
+        ? "Optional. Leave empty to keep the original song's cover."
+        : "Required for an original song.";
+
+  }
+
+}
+
+
+document
+  .querySelectorAll(
+    'input[name="content_type"]'
+  )
+  .forEach(
+    radio => {
+
+      radio.addEventListener(
+        "change",
+        updateContentTypeUI
+      );
+
+    }
+  );
 
 
 /* =========================================================
@@ -436,8 +652,6 @@ function uploadToSupabase(
       );
 
 
-      /* REAL UPLOAD PROGRESS */
-
       xhr.upload.addEventListener(
         "progress",
         function(event) {
@@ -462,8 +676,6 @@ function uploadToSupabase(
         }
       );
 
-
-      /* SUCCESS */
 
       xhr.onload =
         function() {
@@ -518,8 +730,6 @@ function uploadToSupabase(
         };
 
 
-      /* NETWORK ERROR */
-
       xhr.onerror =
         function() {
 
@@ -531,8 +741,6 @@ function uploadToSupabase(
 
         };
 
-
-      /* ABORT */
 
       xhr.onabort =
         function() {
@@ -546,8 +754,6 @@ function uploadToSupabase(
         };
 
 
-      /* TIMEOUT */
-
       xhr.ontimeout =
         function() {
 
@@ -560,11 +766,7 @@ function uploadToSupabase(
         };
 
 
-      /* SEND FILE DIRECTLY TO SUPABASE */
-
-      xhr.send(
-        file
-      );
+      xhr.send(file);
 
     }
   );
@@ -668,15 +870,11 @@ function getFormValue(
 
 
   const data =
-    new FormData(
-      form
-    );
+    new FormData(form);
 
 
   const value =
-    data.get(
-      name
-    );
+    data.get(name);
 
 
   if (
@@ -689,52 +887,116 @@ function getFormValue(
   }
 
 
-  return String(
-    value
-  ).trim();
+  return String(value).trim();
 
 }
 
 
 /* =========================================================
-   LOAD SONGS
+   LOAD STUDIO SONGS
 ========================================================= */
 
-async function load() {
+async function loadStudioSongs() {
 
   try {
 
     const response =
       await fetch(
-        "/api/songs"
+        "/api/studio/songs",
+        {
+          credentials:
+            "same-origin"
+        }
       );
 
 
     if (!response.ok) {
 
       throw new Error(
-        "Unable to load songs."
+        "Unable to load studio songs."
       );
 
     }
 
 
-    songs =
+    const data =
       await response.json();
 
+
+    allStudioSongs =
+      Array.isArray(data)
+        ? data
+        : [];
+
+
+    songs =
+      allStudioSongs.filter(
+        song =>
+          !song.parent_song_id
+      );
+
+
+    populateParentSongs();
 
     renderSongs();
 
   } catch (error) {
 
     console.error(
+      "Studio song loading error:",
       error
     );
+
 
     list.innerHTML =
       '<div class="empty">Unable to load songs.</div>';
 
   }
+
+}
+
+
+/* =========================================================
+   POPULATE ORIGINAL SONG DROPDOWN
+========================================================= */
+
+function populateParentSongs() {
+
+  if (!parentSongSelect) {
+    return;
+  }
+
+
+  const originals =
+    allStudioSongs.filter(
+      song =>
+        !song.parent_song_id
+    );
+
+
+  parentSongSelect.innerHTML = `
+
+    <option value="">
+      Select original song
+    </option>
+
+    ${
+      originals.map(
+        song => `
+
+          <option value="${esc(song.id)}">
+
+            ${esc(song.title)}
+            —
+            ${esc(song.artist || "Madushanka")}
+
+          </option>
+
+        `
+      ).join("")
+    }
+
+  `;
 
 }
 
@@ -756,81 +1018,335 @@ function renderSongs() {
 
   list.innerHTML =
     songs.map(
-      song => `
+      song => {
 
-        <div class="admin-row">
+        const versions =
+          allStudioSongs.filter(
+            item =>
+              Number(item.parent_song_id) ===
+              Number(song.id)
+          );
 
-          <div class="admin-song-info">
 
-            <img
-              class="admin-thumb"
-              src="${esc(song.cover_url || "")}"
-              alt=""
-            >
+        return `
 
-            <div>
+          <div class="admin-original">
 
-              <b>
-                ${esc(song.title)}
-              </b>
+            <div class="admin-row">
 
-              <small class="meta">
+              <div class="admin-song-info">
 
-                ${esc(
-                  song.artist ||
-                  "Madushanka"
-                )}
+                <img
+                  class="admin-thumb"
+                  src="${esc(song.cover_url || "")}"
+                  alt=""
+                >
 
-                •
+                <div>
 
-                ${esc(
-                  song.genre ||
-                  ""
-                )}
+                  <b>
+                    ${esc(song.title)}
+                  </b>
 
-                •
+                  <div class="admin-original-label">
+                    Original Song
+                  </div>
 
-                ${esc(
-                  song.language ||
-                  ""
-                )}
+                  <small class="meta">
 
-              </small>
+                    ${esc(
+                      song.artist ||
+                      "Madushanka"
+                    )}
+
+                    •
+
+                    ${esc(
+                      song.genre ||
+                      ""
+                    )}
+
+                    •
+
+                    ${esc(
+                      song.language ||
+                      ""
+                    )}
+
+                  </small>
+
+                </div>
+
+              </div>
+
+
+              <div class="admin-actions">
+
+                <button
+                  class="btn ghost edit-btn"
+                  onclick="editSong(${song.id})"
+                >
+                  Edit
+                </button>
+
+
+                <button
+                  class="delete"
+                  onclick="deleteSong(${song.id})"
+                >
+                  Delete
+                </button>
+
+              </div>
 
             </div>
 
+
+            ${
+              versions.length
+                ? `
+
+                  <div class="version-list">
+
+                    ${
+                      versions.map(
+                        version => `
+
+                          <div class="version-row">
+
+                            <div class="version-row-info">
+
+                              <strong>
+                                ${esc(
+                                  version.version_name ||
+                                  "Version"
+                                )}
+                              </strong>
+
+                              <small>
+
+                                ${esc(
+                                  version.title ||
+                                  song.title
+                                )}
+
+                                •
+
+                                ${esc(
+                                  version.artist ||
+                                  song.artist ||
+                                  "Madushanka"
+                                )}
+
+                              </small>
+
+                            </div>
+
+
+                            <div class="version-actions">
+
+                              <button
+                                class="btn ghost"
+                                onclick="editSong(${version.id})"
+                              >
+                                Edit
+                              </button>
+
+                              <button
+                                class="delete"
+                                onclick="deleteSong(${version.id})"
+                              >
+                                Delete
+                              </button>
+
+                            </div>
+
+                          </div>
+
+                        `
+                      ).join("")
+                    }
+
+                  </div>
+
+                `
+                : ""
+            }
+
           </div>
 
+        `;
 
-          <div class="admin-actions">
-
-            <button
-              class="btn ghost edit-btn"
-              onclick="editSong(${song.id})"
-            >
-              Edit
-            </button>
-
-
-            <button
-              class="delete"
-              onclick="deleteSong(${song.id})"
-            >
-              Delete
-            </button>
-
-          </div>
-
-        </div>
-
-      `
+      }
     ).join("");
 
 }
 
 
 /* =========================================================
-   UPLOAD NEW SONG
+   ORIGINAL SONG SELECTION
+========================================================= */
+
+if (parentSongSelect) {
+
+  parentSongSelect.addEventListener(
+    "change",
+    function() {
+
+      const parentId =
+        this.value;
+
+
+      if (!parentId) {
+        return;
+      }
+
+
+      const parent =
+        songs.find(
+          song =>
+            String(song.id) ===
+            String(parentId)
+        );
+
+
+      if (!parent) {
+        return;
+      }
+
+
+      /*
+        A version normally belongs to the
+        same song, so make the title equal
+        to the original title.
+
+        User can still change it afterwards.
+      */
+
+      const titleInput =
+        uploadForm.querySelector(
+          'input[name="title"]'
+        );
+
+
+      if (
+        titleInput &&
+        !titleInput.value.trim()
+      ) {
+
+        titleInput.value =
+          parent.title || "";
+
+      }
+
+
+      const artistInput =
+        uploadForm.querySelector(
+          'input[name="artist"]'
+        );
+
+
+      if (
+        artistInput &&
+        (
+          !artistInput.value.trim() ||
+          artistInput.value === "Madushanka"
+        )
+      ) {
+
+        artistInput.value =
+          parent.artist ||
+          "Madushanka";
+
+      }
+
+
+      const languageInput =
+        uploadForm.querySelector(
+          'select[name="language"]'
+        );
+
+
+      if (languageInput && parent.language) {
+
+        languageInput.value =
+          parent.language;
+
+      }
+
+
+      const genreInput =
+        uploadForm.querySelector(
+          'select[name="genre"]'
+        );
+
+
+      if (genreInput && parent.genre) {
+
+        genreInput.value =
+          parent.genre;
+
+      }
+
+
+      const moodInput =
+        uploadForm.querySelector(
+          'input[name="mood"]'
+        );
+
+
+      if (
+        moodInput &&
+        parent.mood
+      ) {
+
+        moodInput.value =
+          parent.mood;
+
+      }
+
+
+      const descriptionInput =
+        uploadForm.querySelector(
+          'textarea[name="description"]'
+        );
+
+
+      if (
+        descriptionInput &&
+        !descriptionInput.value.trim()
+      ) {
+
+        descriptionInput.value =
+          parent.description || "";
+
+      }
+
+
+      const lyricsInput =
+        uploadForm.querySelector(
+          'textarea[name="lyrics"]'
+        );
+
+
+      if (
+        lyricsInput &&
+        !lyricsInput.value.trim()
+      ) {
+
+        lyricsInput.value =
+          parent.lyrics || "";
+
+      }
+
+    }
+  );
+
+}
+
+
+/* =========================================================
+   UPLOAD NEW SONG / VERSION
 ========================================================= */
 
 uploadForm.onsubmit =
@@ -842,6 +1358,14 @@ uploadForm.onsubmit =
     status.className = "";
 
     status.textContent = "";
+
+
+    const contentType =
+      getContentType();
+
+
+    const isVersion =
+      contentType === "version";
 
 
     const submitButton =
@@ -875,13 +1399,62 @@ uploadForm.onsubmit =
     }
 
 
-    if (!cover) {
+    if (
+      !isVersion &&
+      !cover
+    ) {
 
       status.className =
         "error";
 
       status.textContent =
-        "Please select a cover image.";
+        "Please select a cover image for the original song.";
+
+      return;
+
+    }
+
+
+    const parentId =
+      getFormValue(
+        uploadForm,
+        "parent_song_id"
+      );
+
+
+    const selectedVersionName =
+      getFormValue(
+        uploadForm,
+        "version_name"
+      );
+
+
+    if (
+      isVersion &&
+      !parentId
+    ) {
+
+      status.className =
+        "error";
+
+      status.textContent =
+        "Please select the original song.";
+
+      return;
+
+    }
+
+
+    if (
+      isVersion &&
+      !selectedVersionName
+    ) {
+
+      status.className =
+        "error";
+
+      status.textContent =
+        "Please enter a version name.";
 
       return;
 
@@ -908,7 +1481,9 @@ uploadForm.onsubmit =
 
 
     submitButton.textContent =
-      "Uploading…";
+      isVersion
+        ? "Uploading Version…"
+        : "Uploading…";
 
 
     updateProgress(
@@ -923,32 +1498,62 @@ uploadForm.onsubmit =
 
       /* =====================================================
          COVER
+         Original:
          0% → 15%
+
+         Version:
+         0% → 15% only if cover exists
       ===================================================== */
 
-      const coverPath =
-        await uploadFile(
-          cover,
-          "covers",
+      let coverPath = null;
+
+
+      if (cover) {
+
+        coverPath =
+          await uploadFile(
+            cover,
+            "covers",
+            uploadForm,
+            0,
+            15,
+            "Cover"
+          );
+
+      } else {
+
+        updateProgress(
           uploadForm,
           0,
-          15,
-          "Cover"
+          "Cover skipped",
+          "Using the original song cover for this version."
         );
+
+      }
 
 
       /* =====================================================
          AUDIO
-         15% → 95%
       ===================================================== */
+
+      const audioStart =
+        cover
+          ? 15
+          : 0;
+
+
+      const audioRange =
+        95 -
+        audioStart;
+
 
       const audioPath =
         await uploadFile(
           audio,
           "audio",
           uploadForm,
-          15,
-          80,
+          audioStart,
+          audioRange,
           "Audio"
         );
 
@@ -961,16 +1566,11 @@ uploadForm.onsubmit =
         uploadForm,
         95,
         "Publishing",
-        "Saving song details and finishing publication…"
+        isVersion
+          ? "Adding this version to the Song Hub…"
+          : "Saving song details and finishing publication…"
       );
 
-
-      /*
-        IMPORTANT:
-        Use FormData ONLY for reading text fields.
-
-        The actual files are NOT sent to Render.
-      */
 
       const metadata = {
 
@@ -1031,6 +1631,30 @@ uploadForm.onsubmit =
           audioPath
 
       };
+
+
+      if (isVersion) {
+
+        metadata.parent_song_id =
+          Number(parentId);
+
+        metadata.version_name =
+          selectedVersionName;
+
+      } else {
+
+        /*
+          Explicitly tell server this is
+          a new original song.
+        */
+
+        metadata.parent_song_id =
+          null;
+
+        metadata.version_name =
+          "Original Version";
+
+      }
 
 
       console.log(
@@ -1098,7 +1722,9 @@ uploadForm.onsubmit =
       finishProgress(
         uploadForm,
         true,
-        "Your song has been published successfully."
+        isVersion
+          ? "Version published and added to the Song Hub."
+          : "Your song has been published successfully."
       );
 
 
@@ -1106,7 +1732,9 @@ uploadForm.onsubmit =
         "success";
 
       status.textContent =
-        "Published successfully.";
+        isVersion
+          ? "Version published successfully."
+          : "Published successfully.";
 
 
       uploadForm.reset();
@@ -1122,7 +1750,10 @@ uploadForm.onsubmit =
       }
 
 
-      await load();
+      updateContentTypeUI();
+
+
+      await loadStudioSongs();
 
 
     } catch (error) {
@@ -1175,7 +1806,7 @@ uploadForm.onsubmit =
 function editSong(id) {
 
   const song =
-    songs.find(
+    allStudioSongs.find(
       s =>
         Number(s.id) ===
         Number(id)
@@ -1254,6 +1885,67 @@ function editSong(id) {
 
     preview.src =
       song.cover_url || "";
+
+  }
+
+
+  const isVersion =
+    !!song.parent_song_id;
+
+
+  if (editVersionInfo) {
+
+    editVersionInfo.classList.toggle(
+      "hidden",
+      !isVersion
+    );
+
+  }
+
+
+  if (isVersion) {
+
+    const parent =
+      allStudioSongs.find(
+        item =>
+          Number(item.id) ===
+          Number(song.parent_song_id)
+      );
+
+
+    if (editParentTitle) {
+
+      editParentTitle.textContent =
+        parent?.title ||
+        "Original Song";
+
+    }
+
+
+    if (editVersionName) {
+
+      editVersionName.value =
+        song.version_name ||
+        "Version";
+
+    }
+
+  } else {
+
+    if (editParentTitle) {
+
+      editParentTitle.textContent =
+        "";
+
+    }
+
+
+    if (editVersionName) {
+
+      editVersionName.value =
+        "";
+
+    }
 
   }
 
@@ -1353,6 +2045,27 @@ editForm.onsubmit =
     }
 
 
+    const song =
+      allStudioSongs.find(
+        item =>
+          Number(item.id) ===
+          Number(id)
+      );
+
+
+    if (!song) {
+
+      editStatus.className =
+        "error";
+
+      editStatus.textContent =
+        "Song could not be found.";
+
+      return;
+
+    }
+
+
     editStatus.className = "";
 
     editStatus.textContent = "";
@@ -1382,6 +2095,10 @@ editForm.onsubmit =
 
     const hasCover =
       !!cover;
+
+
+    const isVersion =
+      !!song.parent_song_id;
 
 
     createProgressUI(
@@ -1421,7 +2138,6 @@ editForm.onsubmit =
 
       /* =====================================================
          REPLACEMENT COVER
-         0% → 20%
       ===================================================== */
 
       if (hasCover) {
@@ -1503,12 +2219,6 @@ editForm.onsubmit =
       );
 
 
-      /*
-        Read metadata from the form.
-
-        Files are NOT included in this request.
-      */
-
       const metadata = {
 
         title:
@@ -1580,6 +2290,38 @@ editForm.onsubmit =
       }
 
 
+      /*
+        Only versions can have their
+        version name edited.
+
+        Parent/original relationship is
+        intentionally NOT changed here.
+      */
+
+      if (isVersion) {
+
+        const newVersionName =
+          getFormValue(
+            editForm,
+            "version_name"
+          );
+
+
+        if (!newVersionName) {
+
+          throw new Error(
+            "Version name is required."
+          );
+
+        }
+
+
+        metadata.version_name =
+          newVersionName;
+
+      }
+
+
       console.log(
         "Updating metadata:",
         metadata
@@ -1645,7 +2387,9 @@ editForm.onsubmit =
       finishProgress(
         editForm,
         true,
-        "Your changes have been saved successfully."
+        isVersion
+          ? "Version changes saved successfully."
+          : "Your changes have been saved successfully."
       );
 
 
@@ -1656,7 +2400,7 @@ editForm.onsubmit =
         "Changes saved successfully.";
 
 
-      await load();
+      await loadStudioSongs();
 
 
       setTimeout(
@@ -1735,13 +2479,13 @@ editForm.onsubmit =
 
 
 /* =========================================================
-   DELETE SONG
+   DELETE SONG / VERSION
 ========================================================= */
 
 async function deleteSong(id) {
 
   const song =
-    songs.find(
+    allStudioSongs.find(
       s =>
         Number(s.id) ===
         Number(id)
@@ -1753,9 +2497,24 @@ async function deleteSong(id) {
     "this song";
 
 
+  const isVersion =
+    !!song?.parent_song_id;
+
+
+  const label =
+    isVersion
+      ? (
+          song.version_name ||
+          "this version"
+        )
+      : title;
+
+
   if (
     !confirm(
-      `Delete "${title}" and its files?`
+      isVersion
+        ? `Delete "${label}" from the Song Hub and its files?`
+        : `Delete "${title}" and its files?`
     )
   ) {
 
@@ -1807,7 +2566,7 @@ async function deleteSong(id) {
     }
 
 
-    await load();
+    await loadStudioSongs();
 
 
   } catch (error) {
@@ -1858,4 +2617,6 @@ function esc(value) {
    START
 ========================================================= */
 
-load();
+updateContentTypeUI();
+
+loadStudioSongs();
