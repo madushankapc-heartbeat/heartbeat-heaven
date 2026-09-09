@@ -4,7 +4,7 @@
   "description": "Heartbeat Heaven music website",
   "main": "server.js",
   "scripts": {
-    "start": "node visitor-server.js"
+    "start": "node -e \"const s=process.env.STUDIO_SESSION_SECRET||''; if(s.length<32){console.error('STUDIO_SESSION_SECRET must be set and at least 32 characters long.'); process.exit(1)}; require('./visitor-server.js')\""
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.0",
