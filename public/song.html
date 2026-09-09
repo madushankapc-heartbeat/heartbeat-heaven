@@ -26,18 +26,74 @@
 .song-page{padding-bottom:110px}
 .song-share{display:flex;flex-wrap:wrap;gap:10px;margin:28px 0}
 .song-share .share-btn{min-height:42px;cursor:pointer}
-.versions-list{display:grid;gap:18px}
-.version-card{display:grid;grid-template-columns:150px 1fr;gap:20px;align-items:center}
-.version-cover{width:150px;aspect-ratio:1/1;object-fit:cover;border-radius:14px;display:block}
+
+/* SONG HUB — PREMIUM VERSION AREA */
+.song-hub{
+  margin-top:70px;
+  padding:34px;
+  border:1px solid #2e291f;
+  border-radius:28px;
+  background:linear-gradient(145deg,#15120d,#0d0d0d);
+  box-shadow:0 25px 70px #00000066;
+}
+
+.song-hub .related-head{margin-bottom:26px}
+.song-hub .related-head h2{font-size:clamp(28px,4vw,42px)}
+
+.versions-list{display:grid;gap:16px}
+
+.version-card{
+  position:relative;
+  display:grid;
+  grid-template-columns:150px 1fr;
+  gap:22px;
+  align-items:center;
+  padding:18px;
+  border:1px solid #292929;
+  border-radius:22px;
+  background:linear-gradient(145deg,#171717,#0e0e0e);
+  transition:transform .25s,border-color .25s,box-shadow .25s;
+  overflow:hidden;
+}
+
+.version-card:hover{
+  transform:translateY(-3px);
+  border-color:#66512f;
+  box-shadow:0 18px 45px #00000088;
+}
+
+.version-card:first-child{
+  border-color:#514127;
+  background:linear-gradient(145deg,#1b1710,#0e0e0e);
+}
+
+.version-cover{
+  width:150px;
+  aspect-ratio:1/1;
+  object-fit:cover;
+  border-radius:16px;
+  display:block;
+  box-shadow:0 14px 35px #000;
+}
+
+.version-info{min-width:0}
+.version-info .eyebrow{margin-bottom:8px}
+.version-title{margin:0 0 6px;font-size:22px;line-height:1.2}
+.version-meta{margin:0 0 14px;color:#8f8a82;font-size:11px}
 .version-audio{width:100%;min-width:0}
+
+.song-hub + .song-share{margin-top:24px}
+
 .song-navigation{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:28px 0}
-.song-nav-btn{min-width:0}
 .lyrics{white-space:pre-wrap;line-height:1.9}
+
 @media(max-width:700px){
   .song-page{padding-bottom:90px}
-  .version-card{grid-template-columns:1fr;gap:14px}
-  .version-cover{width:min(220px,100%);margin:0 auto}
+  .song-hub{margin-top:48px;padding:20px 15px;border-radius:22px}
+  .version-card{grid-template-columns:1fr;gap:15px;padding:15px}
+  .version-cover{width:min(220px,100%);margin:0 auto;border-radius:15px}
   .version-info{text-align:left}
+  .version-title{font-size:20px}
   .version-audio{width:100%}
   .song-navigation{grid-template-columns:1fr}
   .song-share{gap:8px}
