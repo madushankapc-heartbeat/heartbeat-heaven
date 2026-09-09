@@ -1,4 +1,8 @@
 User-agent: *
 Allow: /
+Disallow: /admin.html
+Disallow: /admin.js
+Disallow: /studio-login.html
+Disallow: /api/
 
 Sitemap: https://heartbeat-heaven.onrender.com/sitemap.xml
