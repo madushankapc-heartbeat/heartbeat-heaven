@@ -2,8 +2,10 @@ const express = require("express");
 const path = require("path");
 const crypto = require("crypto");
 const { createClient } = require("@supabase/supabase-js");
+const security = require("./security");
 
 const app = express();
+security.install(app);
 const PORT = process.env.PORT || 10000;
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -2047,6 +2049,8 @@ app.get(
     );
   }
 );
+
+security.installErrorHandler(app);
 
 /* =========================================================
    SERVER
