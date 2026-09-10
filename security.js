@@ -1,5 +1,4 @@
 const crypto = require("crypto");
-const visitorRoutes = require("./visitor-routes");
 
 function install(app) {
   app.set("trust proxy", 1);
@@ -235,7 +234,6 @@ function install(app) {
     next();
   });
 
-  visitorRoutes.install(app);
 }
 
 function installErrorHandler(app) {

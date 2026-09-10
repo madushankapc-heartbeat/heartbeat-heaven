@@ -3,9 +3,9 @@ const path = require("path");
 const crypto = require("crypto");
 const { createClient } = require("@supabase/supabase-js");
 const security = require("./security");
+const visitorRoutes = require("./visitor-routes");
 
 const app = express();
-security.install(app);
 const PORT = process.env.PORT || 10000;
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -20,6 +20,9 @@ const supabase = createClient(
     }
   }
 );
+
+security.install(app);
+visitorRoutes.install(app, { supabase });
 
 /* =========================================================
    STUDIO SECURITY — CUSTOM LOGIN

@@ -1,18 +1,4 @@
 const crypto = require("crypto");
-const { createClient } = require("@supabase/supabase-js");
-
-const SUPABASE_URL = process.env.SUPABASE_URL;
-
-const supabase = createClient(
-  SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY,
-  {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false
-    }
-  }
-);
 
 function getCookie(req, name) {
   const cookieHeader = req.headers.cookie || "";
@@ -31,7 +17,7 @@ function getCookie(req, name) {
   return null;
 }
 
-function install(app) {
+function install(app, { supabase }) {
   /* =========================================================
      PUBLIC VISITOR COUNTER
      ========================================================= */
