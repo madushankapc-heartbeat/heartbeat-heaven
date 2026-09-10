@@ -1,5 +1,4 @@
 const express = require("express");
-const multer = require("multer");
 const path = require("path");
 const crypto = require("crypto");
 const { createClient } = require("@supabase/supabase-js");
@@ -19,17 +18,6 @@ const supabase = createClient(
     }
   }
 );
-
-/* =========================================================
-   LEGACY MULTIPART UPLOAD
-   ========================================================= */
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 50 * 1024 * 1024
-  }
-});
 
 /* =========================================================
    STUDIO SECURITY — CUSTOM LOGIN
