@@ -1,8 +1,9 @@
 const express = require("express");
-const multer = require("multer");
 const path = require("path");
 const crypto = require("crypto");
 const { createClient } = require("@supabase/supabase-js");
+const security = require("./security");
+const visitorRoutes = require("./visitor-routes");
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -20,16 +21,8 @@ const supabase = createClient(
   }
 );
 
-/* =========================================================
-   LEGACY MULTIPART UPLOAD
-   ========================================================= */
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 50 * 1024 * 1024
-  }
-});
+security.install(app);
+visitorRoutes.install(app, { supabase });
 
 /* =========================================================
    STUDIO SECURITY — CUSTOM LOGIN
@@ -1228,6 +1221,13 @@ app.get(
               "&#039;"
             );
 
+      const safeJsonLd =
+        (value) =>
+          JSON.stringify(value)
+            .replace(/</g, "\\u003c")
+            .replace(/>/g, "\\u003e")
+            .replace(/&/g, "\\u0026");
+
       const seoDescription =
         `${title} by ${artist}. Listen to the original song and its versions on HEARTBEAT HEAVEN. ${description}`;
 
@@ -1438,7 +1438,7 @@ ${
 }
 
 <script type="application/ld+json">
-${JSON.stringify({
+${safeJsonLd({
   "@context":
     "https://schema.org",
 
@@ -2052,6 +2052,8 @@ app.get(
     );
   }
 );
+
+security.installErrorHandler(app);
 
 /* =========================================================
    SERVER

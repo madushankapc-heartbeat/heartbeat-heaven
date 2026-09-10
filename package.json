@@ -4,11 +4,10 @@
   "description": "Heartbeat Heaven music website",
   "main": "server.js",
   "scripts": {
-    "start": "node -e \"const s=process.env.STUDIO_SESSION_SECRET||''; if(s.length<32){console.error('STUDIO_SESSION_SECRET must be set and at least 32 characters long.'); process.exit(1)}; require('./startup-fix.js')\""
+    "start": "node -e \"const s=process.env.STUDIO_SESSION_SECRET||''; if(s.length<32){console.error('STUDIO_SESSION_SECRET must be set and at least 32 characters long.'); process.exit(1)}; require('./server.js')\""
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.0",
-    "express": "^5.1.0",
-    "multer": "^2.3.0"
+    "express": "^5.1.0"
   }
 }
