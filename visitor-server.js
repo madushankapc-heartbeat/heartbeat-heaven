@@ -69,7 +69,7 @@ function isSameOriginRequest(req) {
 
   if (!host || !forwardedProto) return false;
 
-  const expectedOrigin = `${forwardedProto}://${host}`;
+  const expectedOrigin = forwardedProto + "://" + host;
 
   if (origin) {
     return origin === expectedOrigin;
