@@ -233,7 +233,9 @@ function install(app) {
 
     next();
   });
+}
 
+function installErrorHandler(app) {
   app.use((error, req, res, next) => {
     console.error("Unhandled server error:", error);
 
@@ -251,4 +253,7 @@ function install(app) {
   });
 }
 
-module.exports = { install };
+module.exports = {
+  install,
+  installErrorHandler
+};
