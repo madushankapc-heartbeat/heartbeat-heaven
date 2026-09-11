@@ -4,28 +4,30 @@
 
   let applied = false;
 
-  const escapeHtml = value => String(value).replace(/[&<>"']/g, char => ({
+  const escapeHtml = value => String(value).replace(/[&<>\"']/g, char => ({
     "&": "&amp;",
     "<": "&lt;",
     ">": "&gt;",
-    '"': "&quot;",
+    '\"': "&quot;",
     "'": "&#039;"
   }[char]));
 
-  const apply = () => {
+  function apply() {
     if (applied) return;
 
     const hub = root.querySelector(".song-hub");
-    const list = hub?.querySelector(".versions-list");
-    const cards = list ? Array.from(list.querySelectorAll(":scope > .version-card")) : [];
+    const list = hub && hub.querySelector(".versions-list");
+    if (!hub || !list) return;
 
-    if (!hub || !list || !cards.length) return;
+    const cards = Array.from(list.querySelectorAll(".version-card"));
+    if (!cards.length) return;
 
     const original = cards[0];
     const originalAudio = original.querySelector("audio");
     if (!originalAudio) return;
 
-    const songTitle = root.querySelector(".song-title")?.textContent?.trim() || "Original Song";
+    const title = root.querySelector(".song-title");
+    const songTitle = title ? title.textContent.trim() : "Original Song";
 
     const originalSection = document.createElement("section");
     originalSection.className = "original-player";
@@ -42,7 +44,10 @@
     originalSection.appendChild(playerWrap);
 
     original.remove();
-    hub.parentNode.insertBefore(originalSection, hub);
+
+    if (hub.parentNode) {
+      hub.parentNode.insertBefore(originalSection, hub);
+    }
 
     const hubTitle = hub.querySelector(".related-head h2");
     if (hubTitle) hubTitle.textContent = "Song Versions";
@@ -52,15 +57,19 @@
       card.querySelectorAll(".version-meta").forEach(meta => meta.remove());
     });
 
-    if (!cards.slice(1).length) {
+    if (cards.length === 1) {
       list.innerHTML = `<div class="empty">No additional versions available yet.</div>`;
     }
 
     applied = true;
-    observer.disconnect();
-  };
+    if (observer) observer.disconnect();
+  }
 
-  const observer = new MutationObserver(apply);
+  const observer = new MutationObserver(() => apply());
   observer.observe(root, { childList: true, subtree: true });
+
   apply();
+
+  const retryTimes = [100, 300, 700, 1500, 3000];
+  retryTimes.forEach(delay => setTimeout(apply, delay));
 })();
