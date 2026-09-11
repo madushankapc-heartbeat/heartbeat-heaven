@@ -14,176 +14,657 @@
 <body>
 
 <header class="topbar">
+
   <a class="brand" href="/">
-    <img src="/heartbeat-heaven-logo.png" alt="HEARTBEAT HEAVEN logo" style="width:40px;height:40px;object-fit:cover;border-radius:50%;display:block;">
-    <div><strong>HEARTBEAT HEAVEN</strong><small>Original Music by Madushanka</small></div>
+    <img
+      src="/heartbeat-heaven-logo.png"
+      alt="HEARTBEAT HEAVEN logo"
+      style="width:40px;height:40px;object-fit:cover;border-radius:50%;display:block;"
+    >
+
+    <div>
+      <strong>HEARTBEAT HEAVEN</strong>
+      <small>Original Music by Madushanka</small>
+    </div>
   </a>
-  <nav><a href="/">View Website</a><a href="/songs.html">Songs</a></nav>
+
+  <nav>
+    <a href="/">View Website</a>
+    <a href="/songs.html">Songs</a>
+  </nav>
+
 </header>
 
+
 <main class="admin">
+
+  <!-- HEADER -->
+
   <div class="admin-head">
+
     <div>
-      <p class="eyebrow">PRIVATE STUDIO</p>
-      <h1>Manage your music.</h1>
-      <p>Publish new releases, versions, remixes or edit songs already in your collection.</p>
+
+      <p class="eyebrow">
+        PRIVATE STUDIO
+      </p>
+
+      <h1>
+        Manage your music.
+      </h1>
+
+      <p>
+        Publish new releases, versions, remixes or edit songs already in your collection.
+      </p>
+
     </div>
+
   </div>
 
+
+  <!-- NEW SONG / VERSION -->
+
   <section class="admin-panel">
-    <div class="admin-panel-head"><div><p class="eyebrow">NEW RELEASE</p><h2>Upload music</h2></div></div>
 
-    <form id="uploadForm" class="upload-form" enctype="multipart/form-data">
-      <div class="content-type-box">
-        <p class="field-title">Content type</p>
-        <div class="content-type-options">
-          <label class="content-type-option">
-            <input type="radio" name="content_type" value="original" checked>
-            <span><strong>Original Song</strong><small>Create a new main song / Song Hub</small></span>
-          </label>
-          <label class="content-type-option">
-            <input type="radio" name="content_type" value="version">
-            <span><strong>Version of Existing Song</strong><small>Add a Slow, Remix, Acoustic, Dance or other version</small></span>
-          </label>
-        </div>
-      </div>
-
-      <div id="versionSettings" class="version-settings hidden">
-        <label>Original song
-          <select name="parent_song_id" id="parentSongSelect"><option value="">Select original song</option></select>
-          <span class="hint">This version will automatically appear inside that song's Song Hub.</span>
-        </label>
-        <label>Version name
-          <input name="version_name" id="versionName" placeholder="e.g. Slow Version, Remix Version, Acoustic Version">
-        </label>
-      </div>
-
-      <label>Song title
-        <input name="title" required placeholder="e.g. Eternal Whispers">
-      </label>
-
-      <div class="two">
-        <label>Artist
-          <input name="artist" value="Madushanka">
-        </label>
-        <label>Language
-          <input name="language" placeholder="e.g. Sinhala / Hindi / English" autocomplete="off">
-          <span class="hint">Enter one or multiple languages, separated however you prefer.</span>
-        </label>
-      </div>
-
-      <div class="two">
-        <label>Genre
-          <input name="genre" placeholder="e.g. Romantic Bollywood / EDM" autocomplete="off">
-          <span class="hint">Enter the genre or style freely.</span>
-        </label>
-        <label>Mood
-          <input name="mood" value="Romantic" placeholder="Romantic">
-        </label>
-      </div>
-
-      <label>Short description
-        <textarea name="description" rows="3" placeholder="A short description for the song page"></textarea>
-      </label>
-      <label>Lyrics
-        <textarea name="lyrics" rows="12" placeholder="Paste your original lyrics here"></textarea>
-      </label>
-      <label>Release date
-        <input type="date" name="release_date">
-      </label>
-
-      <div class="two">
-        <label>Audio file
-          <input type="file" name="audio" accept="audio/*" required>
-        </label>
-        <label>Cover image
-          <input type="file" name="cover" accept="image/*" id="uploadCover">
-          <span id="coverHint" class="hint">Required for an original song.</span>
-        </label>
-      </div>
-
-      <button class="btn primary" type="submit">Publish Song</button>
-      <div id="status"></div>
-    </form>
-  </section>
-
-  <section class="admin-panel edit-panel hidden" id="editPanel">
     <div class="admin-panel-head">
-      <div><p class="eyebrow">EDIT RELEASE</p><h2>Edit song</h2></div>
-      <button type="button" class="btn ghost" id="cancelEdit">Cancel</button>
+
+      <div>
+        <p class="eyebrow">
+          NEW RELEASE
+        </p>
+
+        <h2>
+          Upload music
+        </h2>
+      </div>
+
     </div>
 
-    <form id="editForm" class="upload-form" enctype="multipart/form-data">
-      <input type="hidden" name="id" id="editId">
 
-      <div id="editVersionInfo" class="version-info hidden">
-        <p class="eyebrow">SONG VERSION</p>
-        <p>This release belongs to: <strong id="editParentTitle">—</strong></p>
-        <label>Version name
-          <input name="version_name" id="editVersionName" placeholder="e.g. Slow Version">
-        </label>
+    <form
+      id="uploadForm"
+      class="upload-form"
+      enctype="multipart/form-data"
+    >
+
+      <!-- CONTENT TYPE -->
+
+      <div class="content-type-box">
+
+        <p class="field-title">
+          Content type
+        </p>
+
+        <div class="content-type-options">
+
+          <label class="content-type-option">
+
+            <input
+              type="radio"
+              name="content_type"
+              value="original"
+              checked
+            >
+
+            <span>
+              <strong>Original Song</strong>
+              <small>
+                Create a new main song / Song Hub
+              </small>
+            </span>
+
+          </label>
+
+
+          <label class="content-type-option">
+
+            <input
+              type="radio"
+              name="content_type"
+              value="version"
+            >
+
+            <span>
+              <strong>Version of Existing Song</strong>
+              <small>
+                Add a Slow, Remix, Acoustic, Dance or other version
+              </small>
+            </span>
+
+          </label>
+
+        </div>
+
       </div>
 
-      <label>Song title
-        <input name="title" id="editTitle" required>
+
+      <!-- VERSION SETTINGS -->
+
+      <div
+        id="versionSettings"
+        class="version-settings hidden"
+      >
+
+        <label>
+
+          Original song
+
+          <select
+            name="parent_song_id"
+            id="parentSongSelect"
+          >
+
+            <option value="">
+              Select original song
+            </option>
+
+          </select>
+
+          <span class="hint">
+            This version will automatically appear inside that song's Song Hub.
+          </span>
+
+        </label>
+
+
+        <label>
+
+          Version name
+
+          <input
+            name="version_name"
+            id="versionName"
+            placeholder="e.g. Slow Version, Remix Version, Acoustic Version"
+          >
+
+        </label>
+
+      </div>
+
+
+      <!-- TITLE -->
+
+      <label>
+
+        Song title
+
+        <input
+          name="title"
+          required
+          placeholder="e.g. Eternal Whispers"
+        >
+
       </label>
+
 
       <div class="two">
-        <label>Artist
-          <input name="artist" id="editArtist" required>
+
+        <label>
+
+          Artist
+
+          <input
+            name="artist"
+            value="Madushanka"
+          >
+
         </label>
-        <label>Language
-          <input name="language" id="editLanguage" placeholder="e.g. Sinhala / Hindi / English" autocomplete="off">
-          <span class="hint">Enter one or multiple languages, separated however you prefer.</span>
+
+
+        <label>
+
+          Language
+
+          <input
+            name="language"
+            placeholder="e.g. Sinhala / Hindi / English"
+            autocomplete="off"
+          >
+
+          <span class="hint">
+            Enter one or multiple languages, separated however you prefer.
+          </span>
+
         </label>
+
       </div>
+
 
       <div class="two">
-        <label>Genre
-          <input name="genre" id="editGenre" placeholder="e.g. Romantic Bollywood / EDM" autocomplete="off">
-          <span class="hint">Enter the genre or style freely.</span>
+
+        <label>
+
+          Genre
+
+          <input
+            name="genre"
+            placeholder="e.g. Romantic Bollywood / EDM"
+            autocomplete="off"
+          >
+
+          <span class="hint">
+            Enter the genre or style freely.
+          </span>
+
         </label>
-        <label>Mood
-          <input name="mood" id="editMood">
+
+
+        <label>
+
+          Mood
+
+          <input
+            name="mood"
+            value="Romantic"
+            placeholder="Romantic"
+          >
+
         </label>
+
       </div>
 
-      <label>Short description
-        <textarea name="description" id="editDescription" rows="3"></textarea>
+
+      <label>
+
+        Short description
+
+        <textarea
+          name="description"
+          rows="3"
+          placeholder="A short description for the song page"
+        ></textarea>
+
       </label>
-      <label>Lyrics
-        <textarea name="lyrics" id="editLyrics" rows="12"></textarea>
+
+
+      <label>
+
+        Lyrics
+
+        <textarea
+          name="lyrics"
+          rows="12"
+          placeholder="Paste your original lyrics here"
+        ></textarea>
+
       </label>
-      <label>Release date
-        <input type="date" name="release_date" id="editReleaseDate">
+
+
+      <label>
+
+        Release date
+
+        <input
+          type="date"
+          name="release_date"
+        >
+
       </label>
+
+
+      <!-- MEDIA -->
+
+      <div class="two">
+
+        <label>
+
+          Audio file
+
+          <input
+            type="file"
+            name="audio"
+            accept="audio/*"
+            required
+          >
+
+        </label>
+
+
+        <label>
+
+          Cover image
+
+          <input
+            type="file"
+            name="cover"
+            accept="image/*"
+            id="uploadCover"
+          >
+
+          <span
+            id="coverHint"
+            class="hint"
+          >
+            Required for an original song.
+          </span>
+
+        </label>
+
+      </div>
+
+
+      <button
+        class="btn primary"
+        type="submit"
+      >
+        Publish Song
+      </button>
+
+
+      <div id="status"></div>
+
+    </form>
+
+  </section>
+
+
+  <!-- EDIT SONG -->
+
+  <section
+    class="admin-panel edit-panel hidden"
+    id="editPanel"
+  >
+
+    <div class="admin-panel-head">
+
+      <div>
+        <p class="eyebrow">
+          EDIT RELEASE
+        </p>
+
+        <h2>
+          Edit song
+        </h2>
+      </div>
+
+
+      <button
+        type="button"
+        class="btn ghost"
+        id="cancelEdit"
+      >
+        Cancel
+      </button>
+
+    </div>
+
+
+    <form
+      id="editForm"
+      class="upload-form"
+      enctype="multipart/form-data"
+    >
+
+      <input
+        type="hidden"
+        name="id"
+        id="editId"
+      >
+
+
+      <!-- VERSION INFORMATION -->
+
+      <div
+        id="editVersionInfo"
+        class="version-info hidden"
+      >
+
+        <p class="eyebrow">
+          SONG VERSION
+        </p>
+
+        <p>
+          This release belongs to:
+
+          <strong id="editParentTitle">
+            —
+          </strong>
+        </p>
+
+
+        <label>
+
+          Version name
+
+          <input
+            name="version_name"
+            id="editVersionName"
+            placeholder="e.g. Slow Version"
+          >
+
+        </label>
+
+      </div>
+
+
+      <label>
+
+        Song title
+
+        <input
+          name="title"
+          id="editTitle"
+          required
+        >
+
+      </label>
+
+
+      <div class="two">
+
+        <label>
+
+          Artist
+
+          <input
+            name="artist"
+            id="editArtist"
+            required
+          >
+
+        </label>
+
+
+        <label>
+
+          Language
+
+          <input
+            name="language"
+            id="editLanguage"
+            placeholder="e.g. Sinhala / Hindi / English"
+            autocomplete="off"
+          >
+
+          <span class="hint">
+            Enter one or multiple languages, separated however you prefer.
+          </span>
+
+        </label>
+
+      </div>
+
+
+      <div class="two">
+
+        <label>
+
+          Genre
+
+          <input
+            name="genre"
+            id="editGenre"
+            placeholder="e.g. Romantic Bollywood / EDM"
+            autocomplete="off"
+          >
+
+          <span class="hint">
+            Enter the genre or style freely.
+          </span>
+
+        </label>
+
+
+        <label>
+
+          Mood
+
+          <input
+            name="mood"
+            id="editMood"
+          >
+
+        </label>
+
+      </div>
+
+
+      <label>
+
+        Short description
+
+        <textarea
+          name="description"
+          id="editDescription"
+          rows="3"
+        ></textarea>
+
+      </label>
+
+
+      <label>
+
+        Lyrics
+
+        <textarea
+          name="lyrics"
+          id="editLyrics"
+          rows="12"
+        ></textarea>
+
+      </label>
+
+
+      <label>
+
+        Release date
+
+        <input
+          type="date"
+          name="release_date"
+          id="editReleaseDate"
+        >
+
+      </label>
+
 
       <div class="edit-media">
-        <div><p class="media-label">Current cover</p><img id="editCoverPreview" class="edit-cover" src="" alt="Current cover"></div>
-        <div class="edit-media-info">
-          <p><strong>Replace cover</strong></p>
-          <input type="file" name="cover" accept="image/*">
-          <p class="hint">Leave empty to keep the current cover.</p>
+
+        <div>
+
+          <p class="media-label">
+            Current cover
+          </p>
+
+          <img
+            id="editCoverPreview"
+            class="edit-cover"
+            src=""
+            alt="Current cover"
+          >
+
         </div>
+
+
+        <div class="edit-media-info">
+
+          <p>
+            <strong>Replace cover</strong>
+          </p>
+
+          <input
+            type="file"
+            name="cover"
+            accept="image/*"
+          >
+
+          <p class="hint">
+            Leave empty to keep the current cover.
+          </p>
+
+        </div>
+
       </div>
+
 
       <div class="edit-audio">
-        <p><strong>Replace audio</strong></p>
-        <input type="file" name="audio" accept="audio/*">
-        <p class="hint">Leave empty to keep the current MP3.</p>
+
+        <p>
+          <strong>Replace audio</strong>
+        </p>
+
+        <input
+          type="file"
+          name="audio"
+          accept="audio/*"
+        >
+
+        <p class="hint">
+          Leave empty to keep the current MP3.
+        </p>
+
       </div>
 
-      <button class="btn primary" type="submit">Save Changes</button>
+
+      <button
+        class="btn primary"
+        type="submit"
+      >
+        Save Changes
+      </button>
+
+
       <div id="editStatus"></div>
+
     </form>
+
   </section>
+
+
+  <!-- SONG LIST -->
 
   <section class="admin-list">
-    <div class="admin-panel-head"><div><p class="eyebrow">YOUR COLLECTION</p><h2>Published songs</h2></div></div>
-    <div id="adminSongs"><div class="empty">Loading songs…</div></div>
+
+    <div class="admin-panel-head">
+
+      <div>
+        <p class="eyebrow">
+          YOUR COLLECTION
+        </p>
+
+        <h2>
+          Published songs
+        </h2>
+
+      </div>
+
+    </div>
+
+
+    <div id="adminSongs">
+
+      <div class="empty">
+        Loading songs…
+      </div>
+
+    </div>
+
   </section>
+
 </main>
 
+
 <script src="/admin.js"></script>
+
 </body>
+
 </html>
