@@ -39,18 +39,6 @@ async function load() {
     const mood = s.mood || "";
     const description = s.description || "";
 
-    const allVersions = [
-      {
-        ...s,
-        version_name: "Original Version",
-        isOriginal: true
-      },
-      ...versions.map(version => ({
-        ...version,
-        isOriginal: false
-      }))
-    ];
-
     const seoDescription =
       `${title} by ${artist}. ` +
       `Listen to the original song and its versions on HEARTBEAT HEAVEN. ` +
@@ -189,15 +177,29 @@ async function load() {
         </div>
       </section>
 
+      <section class="original-player">
+        <div class="original-player-head">
+          <p class="eyebrow">ORIGINAL SONG</p>
+          <h2>${esc(title)}</h2>
+        </div>
+        <div class="original-player-audio">
+          ${s.audio_url ? `
+            <audio class="version-audio" controls preload="metadata" src="${esc(s.audio_url)}"></audio>
+          ` : `
+            <p class="empty">Audio not available.</p>
+          `}
+        </div>
+      </section>
+
       <section class="song-hub">
         <div class="related-head">
           <div>
             <p class="eyebrow">SONG HUB</p>
-            <h2>${esc(title)} — Versions</h2>
+            <h2>Song Versions</h2>
           </div>
         </div>
         <div class="versions-list">
-          ${renderVersionCards(allVersions, s)}
+          ${renderVersionCards(versions, s)}
         </div>
       </section>
 
@@ -229,26 +231,17 @@ async function load() {
 
 function renderVersionCards(versions, original) {
   if (!versions.length) {
-    return `<div class="empty">No versions available yet.</div>`;
+    return `<div class="empty">No additional versions available yet.</div>`;
   }
 
-  return versions.map((version, index) => {
-    const isOriginal = index === 0 || version.isOriginal;
-    const cover = version.cover_url || original.cover_url || "";
-    const versionName = version.version_name || (isOriginal ? "Original Version" : "Version");
+  return versions.map(version => {
+    const versionName = version.version_name || "Version";
 
     return `
       <article class="version-card" data-version-id="${esc(version.id)}">
-        ${cover ? `
-          <img class="version-cover" src="${esc(cover)}" alt="${esc(versionName)} — ${esc(original.title || "Song")}" loading="lazy">
-        ` : ""}
         <div class="version-info">
-          <p class="eyebrow">${isOriginal ? "ORIGINAL" : "VERSION"}</p>
+          <p class="eyebrow">VERSION</p>
           <h3 class="version-title">${esc(versionName)}</h3>
-          <p class="version-meta">
-            ${esc(version.title || original.title || "")}
-            ${version.artist || original.artist ? " • " + esc(version.artist || original.artist) : ""}
-          </p>
           ${version.audio_url ? `
             <audio class="version-audio" controls preload="metadata" src="${esc(version.audio_url)}"></audio>
           ` : `
@@ -456,19 +449,7 @@ function setupSongHubHeader() {
 
   let nav = header.querySelector("#mainNav");
   if (!nav) nav = header.querySelector("nav");
-
-  if (!nav) {
-    nav = document.createElement("nav");
-    nav.id = "mainNav";
-    header.appendChild(nav);
-  }
-
-  nav.innerHTML = `
-    <a href="/">Home</a>
-    <a href="/songs.html">Songs</a>
-    <a href="/#genres">Genres</a>
-    <a href="/#about">About</a>
-  `;
+  if (!nav) return;
 
   let toggle = header.querySelector("#menuToggle");
 
@@ -483,18 +464,16 @@ function setupSongHubHeader() {
     header.insertBefore(toggle, nav);
   }
 
-  if (!toggle.dataset.bound) {
-    toggle.dataset.bound = "true";
-    toggle.addEventListener("click", () => {
-      const open = nav.classList.toggle("open");
-      toggle.setAttribute("aria-expanded", String(open));
-      toggle.setAttribute("aria-label", open ? "Close menu" : "Open menu");
-    });
-  }
+  if (toggle.dataset.bound === "true") return;
+  toggle.dataset.bound = "true";
+
+  toggle.addEventListener("click", () => {
+    const open = nav.classList.toggle("open");
+    toggle.setAttribute("aria-expanded", String(open));
+    toggle.setAttribute("aria-label", open ? "Close menu" : "Open menu");
+  });
 
   nav.querySelectorAll("a").forEach(link => {
-    if (link.dataset.bound) return;
-    link.dataset.bound = "true";
     link.addEventListener("click", () => {
       nav.classList.remove("open");
       toggle.setAttribute("aria-expanded", "false");
