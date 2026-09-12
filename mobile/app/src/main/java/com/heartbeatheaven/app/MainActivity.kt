@@ -6,7 +6,6 @@ import android.media.MediaPlayer
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -143,10 +142,10 @@ class MainActivity : ComponentActivity() {
             setOnPreparedListener {
                 start()
                 currentSongId = song.id
-                isPlaying = true
+                this@MainActivity.isPlaying = true
             }
-            setOnCompletionListener { isPlaying = false }
-            setOnErrorListener { _, _, _ -> isPlaying = false; true }
+            setOnCompletionListener { this@MainActivity.isPlaying = false }
+            setOnErrorListener { _, _, _ -> this@MainActivity.isPlaying = false; true }
             prepareAsync()
         }
     }
