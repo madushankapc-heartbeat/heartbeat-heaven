@@ -2,9 +2,7 @@ package com.heartbeatheaven.app
 
 import android.content.Context
 import android.content.Intent
-import android.media.MediaPlayer
 import android.os.Bundle
-import android.text.Html
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
@@ -62,6 +60,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
@@ -127,33 +128,53 @@ private suspend fun fetchSongs(): List<Song> = withContext(Dispatchers.IO) {
 }
 
 private suspend fun fetchVersions(song: Song): List<SongVersion> = withContext(Dispatchers.IO) {
-    val connection = java.net.URL("$API_BASE/song.html?id=${song.id}").openConnection() as java.net.HttpURLConnection
+    val connection = java.net.URL("$API_BASE/api/songs/${song.id}/hub").openConnection() as java.net.HttpURLConnection
     try {
         connection.requestMethod = "GET"
-        connection.connectTimeout = 15000
-        connection.readTimeout = 20000
-        if (connection.responseCode !in 200..299) return@withContext emptyList()
-        val html = connection.inputStream.bufferedReader().use { it.readText() }
-        val articleRegex = Regex("<article class=\"version-item\">(.*?)</article>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
-        val h2Regex = Regex("<h2>\\s*(.*?)\\s*</h2>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
-        val coverRegex = Regex("<img\\s+src=\"([^\"]+)\"", RegexOption.IGNORE_CASE)
-        val audioRegex = Regex("<audio[\\s\\S]*?src=\"([^\"]+)\"", RegexOption.IGNORE_CASE)
-        val articles = articleRegex.findAll(html).toList()
-        if (articles.isEmpty()) return@withContext listOf(SongVersion(song.id, "Original Version", song.artist, song.coverUrl, song.audioUrl))
-        articles.mapIndexed { index, match ->
-            val block = match.groupValues[1]
-            val rawName = h2Regex.find(block)?.groupValues?.get(1)?.trim() ?: if (index == 0) "Original Version" else "Version ${index + 1}"
-            val name = Html.fromHtml(rawName, Html.FROM_HTML_MODE_LEGACY).toString().trim()
-            val cover = coverRegex.find(block)?.groupValues?.get(1)?.let { Html.fromHtml(it, Html.FROM_HTML_MODE_LEGACY).toString().trim() }.orEmpty()
-            val audio = audioRegex.find(block)?.groupValues?.get(1)?.let { Html.fromHtml(it, Html.FROM_HTML_MODE_LEGACY).toString().trim() }.orEmpty()
+        connection.connectTimeout = 10000
+        connection.readTimeout = 15000
+        if (connection.responseCode !in 200..299) return@withContext listOf(
+            SongVersion(song.id, "Original Version", song.artist, song.coverUrl, song.audioUrl)
+        )
+
+        val body = connection.inputStream.bufferedReader().use { it.readText() }
+        val hub = org.json.JSONObject(body)
+        val original = hub.optJSONObject("original")
+        val versionArray = hub.optJSONArray("versions") ?: JSONArray()
+        val result = mutableListOf<SongVersion>()
+
+        val originalSong = original ?: org.json.JSONObject().apply {
+            put("id", song.id)
+            put("artist", song.artist)
+            put("cover_url", song.coverUrl)
+            put("audio_url", song.audioUrl)
+        }
+
+        result.add(
             SongVersion(
-                id = if (index == 0) song.id else -(song.id * 1000 + index),
-                versionName = name,
-                artist = song.artist,
-                coverUrl = cover.ifBlank { song.coverUrl },
-                audioUrl = audio.ifBlank { song.audioUrl }
+                id = song.id,
+                versionName = originalSong.optString("version_name").ifBlank { "Original Version" },
+                artist = originalSong.optString("artist").ifBlank { song.artist },
+                coverUrl = originalSong.optString("cover_url").ifBlank { song.coverUrl },
+                audioUrl = originalSong.optString("audio_url").ifBlank { song.audioUrl }
+            )
+        )
+
+        for (i in 0 until versionArray.length()) {
+            val item = versionArray.optJSONObject(i) ?: continue
+            val id = item.optLong("id", -(song.id * 1000 + i + 1))
+            result.add(
+                SongVersion(
+                    id = id,
+                    versionName = item.optString("version_name").ifBlank { "Version ${i + 1}" },
+                    artist = item.optString("artist").ifBlank { song.artist },
+                    coverUrl = item.optString("cover_url").ifBlank { song.coverUrl },
+                    audioUrl = item.optString("audio_url").ifBlank { song.audioUrl }
+                )
             )
         }
+
+        result.filter { it.audioUrl.isNotBlank() }
     } catch (_: Exception) {
         listOf(SongVersion(song.id, "Original Version", song.artist, song.coverUrl, song.audioUrl))
     } finally {
@@ -162,9 +183,25 @@ private suspend fun fetchVersions(song: Song): List<SongVersion> = withContext(D
 }
 
 class MainActivity : ComponentActivity() {
-    private var player: MediaPlayer? = null
+    private var player: ExoPlayer? = null
     private var currentSongId by mutableStateOf<Long?>(null)
     private var isPlaying by mutableStateOf(false)
+
+    private val playerListener = object : Player.Listener {
+        override fun onIsPlayingChanged(isPlayingNow: Boolean) {
+            isPlaying = isPlayingNow
+        }
+
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == Player.STATE_ENDED) {
+                isPlaying = false
+            }
+        }
+
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            isPlaying = false
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -176,23 +213,31 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun play(song: Song) {
+        val url = song.audioUrl.trim()
+        if (url.isBlank()) {
+            isPlaying = false
+            return
+        }
+
+        player?.removeListener(playerListener)
         player?.release()
-        player = MediaPlayer().apply {
-            setDataSource(song.audioUrl.trim())
-            setOnPreparedListener {
-                start()
-                currentSongId = song.id
-                this@MainActivity.isPlaying = true
-            }
-            setOnCompletionListener { this@MainActivity.isPlaying = false }
-            setOnErrorListener { _, _, _ -> this@MainActivity.isPlaying = false; true }
-            prepareAsync()
+
+        player = ExoPlayer.Builder(this).build().also { exoPlayer ->
+            exoPlayer.addListener(playerListener)
+            exoPlayer.setMediaItem(MediaItem.fromUri(url))
+            currentSongId = song.id
+            exoPlayer.prepare()
+            exoPlayer.playWhenReady = true
         }
     }
 
-    private fun pause() { player?.pause(); isPlaying = false }
+    private fun pause() {
+        player?.pause()
+        isPlaying = false
+    }
 
     private fun stop() {
+        player?.removeListener(playerListener)
         player?.stop()
         player?.release()
         player = null
@@ -201,6 +246,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        player?.removeListener(playerListener)
         player?.release()
         player = null
         super.onDestroy()
