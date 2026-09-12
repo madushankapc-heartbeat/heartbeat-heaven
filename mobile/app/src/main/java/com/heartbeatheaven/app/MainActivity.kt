@@ -19,7 +19,9 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
@@ -28,8 +30,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.SkipNext
-import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -51,6 +52,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -133,9 +135,11 @@ private suspend fun fetchVersions(song: Song): List<SongVersion> = withContext(D
         connection.requestMethod = "GET"
         connection.connectTimeout = 10000
         connection.readTimeout = 15000
-        if (connection.responseCode !in 200..299) return@withContext listOf(
-            SongVersion(song.id, "Original Version", song.artist, song.coverUrl, song.audioUrl)
-        )
+        if (connection.responseCode !in 200..299) {
+            return@withContext listOf(
+                SongVersion(song.id, "Original Version", song.artist, song.coverUrl, song.audioUrl)
+            )
+        }
 
         val body = connection.inputStream.bufferedReader().use { it.readText() }
         val hub = org.json.JSONObject(body)
@@ -182,6 +186,15 @@ private suspend fun fetchVersions(song: Song): List<SongVersion> = withContext(D
     }
 }
 
+private fun thumbnailUrl(url: String): String {
+    val clean = url.trim()
+    if (clean.isBlank()) return ""
+    return if (clean.contains("/storage/v1/object/public/")) {
+        clean.replace("/storage/v1/object/public/", "/storage/v1/render/image/public/") +
+            if (clean.contains("?")) "&width=144&height=144&resize=cover&quality=55" else "?width=144&height=144&resize=cover&quality=55"
+    } else clean
+}
+
 class MainActivity : ComponentActivity() {
     private var player: ExoPlayer? = null
     private var currentSongId by mutableStateOf<Long?>(null)
@@ -193,9 +206,7 @@ class MainActivity : ComponentActivity() {
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
-            if (playbackState == Player.STATE_ENDED) {
-                isPlaying = false
-            }
+            if (playbackState == Player.STATE_ENDED) isPlaying = false
         }
 
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
@@ -214,14 +225,9 @@ class MainActivity : ComponentActivity() {
 
     private fun play(song: Song) {
         val url = song.audioUrl.trim()
-        if (url.isBlank()) {
-            isPlaying = false
-            return
-        }
-
+        if (url.isBlank()) return
         player?.removeListener(playerListener)
         player?.release()
-
         player = ExoPlayer.Builder(this).build().also { exoPlayer ->
             exoPlayer.addListener(playerListener)
             exoPlayer.setMediaItem(MediaItem.fromUri(url))
@@ -254,14 +260,18 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun HeartbeatTheme(content: @Composable () -> Unit) { MaterialTheme(content = content) }
+private fun HeartbeatTheme(content: @Composable () -> Unit) {
+    MaterialTheme(content = content)
+}
 
 @Composable
-private fun CoverImage(url: String, contentDescription: String?, modifier: Modifier) {
+private fun CoverImage(url: String, contentDescription: String?, modifier: Modifier, thumbnail: Boolean = false) {
     val context = LocalContext.current
-    val request = remember(url) {
+    val imageUrl = if (thumbnail) thumbnailUrl(url) else url.trim()
+    val request = remember(imageUrl, thumbnail) {
         ImageRequest.Builder(context)
-            .data(url.trim().ifBlank { null })
+            .data(imageUrl.ifBlank { null })
+            .size(if (thumbnail) 144 else 900)
             .crossfade(true)
             .build()
     }
@@ -303,34 +313,61 @@ private fun HeartbeatApp(
     var songs by remember { mutableStateOf<List<Song>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
+    var retryKey by remember { mutableStateOf(0) }
     var tab by remember { mutableStateOf(0) }
     var selected by remember { mutableStateOf<Song?>(null) }
     var versions by remember { mutableStateOf<List<SongVersion>>(emptyList()) }
     var versionsLoading by remember { mutableStateOf(false) }
+    var visibleVersionCount by remember { mutableStateOf(3) }
     var query by remember { mutableStateOf("") }
     val favorites = remember { FavoriteStore(context) }
     var favoriteIds by remember { mutableStateOf(favorites.ids()) }
+    val versionListState = rememberLazyListState()
 
-    LaunchedEffect(Unit) {
-        try { songs = fetchSongs(); error = null }
-        catch (_: Exception) { error = "Unable to load songs. Please check your connection." }
-        finally { loading = false }
+    LaunchedEffect(retryKey) {
+        loading = true
+        try {
+            songs = fetchSongs()
+            error = null
+        } catch (_: Exception) {
+            error = "Unable to load songs. Please check your connection."
+        } finally {
+            loading = false
+        }
     }
 
     LaunchedEffect(selected?.id) {
         val song = selected ?: return@LaunchedEffect
         versionsLoading = true
+        visibleVersionCount = 3
         versions = fetchVersions(song)
         versionsLoading = false
     }
 
+    LaunchedEffect(versionListState, versions.size, visibleVersionCount) {
+        snapshotFlow { versionListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
+            .collect { lastVisible ->
+                if (versions.size > visibleVersionCount && lastVisible >= visibleVersionCount) {
+                    visibleVersionCount = minOf(visibleVersionCount + 3, versions.size)
+                }
+            }
+    }
+
     val visibleSongs = songs.filter { song ->
         val q = query.trim().lowercase()
-        q.isBlank() || listOf(song.title, song.artist, song.genre, song.language, song.mood).joinToString(" ").lowercase().contains(q)
+        q.isBlank() || listOf(song.title, song.artist, song.genre, song.language, song.mood)
+            .joinToString(" ").lowercase().contains(q)
     }.let { list -> if (tab == 2) list.filter { favoriteIds.contains(it.id) } else list }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Column { Text("HEARTBEAT HEAVEN", fontWeight = FontWeight.Bold); Text("Original Music by Madushanka", fontSize = 11.sp) } }) },
+        topBar = {
+            TopAppBar(title = {
+                Column {
+                    Text("HEARTBEAT HEAVEN", fontWeight = FontWeight.Bold)
+                    Text("Original Music by Madushanka", fontSize = 11.sp)
+                }
+            })
+        },
         bottomBar = {
             NavigationBar(modifier = Modifier.navigationBarsPadding()) {
                 NavigationBarItem(tab == 0, { tab = 0 }, icon = { Icon(Icons.Default.Home, null) }, label = { Text("Home") })
@@ -341,19 +378,33 @@ private fun HeartbeatApp(
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             if (tab == 1) {
-                OutlinedTextField(value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth().padding(16.dp), leadingIcon = { Icon(Icons.Default.Search, null) }, label = { Text("Search songs, artists...") }, singleLine = true)
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    leadingIcon = { Icon(Icons.Default.Search, null) },
+                    label = { Text("Search songs, artists...") },
+                    singleLine = true
+                )
             }
+
             if (loading) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             } else if (error != null) {
                 Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) { Text(error!!); Spacer(Modifier.height(12.dp)); Button(onClick = { loading = true; error = null }) { Text("Retry") } }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(error!!)
+                        Spacer(Modifier.height(12.dp))
+                        Button(onClick = { retryKey++ }) { Text("Retry") }
+                    }
                 }
             } else if (selected != null) {
                 SongDetails(
                     song = selected!!,
-                    versions = versions,
+                    versions = versions.take(visibleVersionCount),
+                    totalVersions = versions.size,
                     versionsLoading = versionsLoading,
+                    listState = versionListState,
                     isFavorite = favoriteIds.contains(selected!!.id),
                     currentSongId = currentSongId,
                     isPlaying = isPlaying,
@@ -366,42 +417,84 @@ private fun HeartbeatApp(
             } else {
                 if (tab == 0) Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
                     Text("Your music, your moments.", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                    Text("Latest songs from HEARTBEAT HEAVEN", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Fast, lightweight music listening", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(visibleSongs, key = { it.id }) { song ->
-                        SongCard(song, favoriteIds.contains(song.id), currentSongId == song.id && isPlaying, { selected = song }, { if (currentSongId == song.id && isPlaying) onPause() else onPlay(song) }, { favoriteIds = favorites.toggle(song.id) })
+                        SongCard(
+                            song = song,
+                            isFavorite = favoriteIds.contains(song.id),
+                            isPlaying = currentSongId == song.id && isPlaying,
+                            onClick = { selected = song },
+                            onPlay = { if (currentSongId == song.id && isPlaying) onPause() else onPlay(song) },
+                            onFavorite = { favoriteIds = favorites.toggle(song.id) }
+                        )
                     }
                 }
             }
         }
-        if (currentSongId != null && selected == null) songs.firstOrNull { it.id == currentSongId }?.let { MiniPlayer(it, isPlaying, onPlay, onPause, onClose) }
-    }
-}
 
-@Composable
-private fun SongCard(song: Song, isFavorite: Boolean, isPlaying: Boolean, onClick: () -> Unit, onPlay: () -> Unit, onFavorite: () -> Unit) {
-    Card(Modifier.fillMaxWidth().clickable(onClick = onClick), shape = RoundedCornerShape(18.dp), elevation = CardDefaults.cardElevation(2.dp)) {
-        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            CoverImage(song.coverUrl, song.title, Modifier.size(72.dp))
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Text(song.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(song.artist, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("${song.language} • ${song.genre}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            IconButton(onClick = onFavorite) { Icon(if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favorite") }
-            IconButton(onClick = onPlay) { Icon(if (isPlaying) Icons.Default.SkipNext else Icons.Default.PlayArrow, "Play") }
+        if (currentSongId != null && selected == null) {
+            songs.firstOrNull { it.id == currentSongId }?.let { MiniPlayer(it, isPlaying, onPlay, onPause, onClose) }
         }
     }
 }
 
 @Composable
-private fun SongDetails(song: Song, versions: List<SongVersion>, versionsLoading: Boolean, isFavorite: Boolean, currentSongId: Long?, isPlaying: Boolean, onBack: () -> Unit, onPlay: () -> Unit, onPlayVersion: (SongVersion) -> Unit, onFavorite: () -> Unit, onShare: () -> Unit) {
-    LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+private fun SongCard(
+    song: Song,
+    isFavorite: Boolean,
+    isPlaying: Boolean,
+    onClick: () -> Unit,
+    onPlay: () -> Unit,
+    onFavorite: () -> Unit
+) {
+    Card(
+        Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(1.dp)
+    ) {
+        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            CoverImage(song.coverUrl, song.title, Modifier.size(56.dp), thumbnail = true)
+            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                Text(song.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(song.artist, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text("${song.language} • ${song.genre}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick = onFavorite) {
+                Icon(if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favorite")
+            }
+            IconButton(onClick = onPlay) { Icon(Icons.Default.PlayArrow, "Play") }
+        }
+    }
+}
+
+@Composable
+private fun SongDetails(
+    song: Song,
+    versions: List<SongVersion>,
+    totalVersions: Int,
+    versionsLoading: Boolean,
+    listState: LazyListState,
+    isFavorite: Boolean,
+    currentSongId: Long?,
+    isPlaying: Boolean,
+    onBack: () -> Unit,
+    onPlay: () -> Unit,
+    onPlayVersion: (SongVersion) -> Unit,
+    onFavorite: () -> Unit,
+    onShare: () -> Unit
+) {
+    LazyColumn(
+        state = listState,
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         item {
             Button(onClick = onBack) { Text("← Back") }
-            CoverImage(song.coverUrl, song.title, Modifier.fillMaxWidth().height(330.dp))
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(4.dp))
+            CoverImage(song.coverUrl, song.title, Modifier.fillMaxWidth().height(300.dp))
+            Spacer(Modifier.height(8.dp))
             Text(song.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text(song.artist, style = MaterialTheme.typography.titleMedium)
             Text("${song.language} • ${song.genre} • ${song.mood}", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -416,16 +509,18 @@ private fun SongDetails(song: Song, versions: List<SongVersion>, versionsLoading
             }
         }
         item {
-            Text("Versions", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("Original & Versions", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("More versions load as you scroll.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (versionsLoading) CircularProgressIndicator(modifier = Modifier.padding(vertical = 8.dp))
+            else if (totalVersions == 0) Text("No extra versions available.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         items(versions, key = { it.id }) { version ->
             Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
-                Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    CoverImage(version.coverUrl, version.versionName, Modifier.size(58.dp))
+                Row(Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CoverImage(version.coverUrl, version.versionName, Modifier.size(52.dp), thumbnail = true)
                     Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                        Text(version.versionName, fontWeight = FontWeight.Bold)
-                        Text(version.artist, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(version.versionName, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(version.artist, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                     IconButton(onClick = { onPlayVersion(version) }) { Icon(Icons.Default.PlayArrow, "Play ${version.versionName}") }
                 }
@@ -442,17 +537,22 @@ private fun SongDetails(song: Song, versions: List<SongVersion>, versionsLoading
 private fun MiniPlayer(song: Song, isPlaying: Boolean, onPlay: (Song) -> Unit, onPause: () -> Unit, onClose: () -> Unit) {
     Surface(shadowElevation = 8.dp, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            CoverImage(song.coverUrl, null, Modifier.size(52.dp))
-            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) { Text(song.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(song.artist, fontSize = 12.sp) }
-            IconButton(onClick = { if (isPlaying) onPause() else onPlay(song) }) { Icon(if (isPlaying) Icons.Default.SkipPrevious else Icons.Default.PlayArrow, "Play") }
-            IconButton(onClick = onClose) { Text("×", fontSize = 24.sp) }
+            CoverImage(song.coverUrl, null, Modifier.size(48.dp), thumbnail = true)
+            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                Text(song.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(song.artist, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            IconButton(onClick = { if (isPlaying) onPause() else onPlay(song) }) { Icon(Icons.Default.PlayArrow, "Play") }
+            IconButton(onClick = onClose) { Icon(Icons.Default.Close, "Close") }
         }
     }
 }
 
 private class FavoriteStore(context: Context) {
     private val prefs = context.getSharedPreferences("heartbeat_favorites", Context.MODE_PRIVATE)
+
     fun ids(): Set<Long> = prefs.getStringSet("ids", emptySet())!!.mapNotNull { it.toLongOrNull() }.toSet()
+
     fun toggle(id: Long): Set<Long> {
         val next = ids().toMutableSet()
         if (!next.add(id)) next.remove(id)
