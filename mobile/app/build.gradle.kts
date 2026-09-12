@@ -34,6 +34,23 @@ android {
     }
 }
 
+// Reuse the HEARTBEAT HEAVEN logo already stored in the web project for the Android launcher icon.
+val heartbeatIconResDir = layout.buildDirectory.dir("generated/res/heartbeatIcon")
+
+val prepareHeartbeatIcon by tasks.registering {
+    outputs.dir(heartbeatIconResDir)
+    doLast {
+        val source = rootProject.projectDir.parentFile.resolve("public/heartbeat-heaven-logo.png")
+        val target = heartbeatIconResDir.get().dir("drawable").file("heartbeat_heaven_logo.png").asFile
+        check(source.exists()) { "HEARTBEAT HEAVEN logo not found at ${source.absolutePath}" }
+        target.parentFile.mkdirs()
+        source.copyTo(target, overwrite = true)
+    }
+}
+
+android.sourceSets["main"].res.srcDir(heartbeatIconResDir)
+tasks.named("preBuild").configure { dependsOn(prepareHeartbeatIcon) }
+
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom)
