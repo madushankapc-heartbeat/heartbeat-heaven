@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.media.MediaPlayer
 import android.os.Bundle
+import android.text.Html
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
@@ -56,11 +57,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -79,6 +82,14 @@ private data class Song(
     val coverUrl: String,
     val audioUrl: String,
     val releaseDate: String?
+)
+
+private data class SongVersion(
+    val id: Long,
+    val versionName: String,
+    val artist: String,
+    val coverUrl: String,
+    val audioUrl: String
 )
 
 private suspend fun fetchSongs(): List<Song> = withContext(Dispatchers.IO) {
@@ -115,6 +126,41 @@ private suspend fun fetchSongs(): List<Song> = withContext(Dispatchers.IO) {
     }
 }
 
+private suspend fun fetchVersions(song: Song): List<SongVersion> = withContext(Dispatchers.IO) {
+    val connection = java.net.URL("$API_BASE/song.html?id=${song.id}").openConnection() as java.net.HttpURLConnection
+    try {
+        connection.requestMethod = "GET"
+        connection.connectTimeout = 15000
+        connection.readTimeout = 20000
+        if (connection.responseCode !in 200..299) return@withContext emptyList()
+        val html = connection.inputStream.bufferedReader().use { it.readText() }
+        val articleRegex = Regex("<article class=\"version-item\">(.*?)</article>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
+        val h2Regex = Regex("<h2>\\s*(.*?)\\s*</h2>", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE))
+        val coverRegex = Regex("<img\\s+src=\"([^\"]+)\"", RegexOption.IGNORE_CASE)
+        val audioRegex = Regex("<audio[\\s\\S]*?src=\"([^\"]+)\"", RegexOption.IGNORE_CASE)
+        val articles = articleRegex.findAll(html).toList()
+        if (articles.isEmpty()) return@withContext listOf(SongVersion(song.id, "Original Version", song.artist, song.coverUrl, song.audioUrl))
+        articles.mapIndexed { index, match ->
+            val block = match.groupValues[1]
+            val rawName = h2Regex.find(block)?.groupValues?.get(1)?.trim() ?: if (index == 0) "Original Version" else "Version ${index + 1}"
+            val name = Html.fromHtml(rawName, Html.FROM_HTML_MODE_LEGACY).toString().trim()
+            val cover = coverRegex.find(block)?.groupValues?.get(1)?.let { Html.fromHtml(it, Html.FROM_HTML_MODE_LEGACY).toString().trim() }.orEmpty()
+            val audio = audioRegex.find(block)?.groupValues?.get(1)?.let { Html.fromHtml(it, Html.FROM_HTML_MODE_LEGACY).toString().trim() }.orEmpty()
+            SongVersion(
+                id = if (index == 0) song.id else -(song.id * 1000 + index),
+                versionName = name,
+                artist = song.artist,
+                coverUrl = cover.ifBlank { song.coverUrl },
+                audioUrl = audio.ifBlank { song.audioUrl }
+            )
+        }
+    } catch (_: Exception) {
+        listOf(SongVersion(song.id, "Original Version", song.artist, song.coverUrl, song.audioUrl))
+    } finally {
+        connection.disconnect()
+    }
+}
+
 class MainActivity : ComponentActivity() {
     private var player: MediaPlayer? = null
     private var currentSongId by mutableStateOf<Long?>(null)
@@ -124,13 +170,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             HeartbeatTheme {
-                HeartbeatApp(
-                    currentSongId = currentSongId,
-                    isPlaying = isPlaying,
-                    onPlay = ::play,
-                    onPause = ::pause,
-                    onClose = ::stop
-                )
+                HeartbeatApp(currentSongId, isPlaying, ::play, ::pause, ::stop)
             }
         }
     }
@@ -138,7 +178,7 @@ class MainActivity : ComponentActivity() {
     private fun play(song: Song) {
         player?.release()
         player = MediaPlayer().apply {
-            setDataSource(song.audioUrl)
+            setDataSource(song.audioUrl.trim())
             setOnPreparedListener {
                 start()
                 currentSongId = song.id
@@ -150,10 +190,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun pause() {
-        player?.pause()
-        isPlaying = false
-    }
+    private fun pause() { player?.pause(); isPlaying = false }
 
     private fun stop() {
         player?.stop()
@@ -171,9 +208,41 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-private fun HeartbeatTheme(content: @Composable () -> Unit) {
-    MaterialTheme(content = content)
+private fun HeartbeatTheme(content: @Composable () -> Unit) { MaterialTheme(content = content) }
+
+@Composable
+private fun CoverImage(url: String, contentDescription: String?, modifier: Modifier) {
+    val context = LocalContext.current
+    val request = remember(url) {
+        ImageRequest.Builder(context)
+            .data(url.trim().ifBlank { null })
+            .crossfade(true)
+            .build()
+    }
+    AsyncImage(
+        model = request,
+        contentDescription = contentDescription,
+        modifier = modifier,
+        contentScale = ContentScale.Crop,
+        placeholder = painterResource(android.R.drawable.ic_menu_gallery),
+        error = painterResource(android.R.drawable.ic_menu_gallery),
+        fallback = painterResource(android.R.drawable.ic_menu_gallery)
+    )
 }
+
+private fun versionAsSong(parent: Song, version: SongVersion): Song = Song(
+    id = version.id,
+    title = parent.title,
+    artist = version.artist,
+    genre = parent.genre,
+    language = parent.language,
+    mood = parent.mood,
+    description = parent.description,
+    lyrics = parent.lyrics,
+    coverUrl = version.coverUrl,
+    audioUrl = version.audioUrl,
+    releaseDate = parent.releaseDate
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -190,38 +259,32 @@ private fun HeartbeatApp(
     var error by remember { mutableStateOf<String?>(null) }
     var tab by remember { mutableStateOf(0) }
     var selected by remember { mutableStateOf<Song?>(null) }
+    var versions by remember { mutableStateOf<List<SongVersion>>(emptyList()) }
+    var versionsLoading by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     val favorites = remember { FavoriteStore(context) }
     var favoriteIds by remember { mutableStateOf(favorites.ids()) }
 
     LaunchedEffect(Unit) {
-        try {
-            songs = fetchSongs()
-            error = null
-        } catch (e: Exception) {
-            error = "Unable to load songs. Please check your connection."
-        } finally {
-            loading = false
-        }
+        try { songs = fetchSongs(); error = null }
+        catch (_: Exception) { error = "Unable to load songs. Please check your connection." }
+        finally { loading = false }
+    }
+
+    LaunchedEffect(selected?.id) {
+        val song = selected ?: return@LaunchedEffect
+        versionsLoading = true
+        versions = fetchVersions(song)
+        versionsLoading = false
     }
 
     val visibleSongs = songs.filter { song ->
         val q = query.trim().lowercase()
-        q.isBlank() || listOf(song.title, song.artist, song.genre, song.language, song.mood)
-            .joinToString(" ").lowercase().contains(q)
-    }.let { list ->
-        if (tab == 2) list.filter { favoriteIds.contains(it.id) } else list
-    }
+        q.isBlank() || listOf(song.title, song.artist, song.genre, song.language, song.mood).joinToString(" ").lowercase().contains(q)
+    }.let { list -> if (tab == 2) list.filter { favoriteIds.contains(it.id) } else list }
 
     Scaffold(
-        topBar = {
-            TopAppBar(title = {
-                Column {
-                    Text("HEARTBEAT HEAVEN", fontWeight = FontWeight.Bold)
-                    Text("Original Music by Madushanka", fontSize = 11.sp)
-                }
-            })
-        },
+        topBar = { TopAppBar(title = { Column { Text("HEARTBEAT HEAVEN", fontWeight = FontWeight.Bold); Text("Original Music by Madushanka", fontSize = 11.sp) } }) },
         bottomBar = {
             NavigationBar(modifier = Modifier.navigationBarsPadding()) {
                 NavigationBarItem(tab == 0, { tab = 0 }, icon = { Icon(Icons.Default.Home, null) }, label = { Text("Home") })
@@ -232,64 +295,41 @@ private fun HeartbeatApp(
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             if (tab == 1) {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    leadingIcon = { Icon(Icons.Default.Search, null) },
-                    label = { Text("Search songs, artists...") },
-                    singleLine = true
-                )
+                OutlinedTextField(value = query, onValueChange = { query = it }, modifier = Modifier.fillMaxWidth().padding(16.dp), leadingIcon = { Icon(Icons.Default.Search, null) }, label = { Text("Search songs, artists...") }, singleLine = true)
             }
-
             if (loading) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
             } else if (error != null) {
                 Box(Modifier.fillMaxSize().padding(24.dp), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(error!!)
-                        Spacer(Modifier.height(12.dp))
-                        Button(onClick = { loading = true; error = null }) { Text("Retry") }
-                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) { Text(error!!); Spacer(Modifier.height(12.dp)); Button(onClick = { loading = true; error = null }) { Text("Retry") } }
                 }
             } else if (selected != null) {
                 SongDetails(
                     song = selected!!,
+                    versions = versions,
+                    versionsLoading = versionsLoading,
                     isFavorite = favoriteIds.contains(selected!!.id),
-                    isPlaying = currentSongId == selected!!.id && isPlaying,
+                    currentSongId = currentSongId,
+                    isPlaying = isPlaying,
                     onBack = { selected = null },
                     onPlay = { if (currentSongId == selected!!.id && isPlaying) onPause() else onPlay(selected!!) },
-                    onFavorite = {
-                        favoriteIds = favorites.toggle(selected!!.id)
-                    },
+                    onPlayVersion = { version -> onPlay(versionAsSong(selected!!, version)) },
+                    onFavorite = { favoriteIds = favorites.toggle(selected!!.id) },
                     onShare = { shareSong(context, selected!!) }
                 )
             } else {
-                if (tab == 0) {
-                    Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
-                        Text("Your music, your moments.", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-                        Text("Latest songs from HEARTBEAT HEAVEN", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                if (tab == 0) Column(Modifier.padding(horizontal = 16.dp, vertical = 10.dp)) {
+                    Text("Your music, your moments.", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Text("Latest songs from HEARTBEAT HEAVEN", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     items(visibleSongs, key = { it.id }) { song ->
-                        SongCard(
-                            song = song,
-                            isFavorite = favoriteIds.contains(song.id),
-                            isPlaying = currentSongId == song.id && isPlaying,
-                            onClick = { selected = song },
-                            onPlay = { if (currentSongId == song.id && isPlaying) onPause() else onPlay(song) },
-                            onFavorite = { favoriteIds = favorites.toggle(song.id) }
-                        )
+                        SongCard(song, favoriteIds.contains(song.id), currentSongId == song.id && isPlaying, { selected = song }, { if (currentSongId == song.id && isPlaying) onPause() else onPlay(song) }, { favoriteIds = favorites.toggle(song.id) })
                     }
                 }
             }
         }
-
-        if (currentSongId != null && selected == null) {
-            val now = songs.firstOrNull { it.id == currentSongId }
-            if (now != null) MiniPlayer(now, isPlaying, onPlay, onPause, onClose)
-        }
+        if (currentSongId != null && selected == null) songs.firstOrNull { it.id == currentSongId }?.let { MiniPlayer(it, isPlaying, onPlay, onPause, onClose) }
     }
 }
 
@@ -297,7 +337,7 @@ private fun HeartbeatApp(
 private fun SongCard(song: Song, isFavorite: Boolean, isPlaying: Boolean, onClick: () -> Unit, onPlay: () -> Unit, onFavorite: () -> Unit) {
     Card(Modifier.fillMaxWidth().clickable(onClick = onClick), shape = RoundedCornerShape(18.dp), elevation = CardDefaults.cardElevation(2.dp)) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            AsyncImage(model = song.coverUrl, contentDescription = song.title, modifier = Modifier.size(72.dp), contentScale = ContentScale.Crop)
+            CoverImage(song.coverUrl, song.title, Modifier.size(72.dp))
             Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                 Text(song.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(song.artist, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -310,17 +350,17 @@ private fun SongCard(song: Song, isFavorite: Boolean, isPlaying: Boolean, onClic
 }
 
 @Composable
-private fun SongDetails(song: Song, isFavorite: Boolean, isPlaying: Boolean, onBack: () -> Unit, onPlay: () -> Unit, onFavorite: () -> Unit, onShare: () -> Unit) {
+private fun SongDetails(song: Song, versions: List<SongVersion>, versionsLoading: Boolean, isFavorite: Boolean, currentSongId: Long?, isPlaying: Boolean, onBack: () -> Unit, onPlay: () -> Unit, onPlayVersion: (SongVersion) -> Unit, onFavorite: () -> Unit, onShare: () -> Unit) {
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Button(onClick = onBack) { Text("← Back") }
-            AsyncImage(model = song.coverUrl, contentDescription = song.title, modifier = Modifier.fillMaxWidth().height(330.dp), contentScale = ContentScale.Crop)
+            CoverImage(song.coverUrl, song.title, Modifier.fillMaxWidth().height(330.dp))
             Spacer(Modifier.height(12.dp))
             Text(song.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text(song.artist, style = MaterialTheme.typography.titleMedium)
             Text("${song.language} • ${song.genre} • ${song.mood}", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onPlay) { Icon(Icons.Default.PlayArrow, null); Text(if (isPlaying) " Pause" else " Play") }
+                Button(onClick = onPlay) { Icon(Icons.Default.PlayArrow, null); Text(if (currentSongId == song.id && isPlaying) " Pause" else " Play") }
                 IconButton(onClick = onFavorite) { Icon(if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favorite") }
                 IconButton(onClick = onShare) { Icon(Icons.Default.Share, "Share") }
             }
@@ -328,10 +368,26 @@ private fun SongDetails(song: Song, isFavorite: Boolean, isPlaying: Boolean, onB
                 Text("About", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 Text(song.description)
             }
-            if (song.lyrics.isNotBlank()) {
-                Text("Lyrics", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text(song.lyrics)
+        }
+        item {
+            Text("Versions", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            if (versionsLoading) CircularProgressIndicator(modifier = Modifier.padding(vertical = 8.dp))
+        }
+        items(versions, key = { it.id }) { version ->
+            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CoverImage(version.coverUrl, version.versionName, Modifier.size(58.dp))
+                    Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                        Text(version.versionName, fontWeight = FontWeight.Bold)
+                        Text(version.artist, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    IconButton(onClick = { onPlayVersion(version) }) { Icon(Icons.Default.PlayArrow, "Play ${version.versionName}") }
+                }
             }
+        }
+        if (song.lyrics.isNotBlank()) item {
+            Text("Lyrics", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(song.lyrics)
         }
     }
 }
@@ -340,11 +396,8 @@ private fun SongDetails(song: Song, isFavorite: Boolean, isPlaying: Boolean, onB
 private fun MiniPlayer(song: Song, isPlaying: Boolean, onPlay: (Song) -> Unit, onPause: () -> Unit, onClose: () -> Unit) {
     Surface(shadowElevation = 8.dp, modifier = Modifier.fillMaxWidth()) {
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            AsyncImage(model = song.coverUrl, contentDescription = null, modifier = Modifier.size(52.dp), contentScale = ContentScale.Crop)
-            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                Text(song.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(song.artist, fontSize = 12.sp)
-            }
+            CoverImage(song.coverUrl, null, Modifier.size(52.dp))
+            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) { Text(song.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(song.artist, fontSize = 12.sp) }
             IconButton(onClick = { if (isPlaying) onPause() else onPlay(song) }) { Icon(if (isPlaying) Icons.Default.SkipPrevious else Icons.Default.PlayArrow, "Play") }
             IconButton(onClick = onClose) { Text("×", fontSize = 24.sp) }
         }
