@@ -30,6 +30,19 @@ jobs:
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
 
+      - name: Validate APK package and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$GITHUB_WORKSPACE/mobile/app/build/outputs/apk/debug/app-debug.apk"
+          BUILD_TOOLS_DIR="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          echo "APK: $APK"
+          ls -lh "$APK"
+          echo "Build tools: $BUILD_TOOLS_DIR"
+          "$BUILD_TOOLS_DIR/aapt2" dump packagename "$APK"
+          "$BUILD_TOOLS_DIR/zipalign" -c -P 16 -v 4 "$APK"
+          "$BUILD_TOOLS_DIR/apksigner" verify --verbose --print-certs "$APK"
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
