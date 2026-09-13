@@ -265,7 +265,18 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
         Column(Modifier.fillMaxSize().padding(padding)) {
             when {
                 tab == 3 -> AccountScreen()
-                selected != null -> DetailScreen(selected!!, songId, playing, position, duration, { selected = null }, { if (songId == selected!!.id && playing) onPause() else onPlay(selected!!) }, onSeek, { favoriteIds = favorites.toggle(selected!!.id) }, { shareSong(context, selected!!) })
+                selected != null -> DetailScreen(
+                    selected!!,
+                    songId,
+                    playing,
+                    position,
+                    duration,
+                    { selected = null },
+                    { target -> if (songId == target.id && playing) onPause() else onPlay(target) },
+                    onSeek,
+                    { favoriteIds = favorites.toggle(selected!!.id) },
+                    { shareSong(context, selected!!) }
+                )
                 else -> {
                     if (tab == 1) OutlinedTextField(search, { search = it }, Modifier.fillMaxWidth().padding(16.dp), label = { Text("Search songs, artists...") }, leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true)
                     if (loading) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -323,7 +334,7 @@ private fun MiniPlayer(s: Song, playing: Boolean, position: Long, duration: Long
 }
 
 @Composable
-private fun DetailScreen(s: Song, songId: Long?, playing: Boolean, position: Long, duration: Long, onBack: () -> Unit, onPlay: () -> Unit, onSeek: (Long) -> Unit, onFavorite: () -> Unit, onShare: () -> Unit) {
+private fun DetailScreen(s: Song, songId: Long?, playing: Boolean, position: Long, duration: Long, onBack: () -> Unit, onPlaySong: (Song) -> Unit, onSeek: (Long) -> Unit, onFavorite: () -> Unit, onShare: () -> Unit) {
     var original by remember(s.id) { mutableStateOf(s) }
     var versions by remember(s.id) { mutableStateOf<List<Song>>(emptyList()) }
     var loadingVersions by remember(s.id) { mutableStateOf(true) }
@@ -350,7 +361,7 @@ private fun DetailScreen(s: Song, songId: Long?, playing: Boolean, position: Lon
             Text("${original.language} • ${original.genre} • ${original.mood}")
             Progress(position, duration, onSeek)
             Row {
-                Button(onClick = onPlay) {
+                Button(onClick = { onPlaySong(original) }) {
                     Icon(if (songId == original.id && playing) Icons.Default.Pause else Icons.Default.PlayArrow, null)
                     Text(if (songId == original.id && playing) " Pause" else " Play")
                 }
@@ -369,12 +380,10 @@ private fun DetailScreen(s: Song, songId: Long?, playing: Boolean, position: Lon
             item { Text(versionsError!!, color = MaterialTheme.colorScheme.error) }
         } else {
             item {
-                VersionCard(original, songId, playing, onPlay)
+                VersionCard(original, songId, playing) { onPlaySong(original) }
             }
             items(versions, key = { it.id }) { version ->
-                VersionCard(version, songId, playing, { onPlayVersion ->
-                    onPlayVersion()
-                }, isVersion = true)
+                VersionCard(version, songId, playing) { onPlaySong(version) }
             }
         }
         if (original.lyrics.isNotBlank()) {
@@ -387,14 +396,13 @@ private fun DetailScreen(s: Song, songId: Long?, playing: Boolean, position: Lon
 }
 
 @Composable
-private fun VersionCard(version: Song, songId: Long?, playing: Boolean, onPlay: (() -> Unit), isVersion: Boolean = false) {
+private fun VersionCard(version: Song, songId: Long?, playing: Boolean, onPlay: () -> Unit) {
     Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
         Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
             Cover(version.coverUrl, Modifier.size(58.dp), true)
             Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                Text(if (isVersion) version.versionName else "Original Version", fontWeight = FontWeight.Bold)
+                Text(version.versionName, fontWeight = FontWeight.Bold)
                 Text(version.title, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                if (isVersion && version.versionName.isBlank()) Text("Additional version", fontSize = 11.sp)
             }
             val active = songId == version.id && playing
             IconButton(onClick = onPlay) { Icon(if (active) Icons.Default.Pause else Icons.Default.PlayArrow, if (active) "Pause" else "Play") }
