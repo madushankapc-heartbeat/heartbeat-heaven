@@ -21,6 +21,7 @@ internal fun AccountScreen() {
     var busy by remember { mutableStateOf(false) }
     var signup by remember { mutableStateOf(false) }
     var phoneMode by remember { mutableStateOf(false) }
+    var resetMode by remember { mutableStateOf(false) }
     var identifier by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -57,6 +58,21 @@ internal fun AccountScreen() {
                     }, modifier = Modifier.fillMaxWidth()) { Text("Log out") }
                 }
             }
+        } else if (resetMode) {
+            Text("Reset password", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text("Enter the email address linked to your account. We will send a secure password reset link.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            OutlinedTextField(identifier, { identifier = it }, label = { Text("Email") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            Button(enabled = !busy && identifier.contains("@"), onClick = {
+                busy = true; message = null; error = null
+                Thread {
+                    val result = api.requestPasswordReset(identifier)
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        busy = false
+                        result.onSuccess { message = it }.onFailure { error = it.message ?: "Could not send reset email." }
+                    }
+                }.start()
+            }, modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Please wait..." else "Send reset link") }
+            TextButton(onClick = { resetMode = false; message = null; error = null }) { Text("Back to login") }
         } else {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { signup = false; message = null; error = null }, Modifier.weight(1f)) { Text("Log in") }
@@ -87,7 +103,7 @@ internal fun AccountScreen() {
                     }
                 }.start()
             }, modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Please wait..." else if (signup) "Create account" else "Log in") }
-            if (!signup) Text("Forgot password? Password reset will be added in the next account step.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (!signup && !phoneMode) TextButton(onClick = { resetMode = true; message = null; error = null }) { Text("Forgot password?") }
         }
         message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
