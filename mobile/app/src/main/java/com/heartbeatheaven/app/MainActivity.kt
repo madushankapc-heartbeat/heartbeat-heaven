@@ -38,7 +38,6 @@ private const val API_BASE = "https://heartbeat-heaven.onrender.com"
 private const val YOUTUBE_URL = "https://www.youtube.com/@ViBORA-r1i"
 
 private data class Song(val id: Long,val title: String,val artist: String,val genre: String,val language: String,val mood: String,val description: String,val lyrics: String,val coverUrl: String,val audioUrl: String,val releaseDate: String?)
-private data class SongVersion(val id: Long,val versionName: String,val artist: String,val coverUrl: String,val audioUrl: String)
 
 private suspend fun fetchSongs(): List<Song> = withContext(Dispatchers.IO) {
     val c = java.net.URL("$API_BASE/api/songs").openConnection() as java.net.HttpURLConnection
@@ -62,7 +61,6 @@ class MainActivity : ComponentActivity() {
     private var isPlaying by mutableStateOf(false)
     private var positionMs by mutableLongStateOf(0L)
     private var durationMs by mutableLongStateOf(0L)
-
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(value: Boolean) { isPlaying=value }
         override fun onPlaybackStateChanged(state: Int) {
@@ -71,23 +69,17 @@ class MainActivity : ComponentActivity() {
         }
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) { isPlaying=false }
     }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme {
                 LaunchedEffect(currentSongId,isPlaying) {
-                    while(currentSongId!=null) {
-                        positionMs=player?.currentPosition?.coerceAtLeast(0L) ?: 0L
-                        durationMs=player?.duration?.takeIf{it>0} ?: durationMs
-                        delay(if(isPlaying)250L else 500L)
-                    }
+                    while(currentSongId!=null) { positionMs=player?.currentPosition?.coerceAtLeast(0L) ?: 0L; durationMs=player?.duration?.takeIf{it>0} ?: durationMs; delay(if(isPlaying)250L else 500L) }
                 }
                 HeartbeatApp(currentSong,currentSongId,isPlaying,positionMs,durationMs,::playSong,::pausePlayback,::seekPlayback,::stopPlayback)
             }
         }
     }
-
     private fun playSong(song: Song) {
         val url=song.audioUrl.trim(); if(url.isBlank()) return
         if(currentSongId==song.id && player!=null) { player?.play(); return }
@@ -105,7 +97,7 @@ class MainActivity : ComponentActivity() {
 private fun Cover(url:String, modifier:Modifier, thumb:Boolean=false) {
     val context=LocalContext.current; val image=if(thumb) thumbnailUrl(url) else url.trim()
     val request=remember(image,thumb){ImageRequest.Builder(context).data(image.ifBlank{null}).size(if(thumb)144 else 900).crossfade(true).build()}
-    AsyncImage(request,null,modifier,contentScale=ContentScale.Crop,placeholder=painterResource(android.R.drawable.ic_menu_gallery),error=painterResource(android.R.drawable.ic_menu_gallery))
+    AsyncImage(model=request,contentDescription=null,modifier=modifier,contentScale=ContentScale.Crop,placeholder=painterResource(android.R.drawable.ic_menu_gallery),error=painterResource(android.R.drawable.ic_menu_gallery))
 }
 
 private fun timeText(ms:Long):String { val s=(ms.coerceAtLeast(0L)/1000).toInt(); return "%d:%02d".format(s/60,s%60) }
@@ -113,8 +105,7 @@ private fun timeText(ms:Long):String { val s=(ms.coerceAtLeast(0L)/1000).toInt()
 @Composable
 private fun Progress(position:Long,duration:Long,onSeek:(Long)->Unit,small:Boolean=false) {
     val d=duration.coerceAtLeast(0L); val p=position.coerceIn(0L,if(d>0)d else 0L)
-    Column { Slider(value=if(d>0)p.toFloat() else 0f,onValueChange={if(d>0)onSeek(it.toLong())},valueRange=0f..d.toFloat().coerceAtLeast(1f),enabled=d>0)
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(timeText(p),fontSize=if(small)10.sp else 12.sp);Text(timeText(d),fontSize=if(small)10.sp else 12.sp)} }
+    Column { Slider(value=if(d>0)p.toFloat() else 0f,onValueChange={if(d>0)onSeek(it.toLong())},valueRange=0f..d.toFloat().coerceAtLeast(1f),enabled=d>0); Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(timeText(p),fontSize=if(small)10.sp else 12.sp);Text(timeText(d),fontSize=if(small)10.sp else 12.sp)} }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -126,23 +117,12 @@ private fun HeartbeatApp(song:Song?,songId:Long?,playing:Boolean,position:Long,d
     val favorites=remember{FavoriteStore(context)}; var favs by remember{mutableStateOf(favorites.ids())}
     LaunchedEffect(Unit){try{songs=fetchSongs()}catch(e:Exception){error="Unable to load songs. Please check your connection."}finally{loading=false}}
     val list=songs.filter{val q=search.trim().lowercase();q.isBlank()||listOf(it.title,it.artist,it.genre,it.language,it.mood).joinToString(" ").lowercase().contains(q)}.let{if(tab==2)it.filter{favs.contains(it.id)}else it}
-
-    Scaffold(topBar={TopAppBar(title={Column{Text("HEARTBEAT HEAVEN",fontWeight=FontWeight.Bold);Text("Original Music by Madushanka",fontSize=11.sp)}})},bottomBar={
-        Column {
-            if(song!=null && selected==null) MiniPlayer(song,playing,position,duration,onPlay,onPause,onSeek,onStop)
-            NavigationBar { NavigationBarItem(selected=tab==0,onClick={tab=0},icon={Icon(Icons.Default.Home,null)},label={Text("Home")}); NavigationBarItem(selected=tab==1,onClick={tab=1},icon={Icon(Icons.Default.Search,null)},label={Text("Search")}); NavigationBarItem(selected=tab==2,onClick={tab=2},icon={Icon(Icons.Default.Favorite,null)},label={Text("Favorites")}); NavigationBarItem(selected=tab==3,onClick={tab=3},icon={Icon(Icons.Default.Person,null)},label={Text("Profile")}) }
-        }
-    }) { padding ->
+    Scaffold(topBar={TopAppBar(title={Column{Text("HEARTBEAT HEAVEN",fontWeight=FontWeight.Bold);Text("Original Music by Madushanka",fontSize=11.sp)}})},bottomBar={Column{if(song!=null && selected==null) MiniPlayer(song,playing,position,duration,onPlay,onPause,onSeek,onStop);NavigationBar{NavigationBarItem(selected=tab==0,onClick={tab=0},icon={Icon(Icons.Default.Home,null)},label={Text("Home")});NavigationBarItem(selected=tab==1,onClick={tab=1},icon={Icon(Icons.Default.Search,null)},label={Text("Search")});NavigationBarItem(selected=tab==2,onClick={tab=2},icon={Icon(Icons.Default.Favorite,null)},label={Text("Favorites")});NavigationBarItem(selected=tab==3,onClick={tab=3},icon={Icon(Icons.Default.Person,null)},label={Text("Profile")})}}}) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            if(tab==3) { AccountScreen() }
-            else if(selected!=null) { DetailScreen(selected!!,songId,playing,position,duration,{selected=null},{if(songId==selected!!.id&&playing)onPause()else onPlay(selected!!)},onSeek,{favs=favorites.toggle(selected!!.id)},{shareSong(context,selected!!)}) }
-            else {
-                if(tab==1) OutlinedTextField(search,{search=it},Modifier.fillMaxWidth().padding(16.dp),label={Text("Search songs, artists...")},leadingIcon={Icon(Icons.Default.Search,null)},singleLine=true)
-                if(loading) Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){CircularProgressIndicator()}
-                else if(error!=null) Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Text(error!!)}
-                else { if(tab==0) Column(Modifier.padding(16.dp)){Text("Your music, your moments.",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold);Text("Fast, lightweight music listening",color=MaterialTheme.colorScheme.onSurfaceVariant);Spacer(Modifier.height(12.dp));Button(onClick={context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(YOUTUBE_URL)))},Modifier.fillMaxWidth()){Text("▶ Watch ViBORA on YouTube")}}
-                    LazyColumn(contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){items(list,key={it.id}){s->SongCard(s,favs.contains(s.id),songId==s.id&&playing,{selected=s},{if(songId==s.id&&playing)onPause()else onPlay(s)},{favs=favorites.toggle(s.id)})}}
-                }
+            if(tab==3) AccountScreen()
+            else if(selected!=null) DetailScreen(selected!!,songId,playing,position,duration,{selected=null},{if(songId==selected!!.id&&playing)onPause()else onPlay(selected!!)},onSeek,{favs=favorites.toggle(selected!!.id)},{shareSong(context,selected!!)})
+            else { if(tab==1) OutlinedTextField(search,{search=it},Modifier.fillMaxWidth().padding(16.dp),label={Text("Search songs, artists...")},leadingIcon={Icon(Icons.Default.Search,null)},singleLine=true)
+                if(loading) Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){CircularProgressIndicator()} else if(error!=null) Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){Text(error!!)} else { if(tab==0) Column(Modifier.padding(16.dp)){Text("Your music, your moments.",style=MaterialTheme.typography.headlineSmall,fontWeight=FontWeight.Bold);Text("Fast, lightweight music listening",color=MaterialTheme.colorScheme.onSurfaceVariant);Spacer(Modifier.height(12.dp));Button(onClick={context.startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(YOUTUBE_URL)))},Modifier.fillMaxWidth()){Text("▶ Watch ViBORA on YouTube")}};LazyColumn(contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)){items(list,key={it.id}){s->SongCard(s,favs.contains(s.id),songId==s.id&&playing,{selected=s},{if(songId==s.id&&playing)onPause()else onPlay(s)},{favs=favorites.toggle(s.id)})}}}}
             }
         }
     }
@@ -150,7 +130,7 @@ private fun HeartbeatApp(song:Song?,songId:Long?,playing:Boolean,position:Long,d
 
 @Composable private fun SongCard(s:Song,favorite:Boolean,playing:Boolean,onOpen:()->Unit,onPlay:()->Unit,onFavorite:()->Unit)=Card(Modifier.fillMaxWidth().clickable(onClick=onOpen),shape=RoundedCornerShape(16.dp)){Row(Modifier.padding(8.dp),verticalAlignment=Alignment.CenterVertically){Cover(s.coverUrl,Modifier.size(56.dp),true);Column(Modifier.weight(1f).padding(horizontal=10.dp)){Text(s.title,fontWeight=FontWeight.Bold,maxLines=1,overflow=TextOverflow.Ellipsis);Text(s.artist,fontSize=13.sp);Text("${s.language} • ${s.genre}",fontSize=11.sp)};IconButton(onFavorite){Icon(if(favorite)Icons.Default.Favorite else Icons.Default.FavoriteBorder,"Favorite")};IconButton(onPlay){Icon(if(playing)Icons.Default.Pause else Icons.Default.PlayArrow,"Play")}}}
 
-@Composable private fun MiniPlayer(s:Song,playing:Boolean,position:Long,duration:Long,onPlay:(Song)->Unit,onPause:()->Unit,onSeek:(Long)->Unit,onStop:()->Unit)=Surface(shadowElevation=8.dp,modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(horizontal=10.dp,vertical=4.dp)){Row(verticalAlignment=Alignment.CenterVertically){Cover(s.coverUrl,Modifier.size(46.dp),true);Column(Modifier.weight(1f).padding(horizontal=10.dp)){Text(s.title,fontWeight=FontWeight.Bold,maxLines=1,overflow=TextOverflow.Ellipsis);Text(s.artist,fontSize=12.sp,maxLines=1,overflow=TextOverflow.Ellipsis)};IconButton(if(playing)onPause else { {onPlay(s)} }){Icon(if(playing)Icons.Default.Pause else Icons.Default.PlayArrow,if(playing)"Pause"else"Play")};IconButton(onStop){Icon(Icons.Default.Close,"Close")}};Progress(position,duration,onSeek,true)}}
+@Composable private fun MiniPlayer(s:Song,playing:Boolean,position:Long,duration:Long,onPlay:(Song)->Unit,onPause:()->Unit,onSeek:(Long)->Unit,onStop:()->Unit)=Surface(shadowElevation=8.dp,modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(horizontal=10.dp,vertical=4.dp)){Row(verticalAlignment=Alignment.CenterVertically){Cover(s.coverUrl,Modifier.size(46.dp),true);Column(Modifier.weight(1f).padding(horizontal=10.dp)){Text(s.title,fontWeight=FontWeight.Bold,maxLines=1,overflow=TextOverflow.Ellipsis);Text(s.artist,fontSize=12.sp,maxLines=1,overflow=TextOverflow.Ellipsis)};IconButton(onClick={if(playing)onPause()else onPlay(s)}){Icon(if(playing)Icons.Default.Pause else Icons.Default.PlayArrow,if(playing)"Pause"else"Play")};IconButton(onClick=onStop){Icon(Icons.Default.Close,"Close")}};Progress(position,duration,onSeek,true)}}
 
 @Composable private fun DetailScreen(s:Song,songId:Long?,playing:Boolean,position:Long,duration:Long,onBack:()->Unit,onPlay:()->Unit,onSeek:(Long)->Unit,onFavorite:()->Unit,onShare:()->Unit)=LazyColumn(contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){item{Button(onBack){Text("← Back")};Cover(s.coverUrl,Modifier.fillMaxWidth().height(300.dp));Text(s.title,style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold);Text(s.artist);Text("${s.language} • ${s.genre} • ${s.mood}");Progress(position,duration,onSeek);Row{Button(onPlay){Icon(if(songId==s.id&&playing)Icons.Default.Pause else Icons.Default.PlayArrow,null);Text(if(songId==s.id&&playing)" Pause" else " Play")};IconButton(onFavorite){Icon(Icons.Default.Favorite,"Favorite")};IconButton(onShare){Icon(Icons.Default.Share,"Share")}};if(s.description.isNotBlank())Text(s.description)};if(s.lyrics.isNotBlank())item{Text("Lyrics",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold);Text(s.lyrics)}}
 
