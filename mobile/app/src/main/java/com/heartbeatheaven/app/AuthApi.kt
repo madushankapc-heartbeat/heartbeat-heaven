@@ -7,8 +7,9 @@ import java.net.URL
 import java.net.URLEncoder
 
 private const val SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.co"
-private const val SUPABASE_PUBLISHABLE_KEY = "sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
+private const val SUPABASE_PUBLISHABLE_KEY = "sb_publishable_MlBmbt3bdFDjMkjxrdwg_fa3MqBKs"
 private const val AUTH_REDIRECT_URL = "https://heartbeat-heaven.onrender.com"
+private const val PASSWORD_RESET_REDIRECT_URL = "heartbeatheaven://auth/reset"
 
 internal data class AccountProfile(
     val id: String,
@@ -123,10 +124,18 @@ internal class AuthApi(context: Context) {
         return try {
             val body = JSONObject().apply {
                 put("email", email.trim())
-                put("redirect_to", AUTH_REDIRECT_URL)
+                put("redirect_to", PASSWORD_RESET_REDIRECT_URL)
             }.toString()
             request("/auth/v1/recover", "POST", body, "application/json")
             Result.success("If an account exists for this email, a password reset link has been sent.")
+        } catch (e: Exception) { Result.failure(e) }
+    }
+
+    fun updatePassword(accessToken: String, newPassword: String): Result<String> {
+        return try {
+            val body = JSONObject().put("password", newPassword).toString()
+            request("/auth/v1/user", "PUT", body, "application/json", accessToken)
+            Result.success("Password updated successfully.")
         } catch (e: Exception) { Result.failure(e) }
     }
 
