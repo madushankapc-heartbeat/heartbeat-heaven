@@ -54,7 +54,6 @@ internal class AuthApi(context: Context) {
                     put("phone", identifier.trim())
                 } else {
                     put("email", identifier.trim())
-                    put("email_redirect_to", AUTH_REDIRECT_URL)
                 }
                 put("password", password)
                 put("data", JSONObject().apply {
@@ -62,7 +61,12 @@ internal class AuthApi(context: Context) {
                     put("gender", gender.lowercase())
                 })
             }
-            val response = request("/auth/v1/signup", "POST", body.toString(), "application/json")
+            val signupPath = if (phoneMode) {
+                "/auth/v1/signup"
+            } else {
+                "/auth/v1/signup?redirect_to=${encode(AUTH_REDIRECT_URL)}"
+            }
+            val response = request(signupPath, "POST", body.toString(), "application/json")
             val json = JSONObject(response.body)
             val access = json.optString("access_token")
             val refresh = json.optString("refresh_token")
