@@ -77,7 +77,7 @@ val preparePlayerProgressFix by tasks.registering {
                 )
             }
         }"""
-        if (old in text) text = text.replace(old, updated, 1)
+        if (old in text) text = text.replace(old, updated)
 
         val oldEffect = """    LaunchedEffect(currentSongId, isPlaying) {
         while (currentSongId != null) {
@@ -90,7 +90,7 @@ val preparePlayerProgressFix by tasks.registering {
     }
 
 """
-        if (oldEffect in text) text = text.replace(oldEffect, "", 1)
+        if (oldEffect in text) text = text.replace(oldEffect, "")
         source.writeText(text)
     }
 }
