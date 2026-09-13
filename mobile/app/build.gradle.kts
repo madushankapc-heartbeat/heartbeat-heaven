@@ -52,7 +52,7 @@ val prepareHeartbeatIcon by tasks.registering {
 // This is applied at build time until the source can be updated directly.
 val preparePlayerProgressFix by tasks.registering {
     doLast {
-        val source = rootProject.projectDir.resolve("src/main/java/com/heartbeatheaven/app/MainActivity.kt")
+        val source = rootProject.projectDir.resolve("app/src/main/java/com/heartbeatheaven/app/MainActivity.kt")
         var text = source.readText()
         val old = """        setContent {
             HeartbeatTheme {
