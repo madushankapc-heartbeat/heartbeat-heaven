@@ -17,6 +17,7 @@ import java.util.concurrent.TimeUnit
 class RealtimeMessagesClient(
     private val accessToken: String,
     private val userId: String,
+    private val apiKey: String,
     private val onMessage: (id: String, senderId: String, body: String, createdAt: String) -> Unit
 ) {
     private val client = OkHttpClient.Builder().pingInterval(20, TimeUnit.SECONDS).build()
@@ -31,7 +32,7 @@ class RealtimeMessagesClient(
 
     private fun connect() {
         if (stopped) return
-        val url = "wss://fafvhyeesenpimxncupp.supabase.co/realtime/v1/websocket?apikey=sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs&vsn=1.0.0"
+        val url = "wss://fafvhyeesenpimxncupp.supabase.co/realtime/v1/websocket?apikey=$apiKey&vsn=1.0.0"
         socket = client.newWebSocket(Request.Builder().url(url).build(), object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 val payload = JSONObject()
