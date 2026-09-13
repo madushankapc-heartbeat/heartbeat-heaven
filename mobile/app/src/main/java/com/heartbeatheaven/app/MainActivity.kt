@@ -132,7 +132,29 @@ private fun HeartbeatApp(song:Song?,songId:Long?,playing:Boolean,position:Long,d
 
 @Composable private fun MiniPlayer(s:Song,playing:Boolean,position:Long,duration:Long,onPlay:(Song)->Unit,onPause:()->Unit,onSeek:(Long)->Unit,onStop:()->Unit)=Surface(shadowElevation=8.dp,modifier=Modifier.fillMaxWidth()){Column(Modifier.padding(horizontal=10.dp,vertical=4.dp)){Row(verticalAlignment=Alignment.CenterVertically){Cover(s.coverUrl,Modifier.size(46.dp),true);Column(Modifier.weight(1f).padding(horizontal=10.dp)){Text(s.title,fontWeight=FontWeight.Bold,maxLines=1,overflow=TextOverflow.Ellipsis);Text(s.artist,fontSize=12.sp,maxLines=1,overflow=TextOverflow.Ellipsis)};IconButton(onClick={if(playing)onPause()else onPlay(s)}){Icon(if(playing)Icons.Default.Pause else Icons.Default.PlayArrow,if(playing)"Pause"else"Play")};IconButton(onClick=onStop){Icon(Icons.Default.Close,"Close")}};Progress(position,duration,onSeek,true)}}
 
-@Composable private fun DetailScreen(s:Song,songId:Long?,playing:Boolean,position:Long,duration:Long,onBack:()->Unit,onPlay:()->Unit,onSeek:(Long)->Unit,onFavorite:()->Unit,onShare:()->Unit)=LazyColumn(contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){item{Button(onBack){Text("← Back")};Cover(s.coverUrl,Modifier.fillMaxWidth().height(300.dp));Text(s.title,style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold);Text(s.artist);Text("${s.language} • ${s.genre} • ${s.mood}");Progress(position,duration,onSeek);Row{Button(onPlay){Icon(if(songId==s.id&&playing)Icons.Default.Pause else Icons.Default.PlayArrow,null);Text(if(songId==s.id&&playing)" Pause" else " Play")};IconButton(onFavorite){Icon(Icons.Default.Favorite,"Favorite")};IconButton(onShare){Icon(Icons.Default.Share,"Share")}};if(s.description.isNotBlank())Text(s.description)};if(s.lyrics.isNotBlank())item{Text("Lyrics",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold);Text(s.lyrics)}}
+@Composable
+private fun DetailScreen(s:Song,songId:Long?,playing:Boolean,position:Long,duration:Long,onBack:()->Unit,onPlay:()->Unit,onSeek:(Long)->Unit,onFavorite:()->Unit,onShare:()->Unit) {
+    LazyColumn(contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+        item {
+            Button(onBack){Text("← Back")}
+            Cover(s.coverUrl,Modifier.fillMaxWidth().height(300.dp))
+            Text(s.title,style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold)
+            Text(s.artist)
+            Text("${s.language} • ${s.genre} • ${s.mood}")
+            Progress(position,duration,onSeek)
+            Row {
+                Button(onPlay){Icon(if(songId==s.id&&playing)Icons.Default.Pause else Icons.Default.PlayArrow,null);Text(if(songId==s.id&&playing)" Pause" else " Play")}
+                IconButton(onFavorite){Icon(Icons.Default.Favorite,"Favorite")}
+                IconButton(onShare){Icon(Icons.Default.Share,"Share")}
+            }
+            if(s.description.isNotBlank())Text(s.description)
+        }
+        if(s.lyrics.isNotBlank()) item {
+            Text("Lyrics",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold)
+            Text(s.lyrics)
+        }
+    }
+}
 
 private class FavoriteStore(context:Context) {
     private val p=context.getSharedPreferences("heartbeat_favorites",Context.MODE_PRIVATE)
