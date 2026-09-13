@@ -95,10 +95,35 @@ val preparePlayerProgressFix by tasks.registering {
     }
 }
 
+// Add the new Profile tab without rewriting the already-tested main activity source.
+val prepareAccountFeature by tasks.registering {
+    doLast {
+        val source = rootProject.projectDir.resolve("app/src/main/java/com/heartbeatheaven/app/MainActivity.kt")
+        var text = source.readText()
+        if (!text.contains("Icons.Default.Person")) {
+            text = text.replace("import androidx.compose.material.icons.filled.PlayArrow", "import androidx.compose.material.icons.filled.PlayArrow\nimport androidx.compose.material.icons.filled.Person")
+        }
+        if (!text.contains("NavigationBarItem(tab == 3")) {
+            val oldNav = """                NavigationBarItem(tab == 2, { tab = 2 }, icon = { Icon(Icons.Default.Favorite, null) }, label = { Text(\"Favorites\") })"""
+            val newNav = oldNav + "\n                NavigationBarItem(tab == 3, { tab = 3 }, icon = { Icon(Icons.Default.Person, null) }, label = { Text(\"Profile\") })"
+            text = text.replace(oldNav, newNav)
+        }
+        if (!text.contains("else if (tab == 3)")) {
+            val marker = """            } else if (selected != null) {"""
+            val replacement = """            } else if (tab == 3) {
+                AccountScreen()
+            } else if (selected != null) {"""
+            text = text.replace(marker, replacement)
+        }
+        source.writeText(text)
+    }
+}
+
 android.sourceSets["main"].res.srcDir(heartbeatIconResDir)
 tasks.named("preBuild").configure {
     dependsOn(prepareHeartbeatIcon)
     dependsOn(preparePlayerProgressFix)
+    dependsOn(prepareAccountFeature)
 }
 
 dependencies {
