@@ -48,8 +48,58 @@ val prepareHeartbeatIcon by tasks.registering {
     }
 }
 
+// Keep the player UI synchronized with ExoPlayer while a song is playing.
+// This is applied at build time until the source can be updated directly.
+val preparePlayerProgressFix by tasks.registering {
+    doLast {
+        val source = rootProject.projectDir.resolve("src/main/java/com/heartbeatheaven/app/MainActivity.kt")
+        var text = source.readText()
+        val old = """        setContent {
+            HeartbeatTheme {
+                HeartbeatApp(
+                    currentSongId, currentSong, isPlaying, positionMs, durationMs,
+                    ::play, ::pause, ::seekTo, ::stop
+                )
+            }
+        }"""
+        val updated = """        setContent {
+            HeartbeatTheme {
+                LaunchedEffect(currentSongId, isPlaying) {
+                    while (currentSongId != null) {
+                        positionMs = player?.currentPosition?.coerceAtLeast(0L) ?: positionMs
+                        durationMs = player?.duration?.takeIf { it > 0 } ?: durationMs
+                        delay(if (isPlaying) 250L else 500L)
+                    }
+                }
+                HeartbeatApp(
+                    currentSongId, currentSong, isPlaying, positionMs, durationMs,
+                    ::play, ::pause, ::seekTo, ::stop
+                )
+            }
+        }"""
+        if (old in text) text = text.replace(old, updated, 1)
+
+        val oldEffect = """    LaunchedEffect(currentSongId, isPlaying) {
+        while (currentSongId != null) {
+            if (isPlaying) {
+                delay(500)
+                // Position is supplied by the Activity through the player callback loop.
+                // The Activity state is refreshed here through the lightweight public API below.
+            } else delay(700)
+        }
+    }
+
+"""
+        if (oldEffect in text) text = text.replace(oldEffect, "", 1)
+        source.writeText(text)
+    }
+}
+
 android.sourceSets["main"].res.srcDir(heartbeatIconResDir)
-tasks.named("preBuild").configure { dependsOn(prepareHeartbeatIcon) }
+tasks.named("preBuild").configure {
+    dependsOn(prepareHeartbeatIcon)
+    dependsOn(preparePlayerProgressFix)
+}
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
