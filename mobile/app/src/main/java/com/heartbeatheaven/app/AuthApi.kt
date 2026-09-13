@@ -122,11 +122,11 @@ internal class AuthApi(context: Context) {
 
     fun requestPasswordReset(email: String): Result<String> {
         return try {
-            val body = JSONObject().apply {
-                put("email", email.trim())
-                put("redirect_to", PASSWORD_RESET_REDIRECT_URL)
-            }.toString()
-            request("/auth/v1/recover", "POST", body, "application/json")
+            // Supabase Auth expects redirect_to as a URL parameter on /recover.
+            // Sending it in the JSON body causes Supabase to fall back to Site URL.
+            val path = "/auth/v1/recover?redirect_to=${encode(PASSWORD_RESET_REDIRECT_URL)}"
+            val body = JSONObject().put("email", email.trim()).toString()
+            request(path, "POST", body, "application/json")
             Result.success("If an account exists for this email, a password reset link has been sent.")
         } catch (e: Exception) { Result.failure(e) }
     }
