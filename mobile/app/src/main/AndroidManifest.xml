@@ -10,6 +10,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.HeartbeatHeaven">
         <activity
+            android:name=".StudioActivity"
+            android:exported="false" />
+        <activity
             android:name=".PasswordResetActivity"
             android:exported="true">
             <intent-filter>
