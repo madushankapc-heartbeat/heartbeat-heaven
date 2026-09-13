@@ -28,22 +28,31 @@ private data class FriendRequest(val id: String, val user: FriendUser, val incom
 private data class ChatMessage(val id: String, val senderId: String, val body: String, val createdAt: String)
 
 private class FriendsApi(context: Context) {
-    private val prefs = context.getSharedPreferences("heartbeat_auth", Context.MODE_PRIVATE)
-    private fun token() = prefs.getString("access_token", null) ?: error("Please log in first")
-    private fun me() = prefs.getString("user_id", null) ?: error("Please log in first")
+    private val auth = AuthApi(context)
+    private var session: AuthSession? = null
+
+    private fun ensureSession(): AuthSession {
+        session?.let { return it }
+        return auth.currentSession()?.also { session = it } ?: error("Please log in first")
+    }
+
+    private fun token() = ensureSession().accessToken
+    private fun me() = ensureSession().profile.id
 
     private fun request(path: String, method: String, body: String? = null): String {
         val c = (URL(FRIENDS_SUPABASE_URL + path).openConnection() as HttpURLConnection)
-        c.requestMethod = method
-        c.connectTimeout = 15000; c.readTimeout = 20000
-        c.setRequestProperty("apikey", FRIENDS_KEY)
-        c.setRequestProperty("Authorization", "Bearer ${token()}")
-        c.setRequestProperty("Accept", "application/json")
-        if (body != null) { c.doOutput = true; c.setRequestProperty("Content-Type", "application/json"); c.outputStream.use { it.write(body.toByteArray()) } }
-        val stream = if (c.responseCode in 200..299) c.inputStream else c.errorStream
-        val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-        if (c.responseCode !in 200..299) throw IllegalStateException(runCatching { JSONObject(text).optString("message").ifBlank { JSONObject(text).optString("msg") } }.getOrDefault("Request failed (${c.responseCode})"))
-        c.disconnect(); return text
+        try {
+            c.requestMethod = method
+            c.connectTimeout = 15000; c.readTimeout = 20000
+            c.setRequestProperty("apikey", FRIENDS_KEY)
+            c.setRequestProperty("Authorization", "Bearer ${token()}")
+            c.setRequestProperty("Accept", "application/json")
+            if (body != null) { c.doOutput = true; c.setRequestProperty("Content-Type", "application/json"); c.outputStream.use { it.write(body.toByteArray()) } }
+            val stream = if (c.responseCode in 200..299) c.inputStream else c.errorStream
+            val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (c.responseCode !in 200..299) throw IllegalStateException(runCatching { JSONObject(text).optString("message").ifBlank { JSONObject(text).optString("msg") } }.getOrDefault("Request failed (${c.responseCode})"))
+            return text
+        } finally { c.disconnect() }
     }
 
     suspend fun search(username: String): List<FriendUser> = withContext(Dispatchers.IO) {
