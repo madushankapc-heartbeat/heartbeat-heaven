@@ -33,6 +33,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
+import org.json.JSONObject
 
 private const val API_BASE = "https://heartbeat-heaven.onrender.com"
 private const val YOUTUBE_URL = "https://www.youtube.com/@ViBORA-r1i"
@@ -48,7 +49,23 @@ private data class Song(
     val lyrics: String,
     val coverUrl: String,
     val audioUrl: String,
-    val releaseDate: String?
+    val releaseDate: String?,
+    val versionName: String = "Original Version"
+)
+
+private fun songFromJson(o: JSONObject): Song = Song(
+    id = o.optLong("id"),
+    title = o.optString("title"),
+    artist = o.optString("artist"),
+    genre = o.optString("genre"),
+    language = o.optString("language"),
+    mood = o.optString("mood"),
+    description = o.optString("description"),
+    lyrics = o.optString("lyrics"),
+    coverUrl = o.optString("cover_url"),
+    audioUrl = o.optString("audio_url"),
+    releaseDate = o.optString("release_date").takeIf { it.isNotBlank() },
+    versionName = o.optString("version_name").ifBlank { "Original Version" }
 )
 
 private suspend fun fetchSongs(): List<Song> = withContext(Dispatchers.IO) {
@@ -60,11 +77,27 @@ private suspend fun fetchSongs(): List<Song> = withContext(Dispatchers.IO) {
         if (connection.responseCode !in 200..299) error("Server returned ${connection.responseCode}")
         val array = JSONArray(connection.inputStream.bufferedReader().use { it.readText() })
         buildList {
-            for (i in 0 until array.length()) {
-                val o = array.getJSONObject(i)
-                add(Song(o.optLong("id"), o.optString("title"), o.optString("artist"), o.optString("genre"), o.optString("language"), o.optString("mood"), o.optString("description"), o.optString("lyrics"), o.optString("cover_url"), o.optString("audio_url"), o.optString("release_date").takeIf { it.isNotBlank() }))
-            }
+            for (i in 0 until array.length()) add(songFromJson(array.getJSONObject(i)))
         }
+    } finally {
+        connection.disconnect()
+    }
+}
+
+private suspend fun fetchSongHub(id: Long): Pair<Song, List<Song>> = withContext(Dispatchers.IO) {
+    val connection = java.net.URL("$API_BASE/api/songs/$id/hub").openConnection() as java.net.HttpURLConnection
+    try {
+        connection.requestMethod = "GET"
+        connection.connectTimeout = 15000
+        connection.readTimeout = 20000
+        if (connection.responseCode !in 200..299) error("Server returned ${connection.responseCode}")
+        val root = JSONObject(connection.inputStream.bufferedReader().use { it.readText() })
+        val original = songFromJson(root.getJSONObject("original"))
+        val versionsJson = root.optJSONArray("versions") ?: JSONArray()
+        val versions = buildList {
+            for (i in 0 until versionsJson.length()) add(songFromJson(versionsJson.getJSONObject(i)))
+        }
+        original to versions
     } finally {
         connection.disconnect()
     }
@@ -87,16 +120,12 @@ class MainActivity : ComponentActivity() {
     private var durationMs by mutableLongStateOf(0L)
 
     private val listener = object : Player.Listener {
-        override fun onIsPlayingChanged(isPlayingNow: Boolean) {
-            isPlaying = isPlayingNow
-        }
+        override fun onIsPlayingChanged(isPlayingNow: Boolean) { isPlaying = isPlayingNow }
         override fun onPlaybackStateChanged(state: Int) {
             if (state == Player.STATE_READY) durationMs = player?.duration?.coerceAtLeast(0L) ?: 0L
             if (state == Player.STATE_ENDED) stopPlayback()
         }
-        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-            isPlaying = false
-        }
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) { isPlaying = false }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -250,7 +279,7 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
                         }
                         LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             items(filtered, key = { it.id }) { s ->
-                                SongCard(s, favoriteIds.contains(s.id), songId == s.id && playing, { selected = s }, { if (songId == s.id && playing) onPause() else onPlay(s) }, { favoriteIds = favorites.toggle(s.id) })
+                                SongCard(s, favoriteIds.contains(s.id), { selected = s }, { favoriteIds = favorites.toggle(s.id) })
                             }
                         }
                     }
@@ -261,7 +290,7 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
 }
 
 @Composable
-private fun SongCard(s: Song, favorite: Boolean, playing: Boolean, onOpen: () -> Unit, onPlay: () -> Unit, onFavorite: () -> Unit) {
+private fun SongCard(s: Song, favorite: Boolean, onOpen: () -> Unit, onFavorite: () -> Unit) {
     Card(Modifier.fillMaxWidth().clickable(onClick = onOpen), shape = RoundedCornerShape(16.dp)) {
         Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             Cover(s.coverUrl, Modifier.size(56.dp), true)
@@ -270,8 +299,7 @@ private fun SongCard(s: Song, favorite: Boolean, playing: Boolean, onOpen: () ->
                 Text(s.artist, fontSize = 13.sp)
                 Text("${s.language} • ${s.genre}", fontSize = 11.sp)
             }
-            IconButton(onFavorite) { Icon(if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favorite") }
-            IconButton(onPlay) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play") }
+            IconButton(onClick = onFavorite) { Icon(if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favorite") }
         }
     }
 }
@@ -296,26 +324,80 @@ private fun MiniPlayer(s: Song, playing: Boolean, position: Long, duration: Long
 
 @Composable
 private fun DetailScreen(s: Song, songId: Long?, playing: Boolean, position: Long, duration: Long, onBack: () -> Unit, onPlay: () -> Unit, onSeek: (Long) -> Unit, onFavorite: () -> Unit, onShare: () -> Unit) {
+    var original by remember(s.id) { mutableStateOf(s) }
+    var versions by remember(s.id) { mutableStateOf<List<Song>>(emptyList()) }
+    var loadingVersions by remember(s.id) { mutableStateOf(true) }
+    var versionsError by remember(s.id) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(s.id) {
+        try {
+            val hub = fetchSongHub(s.id)
+            original = hub.first
+            versions = hub.second
+        } catch (e: Exception) {
+            versionsError = "Unable to load versions."
+        } finally {
+            loadingVersions = false
+        }
+    }
+
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Button(onClick = onBack) { Text("← Back") }
-            Cover(s.coverUrl, Modifier.fillMaxWidth().height(300.dp))
-            Text(s.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-            Text(s.artist)
-            Text("${s.language} • ${s.genre} • ${s.mood}")
+            Cover(original.coverUrl, Modifier.fillMaxWidth().height(300.dp))
+            Text(original.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text(original.artist)
+            Text("${original.language} • ${original.genre} • ${original.mood}")
             Progress(position, duration, onSeek)
             Row {
-                Button(onClick = onPlay) { Icon(if (songId == s.id && playing) Icons.Default.Pause else Icons.Default.PlayArrow, null); Text(if (songId == s.id && playing) " Pause" else " Play") }
+                Button(onClick = onPlay) {
+                    Icon(if (songId == original.id && playing) Icons.Default.Pause else Icons.Default.PlayArrow, null)
+                    Text(if (songId == original.id && playing) " Pause" else " Play")
+                }
                 IconButton(onClick = onFavorite) { Icon(Icons.Default.Favorite, "Favorite") }
                 IconButton(onClick = onShare) { Icon(Icons.Default.Share, "Share") }
             }
-            if (s.description.isNotBlank()) Text(s.description)
+            if (original.description.isNotBlank()) Text(original.description)
         }
-        if (s.lyrics.isNotBlank()) {
+        item {
+            Text("Versions", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("Original and additional versions", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+        }
+        if (loadingVersions) {
+            item { Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() } }
+        } else if (versionsError != null) {
+            item { Text(versionsError!!, color = MaterialTheme.colorScheme.error) }
+        } else {
+            item {
+                VersionCard(original, songId, playing, onPlay)
+            }
+            items(versions, key = { it.id }) { version ->
+                VersionCard(version, songId, playing, { onPlayVersion ->
+                    onPlayVersion()
+                }, isVersion = true)
+            }
+        }
+        if (original.lyrics.isNotBlank()) {
             item {
                 Text("Lyrics", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text(s.lyrics)
+                Text(original.lyrics)
             }
+        }
+    }
+}
+
+@Composable
+private fun VersionCard(version: Song, songId: Long?, playing: Boolean, onPlay: (() -> Unit), isVersion: Boolean = false) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Cover(version.coverUrl, Modifier.size(58.dp), true)
+            Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                Text(if (isVersion) version.versionName else "Original Version", fontWeight = FontWeight.Bold)
+                Text(version.title, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (isVersion && version.versionName.isBlank()) Text("Additional version", fontSize = 11.sp)
+            }
+            val active = songId == version.id && playing
+            IconButton(onClick = onPlay) { Icon(if (active) Icons.Default.Pause else Icons.Default.PlayArrow, if (active) "Pause" else "Play") }
         }
     }
 }
