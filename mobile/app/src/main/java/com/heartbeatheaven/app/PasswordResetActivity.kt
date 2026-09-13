@@ -17,14 +17,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class PasswordResetActivity : ComponentActivity() {
     private var accessToken: String? = null
@@ -51,11 +52,11 @@ class PasswordResetActivity : ComponentActivity() {
         val token = accessToken
         setContent {
             MaterialTheme {
-                var password by mutableStateOf("")
-                var confirmPassword by mutableStateOf("")
-                var busy by mutableStateOf(false)
-                var message by mutableStateOf<String?>(null)
-                var error by mutableStateOf<String?>(null)
+                var password by remember { mutableStateOf("") }
+                var confirmPassword by remember { mutableStateOf("") }
+                var busy by remember { mutableStateOf(false) }
+                var message by remember { mutableStateOf<String?>(null) }
+                var error by remember { mutableStateOf<String?>(null) }
 
                 Column(
                     Modifier.fillMaxSize().padding(24.dp),
