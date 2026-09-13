@@ -34,9 +34,28 @@ internal class AuthApi(context: Context) {
         val access = prefs.getString("access_token", null) ?: return null
         val refresh = prefs.getString("refresh_token", "").orEmpty()
         val userId = prefs.getString("user_id", null) ?: return null
+
+        // Reuse the profile saved at successful login/signup so Friends and Studio
+        // do not perform a second auth/profile request just to discover the session.
+        val cachedUsername = prefs.getString("profile_username", null)
+        if (!cachedUsername.isNullOrBlank()) {
+            return AuthSession(
+                access,
+                refresh,
+                AccountProfile(
+                    id = userId,
+                    username = cachedUsername,
+                    gender = prefs.getString("profile_gender", "male").orEmpty().ifBlank { "male" },
+                    email = prefs.getString("profile_email", null),
+                    phone = prefs.getString("profile_phone", null)
+                )
+            )
+        }
+
         return try {
             val user = requestUser(access)
             val profile = fetchProfile(access, userId, user)
+            saveProfile(profile)
             AuthSession(access, refresh, profile)
         } catch (_: Exception) {
             if (refresh.isBlank()) {
@@ -67,6 +86,7 @@ internal class AuthApi(context: Context) {
             if (access.isNotBlank() && user != null) {
                 saveTokens(access, refresh, user.optString("id"))
                 val profile = fetchProfile(access, user.optString("id"), user)
+                saveProfile(profile)
                 Result.success("Account created successfully. Welcome, ${profile.username}.")
             } else {
                 Result.success(if (phoneMode) "Account created. Check your SMS for the verification code." else "Account created. Check your email to confirm your account.")
@@ -88,7 +108,9 @@ internal class AuthApi(context: Context) {
             val user = json.optJSONObject("user") ?: error("No user returned")
             val userId = user.optString("id").ifBlank { error("No user id returned") }
             saveTokens(access, refresh, userId)
-            Result.success(AuthSession(access, refresh, fetchProfile(access, userId, user)))
+            val profile = fetchProfile(access, userId, user)
+            saveProfile(profile)
+            Result.success(AuthSession(access, refresh, profile))
         } catch (e: Exception) { Result.failure(e) }
     }
 
@@ -116,7 +138,9 @@ internal class AuthApi(context: Context) {
             val user = json.optJSONObject("user") ?: error("No user returned")
             val userId = user.optString("id").ifBlank { error("No user id returned") }
             saveTokens(access, refresh, userId)
-            Result.success(AuthSession(access, refresh, fetchProfile(access, userId, user)))
+            val profile = fetchProfile(access, userId, user)
+            saveProfile(profile)
+            Result.success(AuthSession(access, refresh, profile))
         } catch (e: Exception) { Result.failure(e) }
     }
 
@@ -154,7 +178,9 @@ internal class AuthApi(context: Context) {
         val user = json.optJSONObject("user") ?: requestUser(access)
         val userId = user.optString("id").ifBlank { error("No user id returned") }
         saveTokens(access, refresh, userId)
-        return AuthSession(access, refresh, fetchProfile(access, userId, user))
+        val profile = fetchProfile(access, userId, user)
+        saveProfile(profile)
+        return AuthSession(access, refresh, profile)
     }
 
     private fun requestUser(accessToken: String): JSONObject = JSONObject(request("/auth/v1/user", "GET", null, null, accessToken).body)
@@ -175,6 +201,17 @@ internal class AuthApi(context: Context) {
 
     private fun saveTokens(access: String, refresh: String, userId: String) {
         prefs.edit().putString("access_token", access).putString("refresh_token", refresh).putString("user_id", userId).apply()
+    }
+
+    private fun saveProfile(profile: AccountProfile) {
+        prefs.edit()
+            .putString("profile_username", profile.username)
+            .putString("profile_gender", profile.gender)
+            .apply {
+                if (profile.email != null) putString("profile_email", profile.email) else remove("profile_email")
+                if (profile.phone != null) putString("profile_phone", profile.phone) else remove("profile_phone")
+            }
+            .apply()
     }
 
     private fun clear() { prefs.edit().clear().apply() }
