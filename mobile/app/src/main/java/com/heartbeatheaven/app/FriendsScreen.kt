@@ -138,6 +138,21 @@ internal fun FriendsScreen() {
     LaunchedEffect(session?.accessToken) { if (session != null) reload() }
     LaunchedEffect(selected?.id) { selected?.let { u -> api?.let { messages = runCatching { it.messages(u.id) }.getOrElse { emptyList() } } } }
 
+    DisposableEffect(api, selected?.id) {
+        val selectedId = selected?.id
+        val realtime = api?.let { currentApi ->
+            RealtimeMessagesClient(currentApi.sessionAccessToken(), currentApi.sessionUserId()) { id, senderId, body, createdAt ->
+                scope.launch(Dispatchers.Main) {
+                    if (selectedId != null && selected?.id == selectedId && senderId == selectedId && messages.none { it.id == id }) {
+                        messages = messages + ChatMessage(id, senderId, body, createdAt)
+                    }
+                }
+            }
+        }
+        realtime?.start()
+        onDispose { realtime?.stop() }
+    }
+
     if (checkingSession) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         return
@@ -180,3 +195,6 @@ internal fun FriendsScreen() {
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
     }
 }
+
+private fun FriendsApi.sessionAccessToken(): String = this.sessionTokenForRealtime()
+private fun FriendsApi.sessionUserId(): String = this.sessionUserForRealtime()
