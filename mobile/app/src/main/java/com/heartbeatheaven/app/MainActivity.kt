@@ -134,5 +134,10 @@ private fun HeartbeatApp(song:Song?,songId:Long?,playing:Boolean,position:Long,d
 
 @Composable private fun DetailScreen(s:Song,songId:Long?,playing:Boolean,position:Long,duration:Long,onBack:()->Unit,onPlay:()->Unit,onSeek:(Long)->Unit,onFavorite:()->Unit,onShare:()->Unit)=LazyColumn(contentPadding=PaddingValues(16.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){item{Button(onBack){Text("← Back")};Cover(s.coverUrl,Modifier.fillMaxWidth().height(300.dp));Text(s.title,style=MaterialTheme.typography.headlineMedium,fontWeight=FontWeight.Bold);Text(s.artist);Text("${s.language} • ${s.genre} • ${s.mood}");Progress(position,duration,onSeek);Row{Button(onPlay){Icon(if(songId==s.id&&playing)Icons.Default.Pause else Icons.Default.PlayArrow,null);Text(if(songId==s.id&&playing)" Pause" else " Play")};IconButton(onFavorite){Icon(Icons.Default.Favorite,"Favorite")};IconButton(onShare){Icon(Icons.Default.Share,"Share")}};if(s.description.isNotBlank())Text(s.description)};if(s.lyrics.isNotBlank())item{Text("Lyrics",style=MaterialTheme.typography.titleLarge,fontWeight=FontWeight.Bold);Text(s.lyrics)}}
 
-private class FavoriteStore(context:Context){private val p=context.getSharedPreferences("heartbeat_favorites",Context.MODE_PRIVATE);fun ids():Set<Long>=p.getStringSet("ids",emptySet())?.mapNotNull{it.toLongOrNull()}?.toSet()?:emptySet();fun toggle(id:Long):Set<Long>{val n=ids().toMutableSet();if(!n.add(id))n.remove(id);p.edit().putStringSet("ids",n.map{it.toString()}.toSet()).apply();return n}}
+private class FavoriteStore(context:Context) {
+    private val p=context.getSharedPreferences("heartbeat_favorites",Context.MODE_PRIVATE)
+    fun ids(): Set<Long> = p.getStringSet("ids",emptySet())?.mapNotNull{it.toLongOrNull()}?.toSet() ?: emptySet()
+    fun toggle(id:Long): Set<Long> { val n=ids().toMutableSet(); if(!n.add(id))n.remove(id); p.edit().putStringSet("ids",n.map{it.toString()}.toSet()).apply(); return n }
+}
+
 private fun shareSong(context:Context,s:Song){val i=Intent(Intent.ACTION_SEND).apply{type="text/plain";putExtra(Intent.EXTRA_TEXT,"${s.title} — ${s.artist}\n$API_BASE/song.html?id=${s.id}")};context.startActivity(Intent.createChooser(i,"Share song"))}
