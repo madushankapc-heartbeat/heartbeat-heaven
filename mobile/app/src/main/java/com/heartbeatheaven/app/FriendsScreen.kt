@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -20,7 +21,7 @@ import java.net.URL
 import java.net.URLEncoder
 
 private const val FRIENDS_SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.co"
-private const val FRIENDS_KEY = "sb_publishable_MlBmbt3bdFDMkikjxrdwg_fa3MqBKs"
+private const val FRIENDS_KEY = "sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
 
 private data class FriendUser(val id: String, val username: String, val gender: String)
 private data class FriendRequest(val id: String, val user: FriendUser, val incoming: Boolean)
