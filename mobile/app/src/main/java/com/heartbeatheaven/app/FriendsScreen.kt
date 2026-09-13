@@ -11,6 +11,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -19,7 +20,7 @@ import java.net.URL
 import java.net.URLEncoder
 
 private const val FRIENDS_SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.co"
-private const val FRIENDS_KEY = "sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
+private const val FRIENDS_KEY = "sb_publishable_MlBmbt3bdFDMkikjxrdwg_fa3MqBKs"
 
 private data class FriendUser(val id: String, val username: String, val gender: String)
 private data class FriendRequest(val id: String, val user: FriendUser, val incoming: Boolean)
@@ -89,7 +90,7 @@ internal fun FriendsScreen() {
 
     fun reload() {
         busy=true
-        kotlinx.coroutines.GlobalScope.launch(Dispatchers.Main) {
+        GlobalScope.launch(Dispatchers.Main) {
             runCatching { withContext(Dispatchers.IO) { Triple(api.friends(), api.requests(), if(selected!=null) api.messages(selected!!.id) else emptyList()) } }.onSuccess { (f,r,m)-> friends=f; requests=r; messages=m }.onFailure { message=it.message }
             busy=false
         }
@@ -103,7 +104,7 @@ internal fun FriendsScreen() {
             LazyColumn(Modifier.weight(1f), verticalArrangement=Arrangement.spacedBy(8.dp)) { items(messages){ m -> Card(Modifier.fillMaxWidth()){Text(m.body, Modifier.padding(12.dp))} } }
             Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(text,{text=it},Modifier.weight(1f),label={Text("Message")},singleLine=true)
-                IconButton(enabled=text.isNotBlank(),onClick={val t=text;text="";kotlinx.coroutines.GlobalScope.launch(Dispatchers.Main){runCatching{api.sendMessage(selected!!.id,t);messages=api.messages(selected!!.id)}.onFailure{message=it.message}}}){Icon(Icons.Default.Send,"Send")}
+                IconButton(enabled=text.isNotBlank(),onClick={val t=text;text="";GlobalScope.launch(Dispatchers.Main){runCatching{api.sendMessage(selected!!.id,t);messages=api.messages(selected!!.id)}.onFailure{message=it.message}}}){Icon(Icons.Default.Send,"Send")}
             }
         }
         return
@@ -111,9 +112,9 @@ internal fun FriendsScreen() {
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) {
         Text("Friends", style=MaterialTheme.typography.headlineMedium)
         Text("Find friends by username and chat privately.", color=MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){OutlinedTextField(query,{query=it},Modifier.weight(1f),label={Text("Search username")},singleLine=true);Button(enabled=query.isNotBlank(),onClick={kotlinx.coroutines.GlobalScope.launch(Dispatchers.Main){results=runCatching{api.search(query)}.getOrElse{message=it.message;emptyList()}}}){Text("Search")}}
-        if(results.isNotEmpty()) { Text("People",style=MaterialTheme.typography.titleMedium); results.forEach{u->ListItem(headlineContent={Text(u.username)},supportingContent={Text(u.gender.replaceFirstChar{it.uppercase()})},trailingContent={Button(onClick={kotlinx.coroutines.GlobalScope.launch(Dispatchers.Main){runCatching{api.send(u.id);message="Friend request sent."}.onFailure{message=it.message}}}){Text("Add")}})} }
-        if(requests.isNotEmpty()){Text("Friend requests",style=MaterialTheme.typography.titleMedium);requests.forEach{r->ListItem(headlineContent={Text(r.user.username)},trailingContent={if(r.incoming)Button(onClick={kotlinx.coroutines.GlobalScope.launch(Dispatchers.Main){runCatching{api.accept(r.id);reload()}.onFailure{message=it.message}}}){Text("Accept")}else Text("Pending")})}}
+        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){OutlinedTextField(query,{query=it},Modifier.weight(1f),label={Text("Search username")},singleLine=true);Button(enabled=query.isNotBlank(),onClick={GlobalScope.launch(Dispatchers.Main){results=runCatching{api.search(query)}.getOrElse{message=it.message;emptyList()}}}){Text("Search")}}
+        if(results.isNotEmpty()) { Text("People",style=MaterialTheme.typography.titleMedium); results.forEach{u->ListItem(headlineContent={Text(u.username)},supportingContent={Text(u.gender.replaceFirstChar{it.uppercase()})},trailingContent={Button(onClick={GlobalScope.launch(Dispatchers.Main){runCatching{api.send(u.id);message="Friend request sent."}.onFailure{message=it.message}}}){Text("Add")}})} }
+        if(requests.isNotEmpty()){Text("Friend requests",style=MaterialTheme.typography.titleMedium);requests.forEach{r->ListItem(headlineContent={Text(r.user.username)},trailingContent={if(r.incoming)Button(onClick={GlobalScope.launch(Dispatchers.Main){runCatching{api.accept(r.id);reload()}.onFailure{message=it.message}}}){Text("Accept")}else Text("Pending")})}}
         Text("Friends",style=MaterialTheme.typography.titleMedium)
         if(friends.isEmpty()) Text("No friends yet. Search for a username above.",color=MaterialTheme.colorScheme.onSurfaceVariant)
         friends.forEach{u->ListItem(headlineContent={Text(u.username)},leadingContent={Icon(Icons.Default.Person,"Friend")},trailingContent={TextButton(onClick={selected=u}){Text("Chat")}})}
