@@ -8,6 +8,7 @@ import java.net.URLEncoder
 
 private const val SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.co"
 private const val SUPABASE_PUBLISHABLE_KEY = "sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
+private const val AUTH_REDIRECT_URL = "https://heartbeat-heaven.onrender.com"
 
 internal data class AccountProfile(
     val id: String,
@@ -49,14 +50,19 @@ internal class AuthApi(context: Context) {
     fun signUp(identifier: String, password: String, username: String, gender: String, phoneMode: Boolean): Result<String> {
         return try {
             val body = JSONObject().apply {
-                if (phoneMode) put("phone", identifier.trim()) else put("email", identifier.trim())
+                if (phoneMode) {
+                    put("phone", identifier.trim())
+                } else {
+                    put("email", identifier.trim())
+                    put("email_redirect_to", AUTH_REDIRECT_URL)
+                }
                 put("password", password)
                 put("data", JSONObject().apply {
                     put("username", username.trim())
                     put("gender", gender.lowercase())
                 })
             }
-            val response = request("/auth/v1/signup", "POST", body.toString(), null)
+            val response = request("/auth/v1/signup", "POST", body.toString(), "application/json")
             val json = JSONObject(response.body)
             val access = json.optString("access_token")
             val refresh = json.optString("refresh_token")
@@ -66,8 +72,44 @@ internal class AuthApi(context: Context) {
                 val profile = fetchProfile(access, user.optString("id"), user)
                 Result.success("Account created successfully. Welcome, ${profile.username}.")
             } else {
-                Result.success(if (phoneMode) "Account created. Complete the phone verification if requested." else "Account created. Check your email if verification is required.")
+                Result.success(
+                    if (phoneMode) "Account created. Check your SMS for the verification code."
+                    else "Account created. Check your email to confirm your account."
+                )
             }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun verifyPhoneSignup(phone: String, otp: String): Result<AuthSession> {
+        return try {
+            val body = JSONObject().apply {
+                put("phone", phone.trim())
+                put("token", otp.trim())
+                put("type", "sms")
+            }.toString()
+            val response = request("/auth/v1/verify", "POST", body, "application/json")
+            val json = JSONObject(response.body)
+            val access = json.optString("access_token").ifBlank { error("Verification did not return a session") }
+            val refresh = json.optString("refresh_token")
+            val user = json.optJSONObject("user") ?: error("No user returned")
+            val userId = user.optString("id").ifBlank { error("No user id returned") }
+            saveTokens(access, refresh, userId)
+            Result.success(AuthSession(access, refresh, fetchProfile(access, userId, user)))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun resendPhoneSignup(phone: String): Result<String> {
+        return try {
+            val body = JSONObject().apply {
+                put("type", "sms")
+                put("phone", phone.trim())
+            }.toString()
+            request("/auth/v1/resend", "POST", body, "application/json")
+            Result.success("A new verification code has been sent by SMS.")
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -95,7 +137,10 @@ internal class AuthApi(context: Context) {
 
     fun requestPasswordReset(email: String): Result<String> {
         return try {
-            val body = JSONObject().put("email", email.trim()).toString()
+            val body = JSONObject().apply {
+                put("email", email.trim())
+                put("redirect_to", AUTH_REDIRECT_URL)
+            }.toString()
             request("/auth/v1/recover", "POST", body, "application/json")
             Result.success("If an account exists for this email, a password reset link has been sent.")
         } catch (e: Exception) {
@@ -171,7 +216,11 @@ internal class AuthApi(context: Context) {
             val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
             if (connection.responseCode !in 200..299) {
-                val message = runCatching { JSONObject(text).optString("msg").ifBlank { JSONObject(text).optString("message") }.ifBlank { JSONObject(text).optString("error_description") } }.getOrDefault("")
+                val message = runCatching {
+                    JSONObject(text).optString("msg")
+                        .ifBlank { JSONObject(text).optString("message") }
+                        .ifBlank { JSONObject(text).optString("error_description") }
+                }.getOrDefault("")
                 throw IllegalStateException(if (message.isBlank()) "Request failed (${connection.responseCode})" else message)
             }
             return Response(connection.responseCode, text)
