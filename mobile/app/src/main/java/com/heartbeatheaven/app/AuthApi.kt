@@ -93,6 +93,16 @@ internal class AuthApi(context: Context) {
         }
     }
 
+    fun requestPasswordReset(email: String): Result<String> {
+        return try {
+            val body = JSONObject().put("email", email.trim()).toString()
+            request("/auth/v1/recover", "POST", body, "application/json")
+            Result.success("If an account exists for this email, a password reset link has been sent.")
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     fun signOut() {
         val access = prefs.getString("access_token", null)
         if (!access.isNullOrBlank()) {
