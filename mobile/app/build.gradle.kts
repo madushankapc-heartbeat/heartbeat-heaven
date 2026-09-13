@@ -100,6 +100,7 @@ val prepareRealtimeChatFix by tasks.registering {
     doLast {
         val source = rootProject.projectDir.resolve("app/src/main/java/com/heartbeatheaven/app/FriendsScreen.kt")
         var text = source.readText()
+        text = text.replace("private class FriendsApi(private val session: AuthSession)", "private class FriendsApi(internal val session: AuthSession)")
         text = text.replace("RealtimeMessagesClient(currentApi.sessionAccessToken(), currentApi.sessionUserId())", "RealtimeMessagesClient(currentApi.session.accessToken, currentApi.session.profile.id, FRIENDS_KEY)")
         text = text.replace("private fun FriendsApi.sessionAccessToken(): String = this.sessionTokenForRealtime()\nprivate fun FriendsApi.sessionUserId(): String = this.sessionUserForRealtime()\n", "")
         source.writeText(text)
