@@ -50,22 +50,14 @@ internal class AuthApi(context: Context) {
     fun signUp(identifier: String, password: String, username: String, gender: String, phoneMode: Boolean): Result<String> {
         return try {
             val body = JSONObject().apply {
-                if (phoneMode) {
-                    put("phone", identifier.trim())
-                } else {
-                    put("email", identifier.trim())
-                }
+                if (phoneMode) put("phone", identifier.trim()) else put("email", identifier.trim())
                 put("password", password)
                 put("data", JSONObject().apply {
                     put("username", username.trim())
                     put("gender", gender.lowercase())
                 })
             }
-            val signupPath = if (phoneMode) {
-                "/auth/v1/signup"
-            } else {
-                "/auth/v1/signup?redirect_to=${encode(AUTH_REDIRECT_URL)}"
-            }
+            val signupPath = if (phoneMode) "/auth/v1/signup" else "/auth/v1/signup?redirect_to=${encode(AUTH_REDIRECT_URL)}"
             val response = request(signupPath, "POST", body.toString(), "application/json")
             val json = JSONObject(response.body)
             val access = json.optString("access_token")
@@ -76,14 +68,9 @@ internal class AuthApi(context: Context) {
                 val profile = fetchProfile(access, user.optString("id"), user)
                 Result.success("Account created successfully. Welcome, ${profile.username}.")
             } else {
-                Result.success(
-                    if (phoneMode) "Account created. Check your SMS for the verification code."
-                    else "Account created. Check your email to confirm your account."
-                )
+                Result.success(if (phoneMode) "Account created. Check your SMS for the verification code." else "Account created. Check your email to confirm your account.")
             }
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+        } catch (e: Exception) { Result.failure(e) }
     }
 
     fun verifyPhoneSignup(phone: String, otp: String): Result<AuthSession> {
@@ -101,9 +88,7 @@ internal class AuthApi(context: Context) {
             val userId = user.optString("id").ifBlank { error("No user id returned") }
             saveTokens(access, refresh, userId)
             Result.success(AuthSession(access, refresh, fetchProfile(access, userId, user)))
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+        } catch (e: Exception) { Result.failure(e) }
     }
 
     fun resendPhoneSignup(phone: String): Result<String> {
@@ -114,29 +99,24 @@ internal class AuthApi(context: Context) {
             }.toString()
             request("/auth/v1/resend", "POST", body, "application/json")
             Result.success("A new verification code has been sent by SMS.")
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+        } catch (e: Exception) { Result.failure(e) }
     }
 
     fun signIn(identifier: String, password: String, phoneMode: Boolean): Result<AuthSession> {
         return try {
-            val form = buildString {
-                append("password=").append(encode(password))
-                if (phoneMode) append("&phone=").append(encode(identifier.trim()))
-                else append("&email=").append(encode(identifier.trim()))
-            }
-            val response = request("/auth/v1/token?grant_type=password", "POST", form, "application/x-www-form-urlencoded")
+            val body = JSONObject().apply {
+                if (phoneMode) put("phone", identifier.trim()) else put("email", identifier.trim())
+                put("password", password)
+            }.toString()
+            val response = request("/auth/v1/token?grant_type=password", "POST", body, "application/json")
             val json = JSONObject(response.body)
-            val access = json.optString("access_token")
+            val access = json.optString("access_token").ifBlank { error("No access token returned") }
             val refresh = json.optString("refresh_token")
             val user = json.optJSONObject("user") ?: error("No user returned")
             val userId = user.optString("id").ifBlank { error("No user id returned") }
             saveTokens(access, refresh, userId)
             Result.success(AuthSession(access, refresh, fetchProfile(access, userId, user)))
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+        } catch (e: Exception) { Result.failure(e) }
     }
 
     fun requestPasswordReset(email: String): Result<String> {
@@ -147,26 +127,18 @@ internal class AuthApi(context: Context) {
             }.toString()
             request("/auth/v1/recover", "POST", body, "application/json")
             Result.success("If an account exists for this email, a password reset link has been sent.")
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+        } catch (e: Exception) { Result.failure(e) }
     }
 
     fun signOut() {
         val access = prefs.getString("access_token", null)
-        if (!access.isNullOrBlank()) {
-            runCatching { request("/auth/v1/logout", "POST", "{}", "application/json", access) }
-        }
+        if (!access.isNullOrBlank()) runCatching { request("/auth/v1/logout", "POST", "{}", "application/json", access) }
         clear()
     }
 
     private fun refreshSession(refreshToken: String): AuthSession {
-        val response = request(
-            "/auth/v1/token?grant_type=refresh_token",
-            "POST",
-            "refresh_token=${encode(refreshToken)}",
-            "application/x-www-form-urlencoded"
-        )
+        val body = JSONObject().put("refresh_token", refreshToken).toString()
+        val response = request("/auth/v1/token?grant_type=refresh_token", "POST", body, "application/json")
         val json = JSONObject(response.body)
         val access = json.optString("access_token").ifBlank { error("Refresh failed") }
         val refresh = json.optString("refresh_token").ifBlank { refreshToken }
@@ -176,8 +148,7 @@ internal class AuthApi(context: Context) {
         return AuthSession(access, refresh, fetchProfile(access, userId, user))
     }
 
-    private fun requestUser(accessToken: String): JSONObject =
-        JSONObject(request("/auth/v1/user", "GET", null, null, accessToken).body)
+    private fun requestUser(accessToken: String): JSONObject = JSONObject(request("/auth/v1/user", "GET", null, null, accessToken).body)
 
     private fun fetchProfile(accessToken: String, userId: String, user: JSONObject): AccountProfile {
         val query = "/rest/v1/profiles?id=eq.${encode(userId)}&select=id,username,gender"
@@ -228,8 +199,6 @@ internal class AuthApi(context: Context) {
                 throw IllegalStateException(if (message.isBlank()) "Request failed (${connection.responseCode})" else message)
             }
             return Response(connection.responseCode, text)
-        } finally {
-            connection.disconnect()
-        }
+        } finally { connection.disconnect() }
     }
 }
