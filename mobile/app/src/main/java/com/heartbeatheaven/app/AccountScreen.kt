@@ -1,5 +1,6 @@
 package com.heartbeatheaven.app
 
+import android.content.Intent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -52,6 +53,7 @@ internal fun AccountScreen() {
                     Text("Gender: ${p.gender.replaceFirstChar { it.uppercase() }}")
                     Text(p.email ?: p.phone ?: "Private login identifier")
                     Text("Your login contact is never shown publicly.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Button(onClick = { context.startActivity(Intent(context, StudioActivity::class.java)) }, modifier = Modifier.fillMaxWidth()) { Text("Open Studio") }
                     Button(enabled = !busy, onClick = {
                         busy = true
                         Thread {
