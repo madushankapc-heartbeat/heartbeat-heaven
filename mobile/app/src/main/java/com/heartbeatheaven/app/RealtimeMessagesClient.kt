@@ -15,7 +15,7 @@ import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 class RealtimeMessagesClient(
-    private val accessToken: String,
+    private val accessTokenProvider: () -> String,
     private val userId: String,
     private val apiKey: String,
     private val onMessage: (id: String, senderId: String, body: String, createdAt: String) -> Unit
@@ -42,15 +42,15 @@ class RealtimeMessagesClient(
                         .put("postgres_changes", org.json.JSONArray().put(JSONObject()
                             .put("event", "INSERT").put("schema", "public").put("table", "messages")
                             .put("filter", "receiver_id=eq.$userId"))))
-                    .put("access_token", accessToken)
-                webSocket.send(JSONObject().put("topic", "realtime:public:messages").put("event", "phx_join")
-                    .put("payload", payload).put("ref", nextRef()).toString())
+                    .put("access_token", accessTokenProvider())
+                webSocket.send(JSONObject().put("topic", "realtime:public:messages").put("event", "phx_join").put("payload", payload).put("ref", nextRef()).toString())
                 heartbeatJob?.cancel()
                 heartbeatJob = scope.launch {
                     while (isActive && !stopped) {
                         delay(25000)
-                        socket?.send(JSONObject().put("topic", "phoenix").put("event", "heartbeat")
-                            .put("payload", JSONObject()).put("ref", nextRef()).toString())
+                        val token = accessTokenProvider()
+                        webSocket.send(JSONObject().put("topic", "realtime:public:messages").put("event", "access_token").put("payload", JSONObject().put("access_token", token)).put("ref", nextRef()).toString())
+                        webSocket.send(JSONObject().put("topic", "phoenix").put("event", "heartbeat").put("payload", JSONObject()).put("ref", nextRef()).toString())
                     }
                 }
             }
@@ -58,9 +58,13 @@ class RealtimeMessagesClient(
             override fun onMessage(webSocket: WebSocket, text: String) {
                 runCatching {
                     val root = JSONObject(text)
-                    if (root.optString("event") != "postgres_changes") return@runCatching
-                    val record = root.optJSONObject("payload")?.optJSONObject("record") ?: return@runCatching
-                    onMessage(record.optString("id"), record.optString("sender_id"), record.optString("body"), record.optString("created_at"))
+                    val event = root.optString("event")
+                    if (event == "postgres_changes") {
+                        val record = root.optJSONObject("payload")?.optJSONObject("record") ?: return@runCatching
+                        onMessage(record.optString("id"), record.optString("sender_id"), record.optString("body"), record.optString("created_at"))
+                    } else if (event == "system" && root.optJSONObject("payload")?.optString("message")?.contains("expired", true) == true) {
+                        webSocket.close(1000, "refresh token")
+                    }
                 }
             }
 
@@ -69,16 +73,6 @@ class RealtimeMessagesClient(
         })
     }
 
-    private fun reconnect() {
-        if (stopped) return
-        scope.launch { delay(2000); if (!stopped) connect() }
-    }
-
-    fun stop() {
-        stopped = true
-        heartbeatJob?.cancel()
-        socket?.close(1000, "closed")
-        socket = null
-        client.dispatcher.executorService.shutdown()
-    }
+    private fun reconnect() { if (!stopped) scope.launch { delay(2000); if (!stopped) connect() } }
+    fun stop() { stopped = true; heartbeatJob?.cancel(); socket?.close(1000, "closed"); socket = null; client.dispatcher.executorService.shutdown() }
 }
