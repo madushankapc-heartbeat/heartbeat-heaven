@@ -64,3 +64,5 @@ jobs:
         with:
           name: heartbeat-heaven-release-apk
           path: mobile/app/build/outputs/apk/release/app-release.apk
+
+# Triggered on feature/android-app to produce the permanent-key release APK.
