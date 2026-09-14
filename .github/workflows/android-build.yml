@@ -34,13 +34,16 @@ jobs:
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
         run: |
           set -euo pipefail
-          KEYSTORE="$RUNNER_TEMP/heartbeat-heaven-release.jks"
+          KEYSTORE="$RUNNER_TEMP/heartbeat-heaven-release.p12"
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
           chmod 600 "$KEYSTORE"
           test -s "$KEYSTORE"
           echo "Keystore size: $(wc -c < "$KEYSTORE") bytes"
-          keytool -list -keystore "$KEYSTORE" -storepass "$RELEASE_STORE_PASSWORD" >/dev/null
-          echo "Keystore store password validation passed."
+          keytool -list -v \
+            -keystore "$KEYSTORE" \
+            -storetype PKCS12 \
+            -storepass "$RELEASE_STORE_PASSWORD" >/dev/null
+          echo "PKCS12 keystore store password validation passed."
 
       - name: Verify permanent signing key, alias and key password
         shell: bash
@@ -50,12 +53,16 @@ jobs:
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          KEYSTORE="$RUNNER_TEMP/heartbeat-heaven-release.jks"
+          KEYSTORE="$RUNNER_TEMP/heartbeat-heaven-release.p12"
           TEST_KEYSTORE="$RUNNER_TEMP/signing-key-validation.p12"
-          keytool -list -v -keystore "$KEYSTORE" -storepass "$RELEASE_STORE_PASSWORD" -alias "$RELEASE_KEY_ALIAS" >/dev/null
+          keytool -list -v \
+            -keystore "$KEYSTORE" \
+            -storetype PKCS12 \
+            -storepass "$RELEASE_STORE_PASSWORD" \
+            -alias "$RELEASE_KEY_ALIAS" >/dev/null
           keytool -importkeystore \
             -srckeystore "$KEYSTORE" \
-            -srcstoretype JKS \
+            -srcstoretype PKCS12 \
             -srcstorepass "$RELEASE_STORE_PASSWORD" \
             -srcalias "$RELEASE_KEY_ALIAS" \
             -srckeypass "$RELEASE_KEY_PASSWORD" \
@@ -64,12 +71,17 @@ jobs:
             -deststorepass "$RELEASE_STORE_PASSWORD" \
             -destkeypass "$RELEASE_KEY_PASSWORD" \
             -noprompt >/dev/null
-          keytool -list -v -keystore "$TEST_KEYSTORE" -storepass "$RELEASE_STORE_PASSWORD" -alias "$RELEASE_KEY_ALIAS" >/dev/null
-          echo "Permanent keystore, alias and private-key password validation passed."
+          keytool -list -v \
+            -keystore "$TEST_KEYSTORE" \
+            -storetype PKCS12 \
+            -storepass "$RELEASE_STORE_PASSWORD" \
+            -alias "$RELEASE_KEY_ALIAS" >/dev/null
+          echo "Permanent PKCS12 keystore, alias and private-key password validation passed."
 
       - name: Build signed release APK
         env:
-          RELEASE_STORE_FILE: ${{ runner.temp }}/heartbeat-heaven-release.jks
+          RELEASE_STORE_FILE: ${{ runner.temp }}/heartbeat-heaven-release.p12
+          RELEASE_STORE_TYPE: PKCS12
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
