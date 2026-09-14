@@ -1,6 +1,5 @@
 package com.heartbeatheaven.app
 
-import android.content.Context
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -13,6 +12,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -24,7 +24,7 @@ import java.time.Instant
 import java.time.temporal.ChronoUnit
 
 private const val FRIENDS_SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.co"
-private const val FRIENDS_KEY = "sb_publishable_MlBmbt3bdFDjMkjxrdwg_fa3MqBKs"
+private const val FRIENDS_KEY = "sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
 
 private data class FriendUser(val id: String, val username: String, val gender: String)
 private data class FriendRequest(val id: String, val user: FriendUser, val incoming: Boolean)
@@ -36,24 +36,22 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
     fun userId(): String = session.profile.id
 
     private fun request(path: String, method: String, body: String? = null): String {
-        fun doRequest(): Triple<Int, String, String> {
+        fun doRequest(): Pair<Int, String> {
             val c = URL(FRIENDS_SUPABASE_URL + path).openConnection() as HttpURLConnection
             try {
                 c.requestMethod = method; c.connectTimeout = 15000; c.readTimeout = 20000
                 c.setRequestProperty("apikey", FRIENDS_KEY); c.setRequestProperty("Authorization", "Bearer ${session.accessToken}"); c.setRequestProperty("Accept", "application/json")
                 if (body != null) { c.doOutput = true; c.setRequestProperty("Content-Type", "application/json"); c.outputStream.use { it.write(body.toByteArray()) } }
                 val stream = if (c.responseCode in 200..299) c.inputStream else c.errorStream
-                return Triple(c.responseCode, stream?.bufferedReader()?.use { it.readText() }.orEmpty(), c.responseMessage.orEmpty())
+                return c.responseCode to (stream?.bufferedReader()?.use { it.readText() }.orEmpty())
             } finally { c.disconnect() }
         }
 
-        // Refresh the short-lived JWT before every Friends API call.
         auth.currentSession()?.let { session = it }
-        var (code, text, _) = doRequest()
+        var (code, text) = doRequest()
         if (code == 401) {
-            // currentSession() refreshes an expired JWT and persists the new pair.
             session = auth.currentSession() ?: throw IllegalStateException("Your session has expired. Please log in again.")
-            code = doRequest().first.also { text = doRequest().second }
+            val retry = doRequest(); code = retry.first; text = retry.second
         }
         if (code !in 200..299) {
             val detail = runCatching { JSONObject(text).optString("message").ifBlank { JSONObject(text).optString("msg") }.ifBlank { JSONObject(text).optString("error") } }.getOrDefault("")
@@ -82,7 +80,7 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
     }
 
     suspend fun send(userId: String): String = withContext(Dispatchers.IO) {
-        val mine = this@FriendsApi.userId()
+        val mine = userId()
         val existing = JSONArray(request("/rest/v1/friendships?or=(and(requester_id.eq.$mine,addressee_id.eq.$userId),and(requester_id.eq.$userId,addressee_id.eq.$mine))&select=id,status,requester_id,addressee_id", "GET"))
         if (existing.length() > 0) {
             val row = existing.getJSONObject(0); val status = row.optString("status"); val id = row.optString("id")
@@ -93,8 +91,7 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
                 "blocked" -> return@withContext "This friendship is blocked."
             }
         }
-        request("/rest/v1/friendships", "POST", JSONObject().put("requester_id", mine).put("addressee_id", userId).toString())
-        "Friend request sent."
+        request("/rest/v1/friendships", "POST", JSONObject().put("requester_id", mine).put("addressee_id", userId).toString()); "Friend request sent."
     }
 
     suspend fun accept(id: String) = withContext(Dispatchers.IO) { request("/rest/v1/friendships?id=eq.$id", "PATCH", JSONObject().put("status", "accepted").toString()) }
@@ -128,16 +125,12 @@ internal fun FriendsScreen() {
     }
 
     LaunchedEffect(session?.accessToken) { if (session != null) reload() }
-    LaunchedEffect(api) {
-        if (api != null) while (true) { runCatching { api.touchPresence(); online = api.onlineUsers() }; delay(30000) }
-    }
+    LaunchedEffect(api) { if (api != null) while (true) { runCatching { api.touchPresence(); online = api.onlineUsers() }; delay(30000) } }
     LaunchedEffect(selected?.id, api) { selected?.let { u -> api?.let { messages = runCatching { it.messages(u.id) }.getOrElse { emptyList() } } } }
 
     DisposableEffect(api, selected?.id) {
         val selectedId = selected?.id
-        val realtime = api?.let { currentApi -> RealtimeMessagesClient({ currentApi.token() }, currentApi.userId(), FRIENDS_KEY) { id, senderId, body, createdAt ->
-            scope.launch(Dispatchers.Main) { if (selectedId != null && selected?.id == selectedId && senderId == selectedId && messages.none { it.id == id }) messages = messages + ChatMessage(id, senderId, body, createdAt) }
-        } }
+        val realtime = api?.let { currentApi -> RealtimeMessagesClient({ currentApi.token() }, currentApi.userId(), FRIENDS_KEY) { id, senderId, body, createdAt -> scope.launch(Dispatchers.Main) { if (selectedId != null && selected?.id == selectedId && senderId == selectedId && messages.none { it.id == id }) messages = messages + ChatMessage(id, senderId, body, createdAt) } } }
         realtime?.start(); onDispose { realtime?.stop() }
     }
 
