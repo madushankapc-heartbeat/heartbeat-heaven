@@ -27,6 +27,27 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
+      - name: Enable Java time API desugaring
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("app/build.gradle.kts")
+          s = p.read_text()
+          old = 'compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }'
+          new = 'compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17; isCoreLibraryDesugaringEnabled = true }'
+          if old not in s:
+              raise SystemExit("compileOptions pattern not found")
+          s = s.replace(old, new, 1)
+          marker = '    debugImplementation("androidx.compose.ui:ui-tooling")'
+          dep = '    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.2")\n'
+          if dep.strip() not in s:
+              if marker not in s:
+                  raise SystemExit("dependency marker not found")
+              s = s.replace(marker, dep + marker, 1)
+          p.write_text(s)
+          PY
+
       - name: Create temporary release signing key
         run: |
           keytool -genkeypair -v \
