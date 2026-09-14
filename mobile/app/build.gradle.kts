@@ -7,7 +7,7 @@ plugins {
 android {
     namespace = "com.heartbeatheaven.app"
     compileSdk = 35
-    defaultConfig { applicationId = "com.heartbeatheaven.app"; minSdk = 23; targetSdk = 35; versionCode = 1; versionName = "1.0.0" }
+    defaultConfig { applicationId = "com.heartbeatheaven.app"; minSdk = 23; targetSdk = 35; versionCode = 2; versionName = "1.0.1" }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -128,17 +128,8 @@ val prepareRealtimeChatFix by tasks.registering {
     }
 }
 
-val prepareEnhancedFriendsScreen by tasks.registering {
-    doLast {
-        val source = rootProject.projectDir.resolve("app/src/main/java/com/heartbeatheaven/app/MainActivity.kt")
-        var text = source.readText()
-        text = text.replace("FriendsScreen()", "FriendsScreenV2()")
-        source.writeText(text)
-    }
-}
-
 android.sourceSets["main"].res.srcDir(heartbeatIconResDir)
-tasks.named("preBuild").configure { dependsOn(prepareHeartbeatIcon); dependsOn(preparePlayerProgressFix); dependsOn(prepareAccountFeature); dependsOn(prepareFriendsFeature); dependsOn(prepareRealtimeChatFix); dependsOn(prepareEnhancedFriendsScreen) }
+tasks.named("preBuild").configure { dependsOn(prepareHeartbeatIcon); dependsOn(preparePlayerProgressFix); dependsOn(prepareAccountFeature); dependsOn(prepareFriendsFeature); dependsOn(prepareRealtimeChatFix) }
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
