@@ -41,10 +41,18 @@ jobs:
           chmod 600 "$KEYSTORE"
           test -s "$KEYSTORE"
           echo "Keystore size: $(wc -c < "$KEYSTORE") bytes"
+          set +e
           keytool -list -v \
             -keystore "$KEYSTORE" \
             -storetype PKCS12 \
-            -storepass "$RELEASE_STORE_PASSWORD" >/dev/null
+            -storepass "$RELEASE_STORE_PASSWORD" >/tmp/keytool-store-check.out 2>&1
+          STATUS=$?
+          set -e
+          cat /tmp/keytool-store-check.out
+          if [ "$STATUS" -ne 0 ]; then
+            echo "ERROR: PKCS12 keystore store-password validation failed (exit $STATUS)."
+            exit "$STATUS"
+          fi
           echo "PKCS12 keystore store password validation passed."
 
       - name: Verify permanent signing key, alias and key password
@@ -57,11 +65,20 @@ jobs:
           set -euo pipefail
           KEYSTORE="$RUNNER_TEMP/heartbeat-heaven-release.p12"
           TEST_KEYSTORE="$RUNNER_TEMP/signing-key-validation.p12"
+          set +e
           keytool -list -v \
             -keystore "$KEYSTORE" \
             -storetype PKCS12 \
             -storepass "$RELEASE_STORE_PASSWORD" \
-            -alias "$RELEASE_KEY_ALIAS" >/dev/null
+            -alias "$RELEASE_KEY_ALIAS" >/tmp/keytool-alias-check.out 2>&1
+          STATUS=$?
+          set -e
+          cat /tmp/keytool-alias-check.out
+          if [ "$STATUS" -ne 0 ]; then
+            echo "ERROR: keystore/alias validation failed (exit $STATUS)."
+            exit "$STATUS"
+          fi
+          set +e
           keytool -importkeystore \
             -srckeystore "$KEYSTORE" \
             -srcstoretype PKCS12 \
@@ -72,7 +89,14 @@ jobs:
             -deststoretype PKCS12 \
             -deststorepass "$RELEASE_STORE_PASSWORD" \
             -destkeypass "$RELEASE_KEY_PASSWORD" \
-            -noprompt >/dev/null
+            -noprompt >/tmp/keytool-key-check.out 2>&1
+          STATUS=$?
+          set -e
+          cat /tmp/keytool-key-check.out
+          if [ "$STATUS" -ne 0 ]; then
+            echo "ERROR: private-key password validation failed (exit $STATUS)."
+            exit "$STATUS"
+          fi
           keytool -list -v \
             -keystore "$TEST_KEYSTORE" \
             -storetype PKCS12 \
