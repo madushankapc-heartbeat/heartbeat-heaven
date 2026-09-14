@@ -37,6 +37,24 @@ jobs:
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
           chmod 600 "$KEYSTORE"
           test -s "$KEYSTORE"
+          echo "Keystore size: $(wc -c < "$KEYSTORE") bytes"
+          echo "Keystore type check:"
+          keytool -list -keystore "$KEYSTORE" -storepass "$RELEASE_STORE_PASSWORD" >/dev/null
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+
+      - name: Verify permanent signing key and alias
+        shell: bash
+        env:
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/heartbeat-heaven-release.jks"
+          keytool -list -v -keystore "$KEYSTORE" -storepass "$RELEASE_STORE_PASSWORD" -alias "$RELEASE_KEY_ALIAS" >/dev/null
+          echo "Permanent keystore and release alias are readable."
 
       - name: Build signed release APK
         env:
@@ -65,4 +83,4 @@ jobs:
           name: heartbeat-heaven-release-apk
           path: mobile/app/build/outputs/apk/release/app-release.apk
 
-# Triggered on feature/android-app to produce the permanent-key release APK.
+# Permanent signing validation added on feature/android-app.
