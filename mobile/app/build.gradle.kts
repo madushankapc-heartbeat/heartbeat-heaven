@@ -128,8 +128,17 @@ val prepareRealtimeChatFix by tasks.registering {
     }
 }
 
+val prepareEnhancedFriendsScreen by tasks.registering {
+    doLast {
+        val source = rootProject.projectDir.resolve("app/src/main/java/com/heartbeatheaven/app/MainActivity.kt")
+        var text = source.readText()
+        text = text.replace("FriendsScreen()", "FriendsScreenV2()")
+        source.writeText(text)
+    }
+}
+
 android.sourceSets["main"].res.srcDir(heartbeatIconResDir)
-tasks.named("preBuild").configure { dependsOn(prepareHeartbeatIcon); dependsOn(preparePlayerProgressFix); dependsOn(prepareAccountFeature); dependsOn(prepareFriendsFeature); dependsOn(prepareRealtimeChatFix) }
+tasks.named("preBuild").configure { dependsOn(prepareHeartbeatIcon); dependsOn(preparePlayerProgressFix); dependsOn(prepareAccountFeature); dependsOn(prepareFriendsFeature); dependsOn(prepareRealtimeChatFix); dependsOn(prepareEnhancedFriendsScreen) }
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
