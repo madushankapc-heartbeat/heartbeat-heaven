@@ -24,7 +24,9 @@ class RealtimeMessagesClient(
     private val scope = CoroutineScope(Dispatchers.IO)
     private var socket: WebSocket? = null
     private var heartbeatJob: Job? = null
+    private var reconnectJob: Job? = null
     private var ref = 0
+    private var joinRef = "0"
     private var stopped = false
 
     fun start() { stopped = false; connect() }
@@ -32,24 +34,29 @@ class RealtimeMessagesClient(
 
     private fun connect() {
         if (stopped) return
+        val topic = "realtime:messages-$userId"
         val url = "wss://fafvhyeesenpimxncupp.supabase.co/realtime/v1/websocket?apikey=$apiKey&vsn=1.0.0"
+        joinRef = nextRef()
         socket = client.newWebSocket(Request.Builder().url(url).build(), object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 val payload = JSONObject()
                     .put("config", JSONObject()
                         .put("broadcast", JSONObject().put("ack", false).put("self", false))
-                        .put("presence", JSONObject().put("key", ""))
+                        .put("presence", JSONObject().put("enabled", false).put("key", userId))
                         .put("postgres_changes", org.json.JSONArray().put(JSONObject()
-                            .put("event", "INSERT").put("schema", "public").put("table", "messages")
+                            .put("event", "INSERT")
+                            .put("schema", "public")
+                            .put("table", "messages")
                             .put("filter", "receiver_id=eq.$userId"))))
                     .put("access_token", accessTokenProvider())
-                webSocket.send(JSONObject().put("topic", "realtime:public:messages").put("event", "phx_join").put("payload", payload).put("ref", nextRef()).toString())
+                webSocket.send(JSONObject().put("topic", topic).put("event", "phx_join").put("payload", payload).put("ref", joinRef).put("join_ref", joinRef).toString())
+
                 heartbeatJob?.cancel()
                 heartbeatJob = scope.launch {
                     while (isActive && !stopped) {
                         delay(25000)
                         val token = accessTokenProvider()
-                        webSocket.send(JSONObject().put("topic", "realtime:public:messages").put("event", "access_token").put("payload", JSONObject().put("access_token", token)).put("ref", nextRef()).toString())
+                        webSocket.send(JSONObject().put("topic", topic).put("event", "access_token").put("payload", JSONObject().put("access_token", token)).put("ref", nextRef()).put("join_ref", joinRef).toString())
                         webSocket.send(JSONObject().put("topic", "phoenix").put("event", "heartbeat").put("payload", JSONObject()).put("ref", nextRef()).toString())
                     }
                 }
@@ -58,12 +65,21 @@ class RealtimeMessagesClient(
             override fun onMessage(webSocket: WebSocket, text: String) {
                 runCatching {
                     val root = JSONObject(text)
-                    val event = root.optString("event")
-                    if (event == "postgres_changes") {
-                        val record = root.optJSONObject("payload")?.optJSONObject("record") ?: return@runCatching
-                        onMessage(record.optString("id"), record.optString("sender_id"), record.optString("body"), record.optString("created_at"))
-                    } else if (event == "system" && root.optJSONObject("payload")?.optString("message")?.contains("expired", true) == true) {
-                        webSocket.close(1000, "refresh token")
+                    when (root.optString("event")) {
+                        "postgres_changes" -> {
+                            val payload = root.optJSONObject("payload") ?: return@runCatching
+                            val data = payload.optJSONObject("data") ?: payload
+                            val record = data.optJSONObject("record") ?: return@runCatching
+                            val senderId = record.optString("sender_id")
+                            if (record.optString("receiver_id") == userId && senderId != userId) {
+                                onMessage(record.optString("id"), senderId, record.optString("body"), record.optString("created_at"))
+                            }
+                        }
+                        "system" -> {
+                            val msg = root.optJSONObject("payload")?.optString("message").orEmpty()
+                            if (msg.contains("expired", true)) webSocket.close(1000, "refresh token")
+                        }
+                        "phx_error", "phx_close" -> webSocket.close(1000, "reconnect")
                     }
                 }
             }
@@ -73,6 +89,16 @@ class RealtimeMessagesClient(
         })
     }
 
-    private fun reconnect() { if (!stopped) scope.launch { delay(2000); if (!stopped) connect() } }
-    fun stop() { stopped = true; heartbeatJob?.cancel(); socket?.close(1000, "closed"); socket = null; client.dispatcher.executorService.shutdown() }
+    private fun reconnect() {
+        if (stopped || reconnectJob?.isActive == true) return
+        reconnectJob = scope.launch { delay(2000); if (!stopped) connect() }
+    }
+
+    fun stop() {
+        stopped = true
+        heartbeatJob?.cancel()
+        reconnectJob?.cancel()
+        socket?.close(1000, "closed")
+        socket = null
+    }
 }
