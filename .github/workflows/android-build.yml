@@ -1,5 +1,7 @@
 name: Android App Build
 
+# Fresh release-signing validation: use the current feature branch workflow definition.
+
 on:
   push:
     branches:
