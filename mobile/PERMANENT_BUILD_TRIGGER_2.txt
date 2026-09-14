@@ -1,0 +1,1 @@
+Trigger permanent signed Android release build after signing-key validation fix.
