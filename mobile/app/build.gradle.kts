@@ -124,14 +124,21 @@ val prepareRealtimeChatFix by tasks.registering {
         val source = rootProject.projectDir.resolve("app/src/main/java/com/heartbeatheaven/app/FriendsScreen.kt")
         var text = source.readText()
         text = text.replace("private class FriendsApi(private val session: AuthSession)", "private class FriendsApi(internal val session: AuthSession)")
-        text = text.replace("RealtimeMessagesClient(currentApi.sessionAccessToken(), currentApi.sessionUserId())", "RealtimeMessagesClient(currentApi.session.accessToken, currentApi.session.profile.id, FRIENDS_KEY)")
-        text = text.replace("private fun FriendsApi.sessionAccessToken(): String = this.sessionTokenForRealtime()\nprivate fun FriendsApi.sessionUserId(): String = this.sessionUserForRealtime()\n", "")
         source.writeText(text)
     }
 }
 
+val prepareEnhancedFriendsScreen by tasks.registering {
+    doLast {
+        val main = rootProject.projectDir.resolve("app/src/main/java/com/heartbeatheaven/app/MainActivity.kt")
+        var text = main.readText()
+        text = text.replace("FriendsScreen()", "FriendsScreenV2()")
+        main.writeText(text)
+    }
+}
+
 android.sourceSets["main"].res.srcDir(heartbeatIconResDir)
-tasks.named("preBuild").configure { dependsOn(prepareHeartbeatIcon); dependsOn(preparePlayerProgressFix); dependsOn(prepareAccountFeature); dependsOn(prepareFriendsFeature); dependsOn(prepareRealtimeChatFix) }
+tasks.named("preBuild").configure { dependsOn(prepareHeartbeatIcon); dependsOn(preparePlayerProgressFix); dependsOn(prepareAccountFeature); dependsOn(prepareFriendsFeature); dependsOn(prepareRealtimeChatFix); dependsOn(prepareEnhancedFriendsScreen) }
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
