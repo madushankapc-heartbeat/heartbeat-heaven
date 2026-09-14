@@ -27,45 +27,23 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      - name: Enable Java time API desugaring
+      - name: Prepare permanent release signing key
         shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("app/build.gradle.kts")
-          s = p.read_text()
-          old = 'compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }'
-          new = 'compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17; isCoreLibraryDesugaringEnabled = true }'
-          if old not in s:
-              raise SystemExit("compileOptions pattern not found")
-          s = s.replace(old, new, 1)
-          marker = '    debugImplementation("androidx.compose.ui:ui-tooling")'
-          dep = '    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.2")\n'
-          if dep.strip() not in s:
-              if marker not in s:
-                  raise SystemExit("dependency marker not found")
-              s = s.replace(marker, dep + marker, 1)
-          p.write_text(s)
-          PY
-
-      - name: Create temporary release signing key
-        run: |
-          keytool -genkeypair -v \
-            -keystore "$RUNNER_TEMP/heartbeat-heaven-release.jks" \
-            -storepass "heartbeat-heaven-ci" \
-            -keypass "heartbeat-heaven-ci" \
-            -alias "heartbeat-heaven" \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=HEARTBEAT HEAVEN, O=HeartBeat Heaven"
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/heartbeat-heaven-release.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+          chmod 600 "$KEYSTORE"
+          test -s "$KEYSTORE"
 
       - name: Build signed release APK
         env:
           RELEASE_STORE_FILE: ${{ runner.temp }}/heartbeat-heaven-release.jks
-          RELEASE_STORE_PASSWORD: heartbeat-heaven-ci
-          RELEASE_KEY_ALIAS: heartbeat-heaven
-          RELEASE_KEY_PASSWORD: heartbeat-heaven-ci
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: gradle :app:assembleRelease --stacktrace
 
       - name: Validate APK package and signature
