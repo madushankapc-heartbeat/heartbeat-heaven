@@ -1,4 +1,4 @@
-name: Android Debug APK
+name: Android Release APK
 
 on:
   push:
@@ -28,12 +28,29 @@ jobs:
         with:
           gradle-version: '8.10.2'
 
-      - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+      - name: Create temporary release signing key
+        run: |
+          keytool -genkeypair -v \
+            -keystore "$RUNNER_TEMP/heartbeat-heaven-release.jks" \
+            -storepass "heartbeat-heaven-ci" \
+            -keypass "heartbeat-heaven-ci" \
+            -alias "heartbeat-heaven" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=HEARTBEAT HEAVEN, O=HeartBeat Heaven"
 
-      - name: Upload debug APK
+      - name: Build signed release APK
+        env:
+          RELEASE_STORE_FILE: ${{ runner.temp }}/heartbeat-heaven-release.jks
+          RELEASE_STORE_PASSWORD: heartbeat-heaven-ci
+          RELEASE_KEY_ALIAS: heartbeat-heaven
+          RELEASE_KEY_PASSWORD: heartbeat-heaven-ci
+        run: gradle assembleRelease --stacktrace
+
+      - name: Upload signed release APK
         uses: actions/upload-artifact@v4
         with:
-          name: heartbeat-heaven-debug-apk
-          path: mobile/app/build/outputs/apk/debug/app-debug.apk
+          name: heartbeat-heaven-release-apk
+          path: mobile/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
