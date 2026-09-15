@@ -213,6 +213,148 @@ function install(app, { supabase }) {
 
     next();
   });
+
+  /* =========================================================
+     ANDROID ADMIN STUDIO HANDOFF
+     ========================================================= */
+
+  const MOBILE_HANDOFF_TTL = 60 * 1000;
+  const mobileHandoffs = new Map();
+  const STUDIO_SESSION_COOKIE = "hh_studio_session";
+  const STUDIO_SESSION_TTL = 8 * 60 * 60 * 1000;
+
+  function studioSessionSecret() {
+    return (
+      `${process.env.STUDIO_SESSION_SECRET || "heartbeat-heaven-session"}:` +
+      `${process.env.ADMIN_PASSWORD || ""}:heartbeat-heaven-studio`
+    );
+  }
+
+  function createStudioSession() {
+    const data = Buffer
+      .from(
+        JSON.stringify({
+          user: process.env.ADMIN_USER,
+          exp: Date.now() + STUDIO_SESSION_TTL
+        }),
+        "utf8"
+      )
+      .toString("base64url");
+
+    const signature = crypto
+      .createHmac("sha256", studioSessionSecret())
+      .update(data)
+      .digest("base64url");
+
+    return `${data}.${signature}`;
+  }
+
+  function setStudioSessionCookie(res, token) {
+    res.set(
+      "Set-Cookie",
+      `${STUDIO_SESSION_COOKIE}=${token}; Max-Age=${Math.floor(STUDIO_SESSION_TTL / 1000)}; Path=/; HttpOnly; Secure; SameSite=Lax`
+    );
+  }
+
+  function cleanupMobileHandoffs() {
+    const now = Date.now();
+    for (const [token, entry] of mobileHandoffs.entries()) {
+      if (!entry || entry.exp <= now) mobileHandoffs.delete(token);
+    }
+  }
+
+  app.post("/api/studio/mobile-handoff", async (req, res) => {
+    try {
+      cleanupMobileHandoffs();
+
+      const authorization = String(req.headers.authorization || "");
+      const match = authorization.match(/^Bearer\s+(.+)$/i);
+      const accessToken = match?.[1]?.trim();
+
+      if (!accessToken) {
+        return res.status(401).json({ error: "Native app authentication required." });
+      }
+
+      const {
+        data: userData,
+        error: userError
+      } = await supabase.auth.getUser(accessToken);
+
+      if (userError || !userData?.user) {
+        return res.status(401).json({ error: "Native app session is invalid or expired." });
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("id,role")
+        .eq("id", userData.user.id)
+        .maybeSingle();
+
+      if (profileError) {
+        console.error("Mobile Studio profile check error:", profileError);
+        return res.status(503).json({ error: "Unable to verify Studio access." });
+      }
+
+      if (!profile || profile.role !== "admin") {
+        return res.status(403).json({ error: "Studio access restricted." });
+      }
+
+      if (!process.env.ADMIN_USER || !process.env.ADMIN_PASSWORD) {
+        return res.status(503).json({ error: "Studio is not configured." });
+      }
+
+      const handoffToken = crypto.randomBytes(32).toString("base64url");
+      mobileHandoffs.set(handoffToken, {
+        userId: userData.user.id,
+        exp: Date.now() + MOBILE_HANDOFF_TTL
+      });
+
+      res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+      res.set("Pragma", "no-cache");
+      res.json({
+        handoff_url:
+          `https://heartbeat-heaven.onrender.com/api/studio/mobile-handoff/${encodeURIComponent(handoffToken)}`
+      });
+    } catch (error) {
+      console.error("Mobile Studio handoff error:", error);
+      res.status(503).json({ error: "Unable to prepare Studio access." });
+    }
+  });
+
+  app.get("/api/studio/mobile-handoff/:token", async (req, res) => {
+    try {
+      cleanupMobileHandoffs();
+
+      const token = String(req.params.token || "");
+      const entry = mobileHandoffs.get(token);
+
+      mobileHandoffs.delete(token);
+
+      if (!entry || entry.exp <= Date.now()) {
+        return res.status(401).send("Studio handoff expired. Please return to the app and try again.");
+      }
+
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("id,role")
+        .eq("id", entry.userId)
+        .maybeSingle();
+
+      if (profileError || !profile || profile.role !== "admin") {
+        return res.status(403).send("Studio access restricted.");
+      }
+
+      const sessionToken = createStudioSession();
+      setStudioSessionCookie(res, sessionToken);
+      res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+      res.set("Pragma", "no-cache");
+      res.set("Referrer-Policy", "no-referrer");
+      res.redirect(303, "/admin.html");
+    } catch (error) {
+      console.error("Mobile Studio handoff exchange error:", error);
+      res.status(503).send("Unable to open Studio. Please try again from the app.");
+    }
+  });
 }
 
 module.exports = {
