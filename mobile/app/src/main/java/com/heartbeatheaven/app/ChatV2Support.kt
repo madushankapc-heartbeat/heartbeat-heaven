@@ -3,8 +3,6 @@ package com.heartbeatheaven.app
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeFormatterBuilder
-import java.time.temporal.ChronoField
 import java.util.Locale
 
 /** Shared presentation models/helpers for the Chat v2 UI. */
@@ -43,3 +41,5 @@ internal object ChatTimeFormatter {
         }
     }.getOrElse { "" }
 }
+
+// Chat v2 integration checkpoint: keep shared models isolated until each UI step builds cleanly.
