@@ -133,8 +133,8 @@ val prepareRealtimeChatFix by tasks.registering {
     val senderId: String,
     val body: String,
     val createdAt: String,
-    val deliveredAt: String = \"\",
-    val readAt: String = \"\"
+    val deliveredAt: String = "",
+    val readAt: String = ""
 )"""
         )
 
@@ -174,7 +174,7 @@ val prepareRealtimeChatFix by tasks.registering {
                                 else -> \"✓ Sent\"
                             }
                             Text(
-                                if (mine) \"You  $formattedTime  $delivery\" else \"\${chat.username}  $formattedTime\",
+                                if (mine) \"You  \$formattedTime  \$delivery\" else \"\${chat.username}  \$formattedTime\",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = if (mine && m.readAt.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
