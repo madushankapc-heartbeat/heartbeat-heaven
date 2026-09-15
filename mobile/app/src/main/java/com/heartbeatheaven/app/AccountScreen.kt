@@ -20,6 +20,7 @@ internal fun AccountScreen() {
     var session by remember { mutableStateOf<AuthSession?>(null) }
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
     var signup by remember { mutableStateOf(false) }
     var phoneMode by remember { mutableStateOf(false) }
     var resetMode by remember { mutableStateOf(false) }
@@ -40,6 +41,38 @@ internal fun AccountScreen() {
     if (loading) {
         Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) { CircularProgressIndicator() }
         return
+    }
+
+    if (showDeleteDialog && session != null) {
+        AlertDialog(
+            onDismissRequest = { if (!busy) showDeleteDialog = false },
+            title = { Text("Delete account?") },
+            text = { Text("This will permanently delete your HEARTBEAT HEAVEN account and sign you out. This action cannot be undone.") },
+            confirmButton = {
+                TextButton(enabled = !busy, onClick = {
+                    busy = true
+                    message = null
+                    error = null
+                    val accessToken = session!!.accessToken
+                    Thread {
+                        val result = api.deleteMyAccount(accessToken)
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            busy = false
+                            result.onSuccess {
+                                showDeleteDialog = false
+                                session = null
+                                message = it
+                            }.onFailure {
+                                error = it.message ?: "Could not delete your account."
+                            }
+                        }
+                    }.start()
+                }) { Text(if (busy) "Deleting..." else "Delete permanently", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(enabled = !busy, onClick = { showDeleteDialog = false }) { Text("Cancel") }
+            }
+        )
     }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -70,6 +103,13 @@ internal fun AccountScreen() {
                             }
                         }.start()
                     }, modifier = Modifier.fillMaxWidth()) { Text("Log out") }
+                    OutlinedButton(enabled = !busy, onClick = {
+                        message = null
+                        error = null
+                        showDeleteDialog = true
+                    }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Delete account", color = MaterialTheme.colorScheme.error)
+                    }
                 }
             }
         } else if (resetMode) {
