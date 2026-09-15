@@ -12,6 +12,7 @@ private const val SUPABASE_PUBLISHABLE_KEY = "sb_publishable_MlBmbt3bdFDjMkikjxr
 private const val AUTH_REDIRECT_URL = "https://heartbeat-heaven.onrender.com"
 private const val PASSWORD_RESET_REDIRECT_URL = "heartbeatheaven://auth/reset"
 private const val PHONE_SIGNUP_FUNCTION = "/functions/v1/phone-signup"
+private const val DELETE_MY_ACCOUNT_FUNCTION = "/functions/v1/delete-my-account"
 
 internal data class AccountProfile(
     val id: String,
@@ -135,6 +136,11 @@ internal class AuthApi(context: Context) {
 
     fun requestPasswordReset(email: String): Result<String> = try { request("/auth/v1/recover?redirect_to=${encode(PASSWORD_RESET_REDIRECT_URL)}", "POST", JSONObject().put("email", email.trim()).toString(), "application/json"); Result.success("If an account exists for this email, a password reset link has been sent.") } catch (e: Exception) { Result.failure(e) }
     fun updatePassword(accessToken: String, newPassword: String): Result<String> = try { request("/auth/v1/user", "PUT", JSONObject().put("password", newPassword).toString(), "application/json", accessToken); Result.success("Password updated successfully.") } catch (e: Exception) { Result.failure(e) }
+    fun deleteMyAccount(accessToken: String): Result<String> = try {
+        request(DELETE_MY_ACCOUNT_FUNCTION, "POST", "{}", "application/json", accessToken)
+        clear()
+        Result.success("Your account has been permanently deleted.")
+    } catch (e: Exception) { Result.failure(e) }
     fun signOut() { prefs.getString("access_token", null)?.let { runCatching { request("/auth/v1/logout", "POST", "{}", "application/json", it) } }; clear() }
 
     private fun refreshSession(refreshToken: String): AuthSession {
@@ -174,5 +180,5 @@ internal class AuthApi(context: Context) {
     private fun clear() { prefs.edit().clear().apply() }
     private fun encode(v: String) = URLEncoder.encode(v, Charsets.UTF_8.name())
     private data class Response(val code: Int, val body: String)
-    private fun request(path: String, method: String, body: String?, contentType: String?, accessToken: String? = null): Response { val c = URL(SUPABASE_URL + path).openConnection() as HttpURLConnection; try { c.requestMethod = method; c.connectTimeout = 15000; c.readTimeout = 20000; c.setRequestProperty("apikey", SUPABASE_PUBLISHABLE_KEY); c.setRequestProperty("Accept", "application/json"); if (!accessToken.isNullOrBlank()) c.setRequestProperty("Authorization", "Bearer $accessToken"); if (body != null) { c.doOutput = true; c.setRequestProperty("Content-Type", contentType ?: "application/json"); c.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) } }; val stream = if (c.responseCode in 200..299) c.inputStream else c.errorStream; val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty(); if (c.responseCode !in 200..299) { val msg = runCatching { JSONObject(text).optString("msg").ifBlank { JSONObject(text).optString("message") }.ifBlank { JSONObject(text).optString("error_description") } }.getOrDefault(""); throw IllegalStateException(if (msg.isBlank()) "Request failed (${c.responseCode})" else msg) }; return Response(c.responseCode, text) } finally { c.disconnect() } }
+    private fun request(path: String, method: String, body: String?, contentType: String?, accessToken: String? = null): Response { val c = URL(SUPABASE_URL + path).openConnection() as HttpURLConnection; try { c.requestMethod = method; c.connectTimeout = 15000; c.readTimeout = 20000; c.setRequestProperty("apikey", SUPABASE_PUBLISHABLE_KEY); c.setRequestProperty("Accept", "application/json"); if (!accessToken.isNullOrBlank()) c.setRequestProperty("Authorization", "Bearer $accessToken"); if (body != null) { c.doOutput = true; c.setRequestProperty("Content-Type", contentType ?: "application/json"); c.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) } }; val stream = if (c.responseCode in 200..299) c.inputStream else c.errorStream; val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty(); if (c.responseCode !in 200..299) { val msg = runCatching { JSONObject(text).optString("msg").ifBlank { JSONObject(text).optString("message") }.ifBlank { JSONObject(text).optString("error_description") }.ifBlank { JSONObject(text).optString("error") } }.getOrDefault(""); throw IllegalStateException(if (msg.isBlank()) "Request failed (${c.responseCode})" else msg) }; return Response(c.responseCode, text) } finally { c.disconnect() } }
 }
