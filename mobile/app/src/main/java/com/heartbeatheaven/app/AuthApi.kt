@@ -93,7 +93,17 @@ internal class AuthApi(context: Context) {
         saveProfile(profile)
         return AuthSession(access, refresh, profile)
     }
-    private fun isExpiredOrNearExpiry(token: String): Boolean = try { val parts = token.split('.'); if (parts.size < 2) return false; val payload = Base64.decode(parts[1], Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING); val exp = JSONObject(String(payload, Charsets.UTF_8)).optLong("exp", 0L); exp > 0L && exp <= System.currentTimeMillis() / 1000L + 60L } catch (_: Exception) { false }
+    private fun isExpiredOrNearExpiry(token: String): Boolean {
+        return try {
+            val parts = token.split('.')
+            if (parts.size < 2) return false
+            val payload = Base64.decode(parts[1], Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+            val exp = JSONObject(String(payload, Charsets.UTF_8)).optLong("exp", 0L)
+            exp > 0L && exp <= System.currentTimeMillis() / 1000L + 60L
+        } catch (_: Exception) {
+            false
+        }
+    }
     private fun requestUser(accessToken: String) = JSONObject(request("/auth/v1/user", "GET", null, null, accessToken).body)
 
     private fun fetchProfile(accessToken: String, userId: String, user: JSONObject): AccountProfile {
