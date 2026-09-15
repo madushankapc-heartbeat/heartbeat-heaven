@@ -84,7 +84,7 @@ internal fun StudioScreen() {
                 scope.launch {
                     try {
                         val current = withContext(Dispatchers.IO) { auth.currentSession() }
-                        val accessToken = current?.accessToken
+                        val accessToken = current?.accessToken ?: ""
                         if (current == null || !current.profile.isAdmin || accessToken.isBlank()) {
                             error("Admin session is no longer valid. Please sign in again.")
                         }
