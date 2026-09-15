@@ -138,47 +138,8 @@ val prepareChatV2TimestampFix by tasks.registering {
     }
 }
 
-val prepareChatV2DeliveryFix by tasks.registering {
-    doLast {
-        val source = rootProject.projectDir.resolve("app/src/main/java/com/heartbeatheaven/app/FriendsScreen.kt")
-        var text = source.readText()
-
-        // Seen is only valid after delivery. This prevents an impossible Seen state
-        // when the recipient has never received the message.
-        text = text.replace(
-            "request(\"/rest/v1/messages?sender_id=eq.$other&receiver_id=eq.${userId()}&read_at=is.null\", \"PATCH\", JSONObject().put(\"read_at\", Instant.now().toString()).toString())",
-            "request(\"/rest/v1/messages?sender_id=eq.$other&receiver_id=eq.${userId()}&read_at=is.null&delivered_at=not.is.null\", \"PATCH\", JSONObject().put(\"read_at\", Instant.now().toString()).toString())"
-        )
-
-        // Deliver first, then mark Seen. Never mark Seen before a delivery exists.
-        text = text.replace(
-            "            runCatching {\n                a.markSeen(current.id)\n                val fresh = a.messages(current.id)\n                fresh.filter { it.senderId == current.id && it.deliveredAt.isBlank() }.forEach { a.markDelivered(it.id) }",
-            "            runCatching {\n                val fresh = a.messages(current.id)\n                fresh.filter { it.senderId == current.id && it.deliveredAt.isBlank() }.forEach { a.markDelivered(it.id) }\n                a.markSeen(current.id)"
-        )
-
-        // A realtime message is initially only received locally. The server confirms
-        // delivery/Seen, then the normal polling refreshes the authoritative state.
-        text = text.replace(
-            "messages = messages + ChatMessage(id, senderId, body, createdAt, Instant.now().toString(), \"\")",
-            "messages = messages + ChatMessage(id, senderId, body, createdAt, \"\", \"\")"
-        )
-
-        // A stale read_at value without delivered_at must never render as Seen.
-        text = text.replace(
-            "m.readAt.isNotBlank() -> \"✓✓ Seen\"",
-            "m.readAt.isNotBlank() && m.deliveredAt.isNotBlank() -> \"✓✓ Seen\""
-        )
-        text = text.replace(
-            "color = if (mine && m.readAt.isNotBlank()) MaterialTheme.colorScheme.primary",
-            "color = if (mine && m.readAt.isNotBlank() && m.deliveredAt.isNotBlank()) MaterialTheme.colorScheme.primary"
-        )
-
-        source.writeText(text)
-    }
-}
-
 android.sourceSets["main"].res.srcDir(heartbeatIconResDir)
-tasks.named("preBuild").configure { dependsOn(prepareHeartbeatIcon); dependsOn(preparePlayerProgressFix); dependsOn(prepareAccountFeature); dependsOn(prepareFriendsFeature); dependsOn(prepareRealtimeChatFix); dependsOn(prepareChatV2TimestampFix); dependsOn(prepareChatV2DeliveryFix) }
+tasks.named("preBuild").configure { dependsOn(prepareHeartbeatIcon); dependsOn(preparePlayerProgressFix); dependsOn(prepareAccountFeature); dependsOn(prepareFriendsFeature); dependsOn(prepareRealtimeChatFix); dependsOn(prepareChatV2TimestampFix) }
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
