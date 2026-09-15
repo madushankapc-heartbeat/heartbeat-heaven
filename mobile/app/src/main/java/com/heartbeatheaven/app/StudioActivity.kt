@@ -18,13 +18,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 
-private const val WEBSITE_STUDIO_HANDOFF_URL = "https://heartbeat-heaven.onrender.com/api/studio/mobile-handoff"
+private const val WEBSITE_STUDIO_LOGIN_URL = "https://heartbeat-heaven.onrender.com/studio-login.html"
 
 class StudioActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -37,11 +33,8 @@ class StudioActivity : ComponentActivity() {
 internal fun StudioScreen() {
     val context = LocalContext.current
     val auth = remember { AuthApi(context) }
-    val scope = rememberCoroutineScope()
     var session by remember { mutableStateOf<AuthSession?>(null) }
     var loading by remember { mutableStateOf(true) }
-    var openingStudio by remember { mutableStateOf(false) }
-    var studioError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         session = withContext(Dispatchers.IO) { auth.currentSession() }
@@ -78,24 +71,7 @@ internal fun StudioScreen() {
 
         Card(
             onClick = {
-                if (openingStudio) return@Card
-                studioError = null
-                openingStudio = true
-                scope.launch {
-                    try {
-                        val current = withContext(Dispatchers.IO) { auth.currentSession() }
-                        val accessToken = current?.accessToken ?: ""
-                        if (current == null || !current.profile.isAdmin || accessToken.isBlank()) {
-                            error("Admin session is no longer valid. Please sign in again.")
-                        }
-                        val handoffUrl = withContext(Dispatchers.IO) { requestStudioHandoff(accessToken) }
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(handoffUrl)))
-                    } catch (e: Exception) {
-                        studioError = e.message ?: "Unable to open Music Studio."
-                    } finally {
-                        openingStudio = false
-                    }
-                }
+                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(WEBSITE_STUDIO_LOGIN_URL)))
             },
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -104,9 +80,8 @@ internal fun StudioScreen() {
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
                     Text("Music Studio", style = MaterialTheme.typography.titleLarge)
-                    Text(if (openingStudio) "Opening website Studio…" else "Open the full HEARTBEAT HEAVEN Studio.")
+                    Text("Open HEARTBEAT HEAVEN Studio Login")
                 }
-                if (openingStudio) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
             }
         }
 
@@ -121,39 +96,7 @@ internal fun StudioScreen() {
             }
         }
 
-        if (studioError != null) {
-            Text(studioError!!, color = MaterialTheme.colorScheme.error)
-        }
-
         OutlinedButton(onClick = { finishActivity(context) }) { Text("Back") }
-    }
-}
-
-private suspend fun requestStudioHandoff(accessToken: String): String {
-    val connection = URL(WEBSITE_STUDIO_HANDOFF_URL).openConnection() as HttpURLConnection
-    try {
-        connection.requestMethod = "POST"
-        connection.connectTimeout = 15000
-        connection.readTimeout = 20000
-        connection.doInput = true
-        connection.setRequestProperty("Authorization", "Bearer $accessToken")
-        connection.setRequestProperty("Accept", "application/json")
-        connection.setRequestProperty("Content-Type", "application/json")
-        connection.doOutput = true
-        connection.outputStream.use { it.write("{}".toByteArray(Charsets.UTF_8)) }
-
-        val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
-        val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-        if (connection.responseCode !in 200..299) {
-            val message = runCatching { JSONObject(body).optString("error") }.getOrDefault("")
-            error(if (message.isBlank()) "Studio handoff failed (${connection.responseCode})." else message)
-        }
-
-        val handoffUrl = JSONObject(body).optString("handoff_url").trim()
-        if (handoffUrl.isBlank()) error("Studio handoff URL was not returned.")
-        return handoffUrl
-    } finally {
-        connection.disconnect()
     }
 }
 
