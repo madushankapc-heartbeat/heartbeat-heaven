@@ -6,6 +6,8 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -39,7 +41,7 @@ internal fun StudioScreen() {
         return
     }
 
-    if (session == null) {
+    if (session == null || !session!!.profile.isAdmin) {
         Column(
             Modifier.fillMaxSize().padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -47,9 +49,9 @@ internal fun StudioScreen() {
         ) {
             Spacer(Modifier.height(70.dp))
             Icon(Icons.Default.Lock, null, Modifier.size(52.dp))
-            Text("Studio login required", style = MaterialTheme.typography.headlineSmall)
+            Text("Studio access restricted", style = MaterialTheme.typography.headlineSmall)
             Text(
-                "Please log in from the Profile tab, then open Studio again.",
+                "Only authorized HEARTBEAT HEAVEN administrators can open Studio.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Button(onClick = { finishActivity(context) }) { Text("Back to app") }
@@ -64,15 +66,32 @@ internal fun StudioScreen() {
         Text("Studio", style = MaterialTheme.typography.headlineMedium)
         Text("Welcome, ${session!!.profile.username}.", style = MaterialTheme.typography.titleMedium)
         Text(
-            "Your Studio is protected by the same HEARTBEAT HEAVEN account login used by Friends and Profile.",
+            "Admin workspace for HEARTBEAT HEAVEN. Song management and private user administration stay here.",
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
+
         Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Music Studio", style = MaterialTheme.typography.titleLarge)
-                Text("Song upload and management can be added here next.")
+            Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Upload, null)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Music Studio", style = MaterialTheme.typography.titleLarge)
+                    Text("Upload songs, covers and additional versions.")
+                }
             }
         }
+
+        Card(Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.People, null)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Users", style = MaterialTheme.typography.titleLarge)
+                    Text("Admin-only user management will be connected here.")
+                }
+            }
+        }
+
         OutlinedButton(onClick = { finishActivity(context) }) { Text("Back") }
     }
 }
