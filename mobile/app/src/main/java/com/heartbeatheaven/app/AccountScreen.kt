@@ -26,6 +26,7 @@ internal fun AccountScreen() {
     var phone by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var ageText by remember { mutableStateOf("") }
     var gender by remember { mutableStateOf("male") }
     var message by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -49,13 +50,12 @@ internal fun AccountScreen() {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(p.username, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                     Text("Gender: ${p.gender.replaceFirstChar { it.uppercase() }}")
+                    Text("Age: ${p.age ?: "Not available"}")
                     Text("Email: ${p.email ?: "Not available"}")
                     Text("Mobile: ${p.phone ?: "Not available"}")
                     Text("Your login contacts are never shown publicly.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     if (p.isAdmin) {
-                        Button(onClick = { context.startActivity(Intent(context, StudioActivity::class.java)) }, modifier = Modifier.fillMaxWidth()) {
-                            Text("🎵 Open Studio")
-                        }
+                        Button(onClick = { context.startActivity(Intent(context, StudioActivity::class.java)) }, modifier = Modifier.fillMaxWidth()) { Text("🎵 Open Studio") }
                     }
                     Button(enabled = !busy, onClick = {
                         busy = true
@@ -96,6 +96,7 @@ internal fun AccountScreen() {
                 OutlinedTextField(username, { username = it }, label = { Text("Username") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(email, { email = it }, label = { Text("Email") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(phone, { phone = it }, label = { Text("Mobile number") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(ageText, { value -> ageText = value.filter { it.isDigit() }.take(3) }, label = { Text("Age") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 Text("Your mobile number is collected for account safety and administration. It is not used for login or SMS verification.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Row(Modifier.fillMaxWidth()) {
                     Row(Modifier.weight(1f)) { RadioButton(gender == "male", { gender = "male" }); Text("Male", Modifier.padding(top = 12.dp)) }
@@ -106,13 +107,14 @@ internal fun AccountScreen() {
             }
 
             OutlinedTextField(password, { password = it }, label = { Text("Password") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            val age = ageText.toIntOrNull()
             Button(
-                enabled = !busy && email.contains("@") && password.length >= 6 && (!signup || (username.trim().length >= 3 && phone.trim().length >= 7)),
+                enabled = !busy && email.contains("@") && password.length >= 6 && (!signup || (username.trim().length >= 3 && phone.trim().length >= 7 && age != null && age in 13..120)),
                 onClick = {
                     busy = true; message = null; error = null
                     Thread {
                         val result = if (signup) {
-                            api.signUp(email, password, username, gender, phone).map { it }
+                            api.signUp(email, password, username, gender, phone, age!!)
                         } else {
                             api.signIn(email, password).map { "Welcome, ${it.profile.username}." }
                         }
