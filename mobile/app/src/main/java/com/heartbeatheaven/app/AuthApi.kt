@@ -65,6 +65,30 @@ internal class AuthApi(context: Context) {
         } else Result.success("Account created. Check your email to confirm your account.")
     } catch (e: Exception) { Result.failure(e) }
 
+    fun signUpPhone(phone: String, password: String, username: String, gender: String, age: Int): Result<AuthSession> = try {
+        val normalizedPhone = normalizePhone(phone).ifBlank { error("Enter a valid mobile number.") }
+        val body = JSONObject().apply {
+            put("phone", normalizedPhone)
+            put("password", password)
+            put("data", JSONObject().apply {
+                put("username", username.trim())
+                put("gender", gender.lowercase())
+                put("phone", normalizedPhone)
+                put("age", age)
+            })
+        }
+        val json = JSONObject(request("/auth/v1/signup", "POST", body.toString(), "application/json").body)
+        val access = json.optString("access_token")
+        val refresh = json.optString("refresh_token")
+        val user = json.optJSONObject("user") ?: error("Account creation did not return a user.")
+        if (access.isBlank()) error("Phone confirmation is enabled. Disable phone confirmation in Supabase Auth settings because this app does not use OTP.")
+        val id = user.optString("id").ifBlank { error("No user id returned") }
+        saveTokens(access, refresh, id)
+        val profile = fetchProfile(access, id, user)
+        saveProfile(profile)
+        Result.success(AuthSession(access, refresh, profile))
+    } catch (e: Exception) { Result.failure(e) }
+
     fun signIn(email: String, password: String): Result<AuthSession> = try {
         val body = JSONObject().apply { put("email", email.trim()); put("password", password) }.toString()
         val json = JSONObject(request("/auth/v1/token?grant_type=password", "POST", body, "application/json").body)
@@ -77,6 +101,40 @@ internal class AuthApi(context: Context) {
         saveProfile(profile)
         Result.success(AuthSession(access, refresh, profile))
     } catch (e: Exception) { Result.failure(e) }
+
+    fun signInPhone(identifier: String, password: String): Result<AuthSession> = try {
+        val raw = identifier.trim()
+        val phone = if (raw.any { it.isLetter() }) resolvePhoneLogin(raw) else normalizePhone(raw)
+        if (phone.isBlank()) error("Enter a valid phone number or username.")
+        val body = JSONObject().apply { put("phone", phone); put("password", password) }.toString()
+        val json = JSONObject(request("/auth/v1/token?grant_type=password", "POST", body, "application/json").body)
+        val access = json.optString("access_token").ifBlank { error("No access token returned") }
+        val refresh = json.optString("refresh_token")
+        val user = json.optJSONObject("user") ?: error("No user returned")
+        val id = user.optString("id").ifBlank { error("No user id returned") }
+        saveTokens(access, refresh, id)
+        val profile = fetchProfile(access, id, user)
+        saveProfile(profile)
+        Result.success(AuthSession(access, refresh, profile))
+    } catch (e: Exception) { Result.failure(e) }
+
+    private fun resolvePhoneLogin(identifier: String): String {
+        val body = request("/rest/v1/rpc/resolve_phone_login", "POST", JSONObject().put("p_identifier", identifier.trim()).toString(), "application/json").body.trim()
+        if (body.isBlank() || body == "null") error("Invalid username or password.")
+        return runCatching { JSONObject(body).optString("phone") }.getOrElse { body.trim('"') }.takeIf { it.isNotBlank() } ?: error("Invalid username or password.")
+    }
+
+    private fun normalizePhone(value: String): String {
+        val raw = value.trim().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+        if (raw.startsWith("+")) return "+" + raw.drop(1).filter { it.isDigit() }
+        val digits = raw.filter { it.isDigit() }
+        return when {
+            digits.startsWith("0") && digits.length >= 9 -> "+94" + digits.drop(1)
+            digits.startsWith("94") && digits.length >= 10 -> "+$digits"
+            digits.length >= 8 -> "+$digits"
+            else -> ""
+        }
+    }
 
     fun requestPasswordReset(email: String): Result<String> = try { request("/auth/v1/recover?redirect_to=${encode(PASSWORD_RESET_REDIRECT_URL)}", "POST", JSONObject().put("email", email.trim()).toString(), "application/json"); Result.success("If an account exists for this email, a password reset link has been sent.") } catch (e: Exception) { Result.failure(e) }
     fun updatePassword(accessToken: String, newPassword: String): Result<String> = try { request("/auth/v1/user", "PUT", JSONObject().put("password", newPassword).toString(), "application/json", accessToken); Result.success("Password updated successfully.") } catch (e: Exception) { Result.failure(e) }
@@ -100,18 +158,16 @@ internal class AuthApi(context: Context) {
             val payload = Base64.decode(parts[1], Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
             val exp = JSONObject(String(payload, Charsets.UTF_8)).optLong("exp", 0L)
             exp > 0L && exp <= System.currentTimeMillis() / 1000L + 60L
-        } catch (_: Exception) {
-            false
-        }
+        } catch (_: Exception) { false }
     }
     private fun requestUser(accessToken: String) = JSONObject(request("/auth/v1/user", "GET", null, null, accessToken).body)
 
     private fun fetchProfile(accessToken: String, userId: String, user: JSONObject): AccountProfile {
-        val a = org.json.JSONArray(request("/rest/v1/profiles?id=eq.${encode(userId)}&select=id,username,gender,age", "GET", null, null, accessToken).body)
+        val a = org.json.JSONArray(request("/rest/v1/profiles?id=eq.${encode(userId)}&select=id,username,gender,age,phone", "GET", null, null, accessToken).body)
         if (a.length() == 0) error("Profile is not ready yet. Please try again.")
         val row = a.getJSONObject(0)
         val metadata = user.optJSONObject("user_metadata")
-        val phone = metadata?.optString("phone")?.takeIf { !it.isNullOrBlank() }
+        val phone = row.optString("phone").takeIf { it.isNotBlank() } ?: user.optString("phone").takeIf { it.isNotBlank() } ?: metadata?.optString("phone")?.takeIf { !it.isNullOrBlank() }
         val age = row.optInt("age", 0).takeIf { it > 0 }
         val isAdmin = request("/rest/v1/rpc/is_admin", "POST", "{}", "application/json", accessToken).body.trim().equals("true", ignoreCase = true)
         return AccountProfile(row.optString("id", userId), row.optString("username", "User"), row.optString("gender", "male"), user.optString("email").takeIf { it.isNotBlank() }, phone, age, isAdmin)
