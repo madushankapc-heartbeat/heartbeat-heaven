@@ -155,30 +155,31 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
     var songs by remember { mutableStateOf<List<Song>>(emptyList()) }; var loading by remember { mutableStateOf(true) }; var error by remember { mutableStateOf<String?>(null) }
     var tab by remember { mutableStateOf(0) }; var search by remember { mutableStateOf("") }; var selected by remember { mutableStateOf<Song?>(null) }
     val favorites = remember { FavoriteStore(context) }; var favoriteIds by remember { mutableStateOf(favorites.ids()) }
+    val authSession = remember { AuthApi(context).currentSession() }
 
     LaunchedEffect(Unit) { try { songs = fetchSongs() } catch (e: Exception) { error = "Unable to load songs. Please check your connection." } finally { loading = false } }
     val filtered = songs.filter { s -> val q = search.trim().lowercase(); q.isBlank() || listOf(s.title, s.artist, s.genre, s.language, s.mood).joinToString(" ").lowercase().contains(q) }.filter { if (tab == 2) favoriteIds.contains(it.id) else true }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Column { Text("HEARTBEAT HEAVEN", fontWeight = FontWeight.Bold); Text("Original Music by Madushanka", fontSize = 11.sp) } }) },
+        topBar = { TopAppBar(title = { Column { Text("HEARTBEAT HEAVEN", fontWeight = FontWeight.Bold); Text("Original Music by Madushanka", fontSize = 11.sp) } }, actions = { if (authSession?.profile?.isAdmin == true) IconButton(onClick = { context.startActivity(Intent(context, StudioActivity::class.java)) }) { Icon(Icons.Default.LibraryMusic, "Studio") } }) },
         bottomBar = { Column {
             if (song != null && selected == null) MiniPlayer(song, playing, position, duration, onPlay, onPause, onSeek, onStop)
             NavigationBar {
                 NavigationBarItem(tab == 0, { tab = 0; selected = null }, { Icon(Icons.Default.Home, "Home") }, label = { Text("Home") })
-                NavigationBarItem(tab == 1, { tab = 1; selected = null }, { Icon(Icons.Default.Search, "Search") }, label = { Text("Search") })
+                NavigationBarItem(tab == 1, { tab = 1; selected = null }, { Icon(Icons.Default.People, "Friends") }, label = { Text("Friends") })
                 NavigationBarItem(tab == 2, { tab = 2; selected = null }, { Icon(Icons.Default.Favorite, "Favorites") }, label = { Text("Favorites") })
-                NavigationBarItem(tab == 3, { tab = 3; selected = null }, { Icon(Icons.Default.People, "Friends") }, label = { Text("Friends") })
+                NavigationBarItem(tab == 3, { tab = 3; selected = null }, { Icon(Icons.Default.Search, "Search") }, label = { Text("Search") })
                 NavigationBarItem(tab == 4, { tab = 4; selected = null }, { Icon(Icons.Default.Person, "Profile") }, label = { Text("Profile") })
             }
         } }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             when {
-                tab == 3 -> FriendsScreen()
+                tab == 1 -> FriendsScreen()
                 tab == 4 -> AccountScreen()
                 selected != null -> DetailScreen(selected!!, songId, playing, position, duration, { selected = null }, { target -> if (songId == target.id && playing) onPause() else onPlay(target) }, onSeek, { favoriteIds = favorites.toggle(selected!!.id) }, { shareSong(context, selected!!) })
                 else -> {
-                    if (tab == 1) OutlinedTextField(search, { search = it }, Modifier.fillMaxWidth().padding(16.dp), label = { Text("Search songs, artists...") }, leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true)
+                    if (tab == 3) OutlinedTextField(search, { search = it }, Modifier.fillMaxWidth().padding(16.dp), label = { Text("Search songs, artists...") }, leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true)
                     if (loading) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                     else if (error != null) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(error!!) }
                     else {
