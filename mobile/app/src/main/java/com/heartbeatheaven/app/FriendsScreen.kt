@@ -29,7 +29,7 @@ private const val FRIENDS_SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.
 private const val FRIENDS_KEY = "sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
 private data class FriendUser(val id: String, val username: String, val gender: String)
 private data class FriendRequest(val id: String, val user: FriendUser, val incoming: Boolean)
-private data class ChatMessage(val id: String, val senderId: String, val body: String, val createdAt: String)
+private data class ChatMessage(val id: String, val senderId: String, val body: String, val createdAt: String, val deliveredAt: String = "", val readAt: String = "")
 
 private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession) {
     private var session = initialSession
@@ -159,13 +159,21 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
 
     suspend fun messages(other: String): List<ChatMessage> = withContext(Dispatchers.IO) {
         val mine = userId()
-        val a = JSONArray(request("/rest/v1/messages?or=(and(sender_id.eq.$mine,receiver_id.eq.$other),and(sender_id.eq.$other,receiver_id.eq.$mine))&order=created_at.asc&limit=100", "GET"))
+        val a = JSONArray(request("/rest/v1/messages?or=(and(sender_id.eq.$mine,receiver_id.eq.$other),and(sender_id.eq.$other,receiver_id.eq.$mine))&select=id,sender_id,body,created_at,delivered_at,read_at&order=created_at.asc&limit=100", "GET"))
         buildList {
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
-                add(ChatMessage(o.optString("id"), o.optString("sender_id"), o.optString("body"), o.optString("created_at")))
+                add(ChatMessage(o.optString("id"), o.optString("sender_id"), o.optString("body"), o.optString("created_at"), o.optString("delivered_at"), o.optString("read_at")))
             }
         }
+    }
+
+    suspend fun markDelivered(messageId: String) = withContext(Dispatchers.IO) {
+        request("/rest/v1/messages?id=eq.$messageId&receiver_id=eq.${userId()}", "PATCH", JSONObject().put("delivered_at", Instant.now().toString()).toString())
+    }
+
+    suspend fun markSeen(other: String) = withContext(Dispatchers.IO) {
+        request("/rest/v1/messages?sender_id=eq.$other&receiver_id=eq.${userId()}&read_at=is.null", "PATCH", JSONObject().put("read_at", Instant.now().toString()).toString())
     }
 
     suspend fun sendMessage(other: String, body: String): ChatMessage? = withContext(Dispatchers.IO) {
@@ -176,7 +184,7 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
             val a = JSONArray(response)
             if (a.length() > 0) {
                 val o = a.getJSONObject(0)
-                ChatMessage(o.optString("id"), o.optString("sender_id"), o.optString("body"), o.optString("created_at"))
+                ChatMessage(o.optString("id"), o.optString("sender_id"), o.optString("body"), o.optString("created_at"), o.optString("delivered_at"), o.optString("read_at"))
             } else null
         }.getOrNull()
     }
@@ -243,8 +251,11 @@ internal fun FriendsScreen() {
         val a = api ?: return@LaunchedEffect
         while (true) {
             runCatching {
+                a.markSeen(current.id)
                 val fresh = a.messages(current.id)
-                if (fresh != messages) messages = fresh
+                fresh.filter { it.senderId == current.id && it.deliveredAt.isBlank() }.forEach { a.markDelivered(it.id) }
+                val updated = if (fresh.any { it.senderId == current.id && it.deliveredAt.isBlank() }) a.messages(current.id) else fresh
+                if (updated != messages) messages = updated
             }
             delay(1500)
         }
@@ -260,7 +271,11 @@ internal fun FriendsScreen() {
             ) { id, senderId, body, createdAt ->
                 scope.launch(Dispatchers.Main) {
                     if (selectedId != null && selected?.id == selectedId && senderId == selectedId && messages.none { it.id == id }) {
-                        messages = messages + ChatMessage(id, senderId, body, createdAt)
+                        messages = messages + ChatMessage(id, senderId, body, createdAt, Instant.now().toString(), "")
+                        scope.launch(Dispatchers.IO) {
+                            currentApi.markDelivered(id)
+                            currentApi.markSeen(selectedId)
+                        }
                     }
                 }
             }
@@ -293,13 +308,8 @@ internal fun FriendsScreen() {
 
         Column(Modifier.fillMaxSize()) {
             Surface(shadowElevation = 2.dp) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = { selected = null; messages = emptyList(); text = "" }) {
-                        Icon(Icons.Default.ArrowBack, "Back")
-                    }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { selected = null; messages = emptyList(); text = "" }) { Icon(Icons.Default.ArrowBack, "Back") }
                     Column(Modifier.weight(1f)) {
                         Text(chat.username, style = MaterialTheme.typography.titleLarge)
                         val isOnline = online.any { it.id == chat.id }
@@ -309,66 +319,46 @@ internal fun FriendsScreen() {
                 }
             }
 
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
+            LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 items(messages, key = { it.id }) { m ->
                     val mine = m.senderId == api.userId()
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
                         Column(horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
-                            Surface(
-                                color = if (mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                                shape = RoundedCornerShape(18.dp)
-                            ) {
+                            Surface(color = if (mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(18.dp)) {
                                 Text(m.body, Modifier.padding(horizontal = 14.dp, vertical = 9.dp), color = MaterialTheme.colorScheme.onSurface)
                             }
-                            Text(
-                                if (mine) "You  ${m.createdAt.takeLast(14).take(5)}" else "${chat.username}  ${m.createdAt.takeLast(14).take(5)}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
-                            )
+                            val delivery = if (mine) when {
+                                m.readAt.isNotBlank() -> "✓✓ Seen"
+                                m.deliveredAt.isNotBlank() -> "✓✓ Delivered"
+                                else -> "✓ Sent"
+                            } else ""
+                            Text(if (mine) "You  ${ChatTimeFormatter.time(m.createdAt)}  $delivery" else "${chat.username}  ${ChatTimeFormatter.time(m.createdAt)}", style = MaterialTheme.typography.labelSmall, color = if (mine && m.readAt.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp))
                         }
                     }
                 }
             }
 
-            statusMessage?.let {
-                Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp))
-            }
-
+            statusMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) }
             Surface(tonalElevation = 2.dp) {
                 Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom) {
-                    OutlinedTextField(
-                        value = text,
-                        onValueChange = { text = it; statusMessage = null },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("Message") },
-                        maxLines = 4
-                    )
+                    OutlinedTextField(value = text, onValueChange = { text = it; statusMessage = null }, modifier = Modifier.weight(1f), placeholder = { Text("Message") }, maxLines = 4)
                     Spacer(Modifier.width(6.dp))
-                    IconButton(
-                        enabled = text.isNotBlank(),
-                        onClick = {
-                            val outgoing = text.trim()
-                            text = ""
-                            statusMessage = null
-                            val optimistic = ChatMessage("local-${System.nanoTime()}", api.userId(), outgoing, "")
-                            messages = messages + optimistic
-                            scope.launch {
-                                runCatching {
-                                    val saved = api.sendMessage(chat.id, outgoing)
-                                    val fresh = api.messages(chat.id)
-                                    messages = if (saved != null) fresh else fresh
-                                }.onFailure {
-                                    messages = messages.filterNot { it.id == optimistic.id }
-                                    statusMessage = it.message ?: "Message could not be sent."
-                                }
+                    IconButton(enabled = text.isNotBlank(), onClick = {
+                        val outgoing = text.trim()
+                        text = ""
+                        statusMessage = null
+                        val optimistic = ChatMessage("local-${System.nanoTime()}", api.userId(), outgoing, "")
+                        messages = messages + optimistic
+                        scope.launch {
+                            runCatching {
+                                api.sendMessage(chat.id, outgoing)
+                                messages = api.messages(chat.id)
+                            }.onFailure {
+                                messages = messages.filterNot { it.id == optimistic.id }
+                                statusMessage = it.message ?: "Message could not be sent."
                             }
                         }
-                    ) { Icon(Icons.Default.Send, "Send") }
+                    }) { Icon(Icons.Default.Send, "Send") }
                 }
             }
         }
@@ -378,63 +368,25 @@ internal fun FriendsScreen() {
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Friends", style = MaterialTheme.typography.headlineMedium)
         Text("Online people and accepted friends are shown here.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-
         if (online.isNotEmpty()) {
             Text("Online now", style = MaterialTheme.typography.titleMedium)
-            online.forEach { u ->
-                ListItem(
-                    headlineContent = { Text(u.username) },
-                    supportingContent = { Text("Online") },
-                    leadingContent = { Icon(Icons.Default.Circle, "Online", tint = MaterialTheme.colorScheme.primary) },
-                    trailingContent = {
-                        Button(onClick = { scope.launch { runCatching { statusMessage = api.send(u.id); reload() }.onFailure { statusMessage = it.message } } }) { Text("Add") }
-                    }
-                )
-            }
+            online.forEach { u -> ListItem(headlineContent = { Text(u.username) }, supportingContent = { Text("Online") }, leadingContent = { Icon(Icons.Default.Circle, "Online", tint = MaterialTheme.colorScheme.primary) }, trailingContent = { Button(onClick = { scope.launch { runCatching { statusMessage = api.send(u.id); reload() }.onFailure { statusMessage = it.message } } }) { Text("Add") } }) }
         }
-
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(query, { query = it }, Modifier.weight(1f), label = { Text("Search username") }, singleLine = true)
-            Button(enabled = query.isNotBlank(), onClick = {
-                scope.launch { results = runCatching { api.search(query) }.getOrElse { statusMessage = it.message; emptyList() } }
-            }) { Text("Search") }
+            Button(enabled = query.isNotBlank(), onClick = { scope.launch { results = runCatching { api.search(query) }.getOrElse { statusMessage = it.message; emptyList() } } }) { Text("Search") }
         }
-
         if (results.isNotEmpty()) {
             Text("Search results", style = MaterialTheme.typography.titleMedium)
-            results.forEach { u ->
-                ListItem(
-                    headlineContent = { Text(u.username) },
-                    leadingContent = { Icon(Icons.Default.PersonAdd, "Add friend") },
-                    trailingContent = {
-                        Button(onClick = { scope.launch { runCatching { statusMessage = api.send(u.id); reload() }.onFailure { statusMessage = it.message } } }) { Text("Add") }
-                    }
-                )
-            }
+            results.forEach { u -> ListItem(headlineContent = { Text(u.username) }, leadingContent = { Icon(Icons.Default.PersonAdd, "Add friend") }, trailingContent = { Button(onClick = { scope.launch { runCatching { statusMessage = api.send(u.id); reload() }.onFailure { statusMessage = it.message } } }) { Text("Add") } }) }
         }
-
         if (requests.isNotEmpty()) {
             Text("Friend requests", style = MaterialTheme.typography.titleMedium)
-            requests.forEach { r ->
-                ListItem(
-                    headlineContent = { Text(r.user.username) },
-                    supportingContent = { Text(if (r.incoming) "Wants to be your friend" else "Pending") },
-                    trailingContent = { if (r.incoming) Button(onClick = { scope.launch { runCatching { api.accept(r.id); reload() }.onFailure { statusMessage = it.message } } }) { Text("Accept") } else Text("Pending") }
-                )
-            }
+            requests.forEach { r -> ListItem(headlineContent = { Text(r.user.username) }, supportingContent = { Text(if (r.incoming) "Wants to be your friend" else "Pending") }, trailingContent = { if (r.incoming) Button(onClick = { scope.launch { runCatching { api.accept(r.id); reload() }.onFailure { statusMessage = it.message } } }) { Text("Accept") } else Text("Pending") }) }
         }
-
         Text("Friends", style = MaterialTheme.typography.titleMedium)
         if (friends.isEmpty()) Text("No friends yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        friends.forEach { u ->
-            ListItem(
-                headlineContent = { Text(u.username) },
-                supportingContent = { Text(if (online.any { it.id == u.id }) "Online" else "Offline") },
-                leadingContent = { Icon(Icons.Default.Person, "Friend") },
-                trailingContent = { FilledTonalButton(onClick = { selected = u; statusMessage = null }) { Text("Chat") } }
-            )
-        }
-
+        friends.forEach { u -> ListItem(headlineContent = { Text(u.username) }, supportingContent = { Text(if (online.any { it.id == u.id }) "Online" else "Offline") }, leadingContent = { Icon(Icons.Default.Person, "Friend") }, trailingContent = { FilledTonalButton(onClick = { selected = u; statusMessage = null }) { Text("Chat") } }) }
         statusMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
     }
