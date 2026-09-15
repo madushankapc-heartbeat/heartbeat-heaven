@@ -21,9 +21,11 @@ internal fun AccountScreen() {
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
     var signup by remember { mutableStateOf(false) }
+    var phoneMode by remember { mutableStateOf(false) }
     var resetMode by remember { mutableStateOf(false) }
     var email by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
+    var identifier by remember { mutableStateOf("") }
     var username by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var ageText by remember { mutableStateOf("") }
@@ -87,49 +89,72 @@ internal fun AccountScreen() {
             TextButton(onClick = { resetMode = false; message = null; error = null }) { Text("Back to login") }
         } else {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { phoneMode = false; signup = false; message = null; error = null }, Modifier.weight(1f)) { Text("Email") }
+                OutlinedButton(onClick = { phoneMode = true; signup = false; message = null; error = null }, Modifier.weight(1f)) { Text("Phone") }
+            }
+
+            if (phoneMode) {
+                Text("Phone account", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("Sign in with your phone number or username and password.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { signup = false; message = null; error = null }, Modifier.weight(1f)) { Text("Log in") }
                 OutlinedButton(onClick = { signup = true; message = null; error = null }, Modifier.weight(1f)) { Text("Create account") }
             }
 
             if (signup) {
-                Text("Create your HEARTBEAT HEAVEN account", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text(if (phoneMode) "Create phone account" else "Create your HEARTBEAT HEAVEN account", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 OutlinedTextField(username, { username = it }, label = { Text("Username") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(email, { email = it }, label = { Text("Email") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(phone, { phone = it }, label = { Text("Mobile number") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(ageText, { value -> ageText = value.filter { it.isDigit() }.take(3) }, label = { Text("Age") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                Text("Your mobile number is collected for account safety and administration. It is not used for login or SMS verification.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (phoneMode) {
+                    OutlinedTextField(phone, { phone = it }, label = { Text("Mobile number") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(ageText, { value -> ageText = value.filter { it.isDigit() }.take(3) }, label = { Text("Age") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Text("No SMS or OTP verification is used. Use a strong password.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                } else {
+                    OutlinedTextField(email, { email = it }, label = { Text("Email") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(phone, { phone = it }, label = { Text("Mobile number") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(ageText, { value -> ageText = value.filter { it.isDigit() }.take(3) }, label = { Text("Age") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Text("Your mobile number is collected for account safety and administration. It is not used for login or SMS verification.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 Row(Modifier.fillMaxWidth()) {
                     Row(Modifier.weight(1f)) { RadioButton(gender == "male", { gender = "male" }); Text("Male", Modifier.padding(top = 12.dp)) }
                     Row(Modifier.weight(1f)) { RadioButton(gender == "female", { gender = "female" }); Text("Female", Modifier.padding(top = 12.dp)) }
                 }
             } else {
-                OutlinedTextField(email, { email = it }, label = { Text("Email") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                if (phoneMode) {
+                    OutlinedTextField(identifier, { identifier = it }, label = { Text("Phone number or username") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                } else {
+                    OutlinedTextField(email, { email = it }, label = { Text("Email") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                }
             }
 
             OutlinedTextField(password, { password = it }, label = { Text("Password") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             val age = ageText.toIntOrNull()
-            Button(
-                enabled = !busy && email.contains("@") && password.length >= 6 && (!signup || (username.trim().length >= 3 && phone.trim().length >= 7 && age != null && age in 13..120)),
-                onClick = {
-                    busy = true; message = null; error = null
-                    Thread {
-                        val result = if (signup) {
-                            api.signUp(email, password, username, gender, phone, age!!)
-                        } else {
-                            api.signIn(email, password).map { "Welcome, ${it.profile.username}." }
-                        }
-                        android.os.Handler(android.os.Looper.getMainLooper()).post {
-                            busy = false
-                            result.onSuccess { text ->
-                                message = text
-                                session = api.currentSession()
-                            }.onFailure { error = it.message ?: "Authentication failed." }
-                        }
-                    }.start()
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) { Text(if (busy) "Please wait..." else if (signup) "Create account" else "Log in") }
-            if (!signup) TextButton(onClick = { resetMode = true; message = null; error = null }) { Text("Forgot password?") }
+            val validPhoneSignup = username.trim().length >= 3 && phone.trim().length >= 7 && age != null && age in 13..120
+            val enabled = if (phoneMode) {
+                !busy && password.length >= 6 && if (signup) validPhoneSignup else identifier.trim().length >= 3
+            } else {
+                !busy && password.length >= 6 && if (signup) (email.contains("@") && username.trim().length >= 3 && phone.trim().length >= 7 && age != null && age in 13..120) else email.contains("@")
+            }
+            Button(enabled = enabled, onClick = {
+                busy = true; message = null; error = null
+                Thread {
+                    val result = when {
+                        phoneMode && signup -> api.signUpPhone(phone, password, username, gender, age!!).map { "Account created successfully. Welcome, ${it.profile.username}." }
+                        phoneMode -> api.signInPhone(identifier, password).map { "Welcome, ${it.profile.username}." }
+                        signup -> api.signUp(email, password, username, gender, phone, age!!)
+                        else -> api.signIn(email, password).map { "Welcome, ${it.profile.username}." }
+                    }
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        busy = false
+                        result.onSuccess { text ->
+                            message = text
+                            session = api.currentSession()
+                        }.onFailure { error = it.message ?: "Authentication failed." }
+                    }
+                }.start()
+            }, modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Please wait..." else if (signup) "Create account" else "Log in") }
+            if (!phoneMode && !signup) TextButton(onClick = { resetMode = true; message = null; error = null }) { Text("Forgot password?") }
         }
         message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
