@@ -125,6 +125,61 @@ val prepareRealtimeChatFix by tasks.registering {
         val source = rootProject.projectDir.resolve("app/src/main/java/com/heartbeatheaven/app/FriendsScreen.kt")
         var text = source.readText()
         text = text.replace("private class FriendsApi(private val session: AuthSession)", "private class FriendsApi(internal val session: AuthSession)")
+
+        text = text.replace(
+            "private data class ChatMessage(val id: String, val senderId: String, val body: String, val createdAt: String)",
+            """private data class ChatMessage(
+    val id: String,
+    val senderId: String,
+    val body: String,
+    val createdAt: String,
+    val deliveredAt: String = \"\",
+    val readAt: String = \"\"
+)"""
+        )
+
+        text = text.replace(
+            "add(ChatMessage(o.optString(\"id\"), o.optString(\"sender_id\"), o.optString(\"body\"), o.optString(\"created_at\")))",
+            """add(ChatMessage(
+                    o.optString(\"id\"),
+                    o.optString(\"sender_id\"),
+                    o.optString(\"body\"),
+                    o.optString(\"created_at\"),
+                    o.optString(\"delivered_at\"),
+                    o.optString(\"read_at\")
+                ))"""
+        )
+
+        text = text.replace(
+            "ChatMessage(o.optString(\"id\"), o.optString(\"sender_id\"), o.optString(\"body\"), o.optString(\"created_at\"))",
+            "ChatMessage(o.optString(\"id\"), o.optString(\"sender_id\"), o.optString(\"body\"), o.optString(\"created_at\"), o.optString(\"delivered_at\"), o.optString(\"read_at\"))"
+        )
+
+        text = text.replace(
+            "messages = messages + ChatMessage(id, senderId, body, createdAt)",
+            "messages = messages + ChatMessage(id, senderId, body, createdAt)"
+        )
+
+        val oldTimestamp = """                            Text(
+                                if (mine) \"You  \${m.createdAt.takeLast(14).take(5)}\" else \"\${chat.username}  \${m.createdAt.takeLast(14).take(5)}\",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                            )"""
+        val newTimestamp = """                            val formattedTime = ChatTimeFormatter.time(m.createdAt)
+                            val delivery = when {
+                                !mine -> \"\"
+                                m.readAt.isNotBlank() -> \"✓✓ Seen\"
+                                m.deliveredAt.isNotBlank() -> \"✓✓ Delivered\"
+                                else -> \"✓ Sent\"
+                            }
+                            Text(
+                                if (mine) \"You  $formattedTime  $delivery\" else \"\${chat.username}  $formattedTime\",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (mine && m.readAt.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                            )"""
+        if (oldTimestamp in text) text = text.replace(oldTimestamp, newTimestamp)
         source.writeText(text)
     }
 }
