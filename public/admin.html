@@ -31,6 +31,13 @@
   <nav>
     <a href="/">View Website</a>
     <a href="/songs.html">Songs</a>
+    <button
+      class="btn ghost"
+      type="button"
+      id="studioLogout"
+    >
+      Logout
+    </button>
   </nav>
 
 </header>
@@ -664,6 +671,24 @@
 
 
 <script src="/admin.js"></script>
+
+<script>
+  document.getElementById("studioLogout")?.addEventListener("click", async () => {
+    const button = document.getElementById("studioLogout");
+
+    button.disabled = true;
+    button.textContent = "Logging out…";
+
+    try {
+      await fetch("/api/studio/logout", {
+        method: "POST",
+        credentials: "same-origin"
+      });
+    } finally {
+      window.location.replace("/studio-login.html");
+    }
+  });
+</script>
 
 </body>
 
