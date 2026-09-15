@@ -142,13 +142,15 @@ internal class AuthApi(context: Context) {
         val a = org.json.JSONArray(request("/rest/v1/profiles?id=eq.${encode(userId)}&select=id,username,gender", "GET", null, null, accessToken).body)
         if (a.length() == 0) error("Profile is not ready yet. Please try again.")
         val row = a.getJSONObject(0)
+        val metadata = user.optJSONObject("user_metadata")
+        val phone = metadata?.optString("phone")?.takeIf { !it.isNullOrBlank() }
         val isAdmin = request("/rest/v1/rpc/is_admin", "POST", "{}", "application/json", accessToken).body.trim().equals("true", ignoreCase = true)
         return AccountProfile(
             row.optString("id", userId),
             row.optString("username", "User"),
             row.optString("gender", "male"),
             user.optString("email").takeIf { it.isNotBlank() },
-            user.optString("phone").takeIf { it.isNotBlank() } ?: row.optString("phone").takeIf { it.isNotBlank() },
+            phone,
             isAdmin
         )
     }
