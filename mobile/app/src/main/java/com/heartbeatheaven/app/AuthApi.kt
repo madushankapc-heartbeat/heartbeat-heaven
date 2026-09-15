@@ -11,6 +11,7 @@ private const val SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.co"
 private const val SUPABASE_PUBLISHABLE_KEY = "sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
 private const val AUTH_REDIRECT_URL = "https://heartbeat-heaven.onrender.com"
 private const val PASSWORD_RESET_REDIRECT_URL = "heartbeatheaven://auth/reset"
+private const val PHONE_SIGNUP_FUNCTION = "/functions/v1/phone-signup"
 
 internal data class AccountProfile(
     val id: String,
@@ -70,18 +71,14 @@ internal class AuthApi(context: Context) {
         val body = JSONObject().apply {
             put("phone", normalizedPhone)
             put("password", password)
-            put("data", JSONObject().apply {
-                put("username", username.trim())
-                put("gender", gender.lowercase())
-                put("phone", normalizedPhone)
-                put("age", age)
-            })
+            put("username", username.trim())
+            put("gender", gender.lowercase())
+            put("age", age)
         }
-        val json = JSONObject(request("/auth/v1/signup", "POST", body.toString(), "application/json").body)
-        val access = json.optString("access_token")
+        val json = JSONObject(request(PHONE_SIGNUP_FUNCTION, "POST", body.toString(), "application/json").body)
+        val access = json.optString("access_token").ifBlank { error(json.optString("error").ifBlank { "Phone account creation failed." }) }
         val refresh = json.optString("refresh_token")
         val user = json.optJSONObject("user") ?: error("Account creation did not return a user.")
-        if (access.isBlank()) error("Phone confirmation is enabled. Disable phone confirmation in Supabase Auth settings because this app does not use OTP.")
         val id = user.optString("id").ifBlank { error("No user id returned") }
         saveTokens(access, refresh, id)
         val profile = fetchProfile(access, id, user)
