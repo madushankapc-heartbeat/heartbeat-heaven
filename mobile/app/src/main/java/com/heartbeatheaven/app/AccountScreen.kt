@@ -6,6 +6,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -21,6 +22,7 @@ internal fun AccountScreen() {
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf(false) }
+    var showSignupChoice by remember { mutableStateOf(false) }
     var signup by remember { mutableStateOf(false) }
     var phoneMode by remember { mutableStateOf(false) }
     var resetMode by remember { mutableStateOf(false) }
@@ -39,8 +41,36 @@ internal fun AccountScreen() {
         loading = false
     }
     if (loading) {
-        Box(Modifier.fillMaxSize(), contentAlignment = androidx.compose.ui.Alignment.Center) { CircularProgressIndicator() }
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         return
+    }
+
+    if (showSignupChoice) {
+        AlertDialog(
+            onDismissRequest = { showSignupChoice = false },
+            title = { Text("Create account") },
+            text = { Text("How would you like to create your HEARTBEAT HEAVEN account?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showSignupChoice = false
+                    signup = true
+                    phoneMode = false
+                    resetMode = false
+                    message = null
+                    error = null
+                }) { Text("Email account") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showSignupChoice = false
+                    signup = true
+                    phoneMode = true
+                    resetMode = false
+                    message = null
+                    error = null
+                }) { Text("Phone account") }
+            }
+        )
     }
 
     if (showDeleteDialog && session != null) {
@@ -135,12 +165,7 @@ internal fun AccountScreen() {
 
             if (phoneMode) {
                 Text("Phone account", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text("Sign in with your phone number or username and password.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { signup = false; message = null; error = null }, Modifier.weight(1f)) { Text("Log in") }
-                OutlinedButton(onClick = { signup = true; message = null; error = null }, Modifier.weight(1f)) { Text("Create account") }
+                Text(if (signup) "Create your phone account." else "Sign in with your phone number or username and password.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
             if (signup) {
@@ -168,33 +193,54 @@ internal fun AccountScreen() {
                 }
             }
 
-            OutlinedTextField(password, { password = it }, label = { Text("Password") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            val age = ageText.toIntOrNull()
-            val validPhoneSignup = username.trim().length >= 3 && phone.trim().length >= 7 && age != null && age in 13..120
-            val enabled = if (phoneMode) {
-                !busy && password.length >= 6 && if (signup) validPhoneSignup else identifier.trim().length >= 3
+            if (signup) {
+                OutlinedTextField(password, { password = it }, label = { Text("Password") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                val age = ageText.toIntOrNull()
+                val validPhoneSignup = username.trim().length >= 3 && phone.trim().length >= 7 && age != null && age in 13..120
+                val enabled = if (phoneMode) {
+                    !busy && password.length >= 6 && validPhoneSignup
+                } else {
+                    !busy && password.length >= 6 && email.contains("@") && username.trim().length >= 3 && phone.trim().length >= 7 && age != null && age in 13..120
+                }
+                Button(enabled = enabled, onClick = {
+                    busy = true; message = null; error = null
+                    Thread {
+                        val result = when {
+                            phoneMode -> api.signUpPhone(phone, password, username, gender, age!!).map { "Account created successfully. Welcome, ${it.profile.username}." }
+                            else -> api.signUp(email, password, username, gender, phone, age!!)
+                        }
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            busy = false
+                            result.onSuccess { text ->
+                                message = text
+                                session = api.currentSession()
+                                if (session == null) {
+                                    signup = false
+                                }
+                            }.onFailure { error = it.message ?: "Account creation failed." }
+                        }
+                    }.start()
+                }, modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Please wait..." else "Create account") }
+                TextButton(onClick = { signup = false; message = null; error = null }) { Text("Back to login") }
             } else {
-                !busy && password.length >= 6 && if (signup) (email.contains("@") && username.trim().length >= 3 && phone.trim().length >= 7 && age != null && age in 13..120) else email.contains("@")
+                OutlinedTextField(password, { password = it }, label = { Text("Password") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Button(enabled = !busy && password.length >= 6 && if (phoneMode) identifier.trim().length >= 3 else email.contains("@"), onClick = {
+                    busy = true; message = null; error = null
+                    Thread {
+                        val result = if (phoneMode) api.signInPhone(identifier, password).map { "Welcome, ${it.profile.username}." }
+                        else api.signIn(email, password).map { "Welcome, ${it.profile.username}." }
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            busy = false
+                            result.onSuccess { text ->
+                                message = text
+                                session = api.currentSession()
+                            }.onFailure { error = it.message ?: "Authentication failed." }
+                        }
+                    }.start()
+                }, modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Please wait..." else "Log in") }
+                OutlinedButton(enabled = !busy, onClick = { showSignupChoice = true; message = null; error = null }, modifier = Modifier.fillMaxWidth()) { Text("Create account") }
+                if (!phoneMode) TextButton(onClick = { resetMode = true; message = null; error = null }, modifier = Modifier.fillMaxWidth()) { Text("Forgot password?") }
             }
-            Button(enabled = enabled, onClick = {
-                busy = true; message = null; error = null
-                Thread {
-                    val result = when {
-                        phoneMode && signup -> api.signUpPhone(phone, password, username, gender, age!!).map { "Account created successfully. Welcome, ${it.profile.username}." }
-                        phoneMode -> api.signInPhone(identifier, password).map { "Welcome, ${it.profile.username}." }
-                        signup -> api.signUp(email, password, username, gender, phone, age!!)
-                        else -> api.signIn(email, password).map { "Welcome, ${it.profile.username}." }
-                    }
-                    android.os.Handler(android.os.Looper.getMainLooper()).post {
-                        busy = false
-                        result.onSuccess { text ->
-                            message = text
-                            session = api.currentSession()
-                        }.onFailure { error = it.message ?: "Authentication failed." }
-                    }
-                }.start()
-            }, modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Please wait..." else if (signup) "Create account" else "Log in") }
-            if (!phoneMode && !signup) TextButton(onClick = { resetMode = true; message = null; error = null }) { Text("Forgot password?") }
         }
         message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
