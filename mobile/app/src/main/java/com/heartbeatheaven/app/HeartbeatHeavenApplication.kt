@@ -24,9 +24,9 @@ import java.time.Instant
 internal object GlobalChatManager {
     private const val SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.co"
     private const val SUPABASE_KEY = "sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
-    private const val CHANNEL_ID = "chat_messages"
+    private const val CHANNEL_ID = "chat_messages_v2"
     private const val CHANNEL_NAME = "Chat messages"
-    private const val NOTIFICATION_ID = 4101
+    private const val NOTIFICATION_ID_BASE = 4101
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var monitorJob: Job? = null
@@ -46,16 +46,14 @@ internal object GlobalChatManager {
                 if (session == null) {
                     stopRealtime()
                     activeUserId = null
-                } else if (activeUserId != session.profile.id) {
-                    stopRealtime()
-                    activeUserId = session.profile.id
-                    startRealtime(app, auth, session.profile.id)
-                    touchPresence(session.accessToken, session.profile.id)
-                    lastPresence = System.currentTimeMillis()
-                } else if (System.currentTimeMillis() - lastPresence >= 30_000L) {
-                    val refreshed = runCatching { auth.currentSession() }.getOrNull()
-                    if (refreshed != null) {
-                        touchPresence(refreshed.accessToken, refreshed.profile.id)
+                } else {
+                    if (activeUserId != session.profile.id || realtime == null) {
+                        stopRealtime()
+                        activeUserId = session.profile.id
+                        startRealtime(app, auth, session.profile.id)
+                    }
+                    if (System.currentTimeMillis() - lastPresence >= 20_000L) {
+                        touchPresence(session.accessToken, session.profile.id)
                         lastPresence = System.currentTimeMillis()
                     }
                 }
@@ -73,8 +71,9 @@ internal object GlobalChatManager {
             if (id.isNotBlank() && rememberMessage(id)) {
                 scope.launch {
                     val session = runCatching { auth.currentSession() }.getOrNull() ?: return@launch
+                    if (session.profile.id != userId) return@launch
                     markDelivered(session.accessToken, id, session.profile.id)
-                    showMessageNotification(context, senderId, body, createdAt)
+                    showMessageNotification(context, senderId, body, createdAt, id)
                 }
             }
         }
@@ -85,7 +84,7 @@ internal object GlobalChatManager {
         synchronized(lastMessageIds) {
             if (lastMessageIds.contains(id)) return false
             lastMessageIds.addLast(id)
-            while (lastMessageIds.size > 100) lastMessageIds.removeFirst()
+            while (lastMessageIds.size > 200) lastMessageIds.removeFirst()
             return true
         }
     }
@@ -149,16 +148,17 @@ internal object GlobalChatManager {
         }
     }
 
-    private fun showMessageNotification(context: Context, senderId: String, body: String, createdAt: String) {
+    private fun showMessageNotification(context: Context, senderId: String, body: String, createdAt: String, messageId: String) {
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("open_chat_sender_id", senderId)
             putExtra("message_created_at", createdAt)
         }
+        val requestCode = messageId.hashCode()
         val pending = PendingIntent.getActivity(
             context,
-            senderId.hashCode(),
+            requestCode,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -172,9 +172,10 @@ internal object GlobalChatManager {
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setAutoCancel(true)
             .setContentIntent(pending)
+            .setOnlyAlertOnce(false)
             .setNumber(1)
             .build()
-        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID + (senderId.hashCode() and 0x3FF), notification)
+        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID_BASE + (requestCode and 0x7FFF), notification)
     }
 }
 
