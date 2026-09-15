@@ -138,8 +138,19 @@ val prepareChatV2TimestampFix by tasks.registering {
     }
 }
 
+val prepareChatV2NullStateFix by tasks.registering {
+    doLast {
+        val source = rootProject.projectDir.resolve("app/src/main/java/com/heartbeatheaven/app/FriendsScreen.kt")
+        var text = source.readText()
+        val old = "o.optString(\"delivered_at\"), o.optString(\"read_at\")"
+        val updated = "o.optString(\"delivered_at\").takeUnless { it == \"null\" }.orEmpty(), o.optString(\"read_at\").takeUnless { it == \"null\" }.orEmpty()"
+        text = text.replace(old, updated)
+        source.writeText(text)
+    }
+}
+
 android.sourceSets["main"].res.srcDir(heartbeatIconResDir)
-tasks.named("preBuild").configure { dependsOn(prepareHeartbeatIcon); dependsOn(preparePlayerProgressFix); dependsOn(prepareAccountFeature); dependsOn(prepareFriendsFeature); dependsOn(prepareRealtimeChatFix); dependsOn(prepareChatV2TimestampFix) }
+tasks.named("preBuild").configure { dependsOn(prepareHeartbeatIcon); dependsOn(preparePlayerProgressFix); dependsOn(prepareAccountFeature); dependsOn(prepareFriendsFeature); dependsOn(prepareRealtimeChatFix); dependsOn(prepareChatV2TimestampFix); dependsOn(prepareChatV2NullStateFix) }
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
