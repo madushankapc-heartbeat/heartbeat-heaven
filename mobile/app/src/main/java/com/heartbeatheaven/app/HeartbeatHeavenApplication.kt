@@ -70,11 +70,12 @@ internal object GlobalChatManager {
             userId = userId,
             apiKey = SUPABASE_KEY
         ) { id, senderId, body, createdAt ->
-            if (id.isBlank() || !rememberMessage(id)) return@RealtimeMessagesClient
-            scope.launch {
-                val session = runCatching { auth.currentSession() }.getOrNull() ?: return@launch
-                markDelivered(session.accessToken, id, session.profile.id)
-                showMessageNotification(context, senderId, body, createdAt)
+            if (id.isNotBlank() && rememberMessage(id)) {
+                scope.launch {
+                    val session = runCatching { auth.currentSession() }.getOrNull() ?: return@launch
+                    markDelivered(session.accessToken, id, session.profile.id)
+                    showMessageNotification(context, senderId, body, createdAt)
+                }
             }
         }
         realtime?.start()
