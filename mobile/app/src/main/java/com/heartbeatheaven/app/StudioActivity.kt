@@ -1,5 +1,6 @@
 package com.heartbeatheaven.app
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -50,10 +51,7 @@ internal fun StudioScreen() {
             Spacer(Modifier.height(70.dp))
             Icon(Icons.Default.Lock, null, Modifier.size(52.dp))
             Text("Studio access restricted", style = MaterialTheme.typography.headlineSmall)
-            Text(
-                "Only authorized HEARTBEAT HEAVEN administrators can open Studio.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Text("Only authorized HEARTBEAT HEAVEN administrators can open Studio.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Button(onClick = { finishActivity(context) }) { Text("Back to app") }
         }
         return
@@ -65,29 +63,26 @@ internal fun StudioScreen() {
     ) {
         Text("Studio", style = MaterialTheme.typography.headlineMedium)
         Text("Welcome, ${session!!.profile.username}.", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "Admin workspace for HEARTBEAT HEAVEN. Song management and private user administration stay here.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Text("Admin workspace for HEARTBEAT HEAVEN. Song management and private user administration stay here.", color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-        Card(Modifier.fillMaxWidth()) {
+        Card(onClick = { context.startActivity(Intent(context, MusicStudioActivity::class.java)) }, modifier = Modifier.fillMaxWidth()) {
             Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Upload, null)
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
                     Text("Music Studio", style = MaterialTheme.typography.titleLarge)
-                    Text("Upload songs, covers and additional versions.")
+                    Text("View and manage songs and additional versions.")
                 }
             }
         }
 
-        Card(Modifier.fillMaxWidth()) {
+        Card(onClick = { context.startActivity(Intent(context, UsersAdminActivity::class.java)) }, modifier = Modifier.fillMaxWidth()) {
             Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.People, null)
                 Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
                     Text("Users", style = MaterialTheme.typography.titleLarge)
-                    Text("Admin-only user management will be connected here.")
+                    Text("View private account details and activity.")
                 }
             }
         }
