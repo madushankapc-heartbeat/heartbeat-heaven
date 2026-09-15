@@ -149,8 +149,43 @@ val prepareChatV2NullStateFix by tasks.registering {
     }
 }
 
+val prepareNotificationPermission by tasks.registering {
+    doLast {
+        val source = rootProject.projectDir.resolve("app/src/main/java/com/heartbeatheaven/app/MainActivity.kt")
+        var text = source.readText()
+        val marker = "        super.onCreate(savedInstanceState)"
+        val request = """
+        if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 7001)
+        }"""
+        if (marker in text && !text.contains("7001")) text = text.replace(marker, marker + request)
+        source.writeText(text)
+    }
+}
+
+val prepareChatStatusColors by tasks.registering {
+    doLast {
+        val source = rootProject.projectDir.resolve("app/src/main/java/com/heartbeatheaven/app/FriendsScreen.kt")
+        var text = source.readText()
+        val old = "color = if (mine && m.readAt.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant"
+        val updated = "color = if (!mine) MaterialTheme.colorScheme.onSurfaceVariant else when { m.readAt.isNotBlank() -> MaterialTheme.colorScheme.primary; m.deliveredAt.isNotBlank() -> MaterialTheme.colorScheme.onSurfaceVariant; else -> MaterialTheme.colorScheme.outline }"
+        text = text.replace(old, updated)
+        source.writeText(text)
+    }
+}
+
 android.sourceSets["main"].res.srcDir(heartbeatIconResDir)
-tasks.named("preBuild").configure { dependsOn(prepareHeartbeatIcon); dependsOn(preparePlayerProgressFix); dependsOn(prepareAccountFeature); dependsOn(prepareFriendsFeature); dependsOn(prepareRealtimeChatFix); dependsOn(prepareChatV2TimestampFix); dependsOn(prepareChatV2NullStateFix) }
+tasks.named("preBuild").configure {
+    dependsOn(prepareHeartbeatIcon)
+    dependsOn(preparePlayerProgressFix)
+    dependsOn(prepareAccountFeature)
+    dependsOn(prepareFriendsFeature)
+    dependsOn(prepareRealtimeChatFix)
+    dependsOn(prepareChatV2TimestampFix)
+    dependsOn(prepareChatV2NullStateFix)
+    dependsOn(prepareNotificationPermission)
+    dependsOn(prepareChatStatusColors)
+}
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
