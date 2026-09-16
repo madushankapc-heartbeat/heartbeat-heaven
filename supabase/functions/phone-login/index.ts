@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
     const signInText = await signInResponse.text();
     if (!signInResponse.ok) return json({ error: "Invalid username/phone or password." }, 401);
     if (!binding) {
-      const { error: bindError } = await admin.from("phone_account_security").insert({ user_id: targetUserId, device_hash: dHash, recovery_question: "Legacy phone account recovery is not configured.", recovery_answer_hash: "legacy-unconfigured" });
+      const { error: bindError } = await admin.from("phone_account_security").insert({ user_id: targetUserId, device_hash: dHash, recovery_question: "Legacy phone account recovery is not configured.", recovery_answer_hash: "legacy-unconfigured-recovery-disabled-placeholder-value" });
       if (bindError && bindError.code !== "23505") return json({ error: "Could not secure this phone account to the device." }, 500);
     }
     const session = JSON.parse(signInText); return json({ access_token: session.access_token, refresh_token: session.refresh_token, user: session.user });
