@@ -8,7 +8,7 @@ import java.net.URL
 import java.net.URLEncoder
 
 private const val SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.co"
-private const val SUPABASE_PUBLISHABLE_KEY = "sb_" + "publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
+private const val SUPABASE_PUBLISHABLE_KEY = "sb_" + "publishable_MlBmbt3bdFDjMkikxrwg_fa3MqBKs"
 private const val AUTH_REDIRECT_URL = "https://heartbeat-heaven.onrender.com"
 private const val PASSWORD_RESET_REDIRECT_URL = "heartbeatheaven://auth/reset"
 private const val PHONE_SIGNUP_FUNCTION = "/functions/v1/phone-signup"
@@ -81,9 +81,7 @@ internal class AuthApi(context: Context) {
             val json = JSONObject(request(PHONE_SIGNUP_FUNCTION, "POST", body.toString(), "application/json").body)
             val access = json.optString("access_token")
             if (access.isBlank()) {
-                if (json.optBoolean("auto_login_failed", false)) {
-                    return signInPhone(normalizedPhone, password)
-                }
+                if (json.optBoolean("auto_login_failed", false)) return signInPhone(normalizedPhone, password)
                 error(json.optString("error").ifBlank { "Phone account creation failed." })
             }
             val refresh = json.optString("refresh_token")
@@ -94,6 +92,10 @@ internal class AuthApi(context: Context) {
             saveProfile(profile)
             Result.success(AuthSession(access, refresh, profile))
         } catch (e: Exception) {
+            val message = e.message.orEmpty()
+            if (message.contains("automatic login failed", ignoreCase = true) || message.contains("account was created", ignoreCase = true)) {
+                return signInPhone(normalizePhone(phone), password)
+            }
             Result.failure(e)
         }
     }
@@ -112,10 +114,7 @@ internal class AuthApi(context: Context) {
     } catch (e: Exception) { Result.failure(e) }
 
     fun signInPhone(identifier: String, password: String): Result<AuthSession> = try {
-        val body = JSONObject().apply {
-            put("identifier", identifier.trim())
-            put("password", password)
-        }.toString()
+        val body = JSONObject().apply { put("identifier", identifier.trim()); put("password", password) }.toString()
         val json = JSONObject(request(PHONE_LOGIN_FUNCTION, "POST", body, "application/json").body)
         val access = json.optString("access_token").ifBlank { error("No access token returned") }
         val refresh = json.optString("refresh_token")
