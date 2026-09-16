@@ -12,6 +12,7 @@ private const val SUPABASE_PUBLISHABLE_KEY = "sb_" + "publishable_MlBmbt3bdFDjMk
 private const val AUTH_REDIRECT_URL = "https://heartbeat-heaven.onrender.com"
 private const val PASSWORD_RESET_REDIRECT_URL = "heartbeatheaven://auth/reset"
 private const val PHONE_SIGNUP_FUNCTION = "/functions/v1/phone-signup"
+private const val PHONE_LOGIN_FUNCTION = "/functions/v1/phone-login"
 private const val DELETE_MY_ACCOUNT_FUNCTION = "/functions/v1/delete-my-account"
 
 internal data class AccountProfile(
@@ -111,11 +112,11 @@ internal class AuthApi(context: Context) {
     } catch (e: Exception) { Result.failure(e) }
 
     fun signInPhone(identifier: String, password: String): Result<AuthSession> = try {
-        val raw = identifier.trim()
-        val phone = if (raw.any { it.isLetter() }) resolvePhoneLogin(raw) else normalizePhone(raw)
-        if (phone.isBlank()) error("Enter a valid phone number or username.")
-        val body = JSONObject().apply { put("phone", phone); put("password", password) }.toString()
-        val json = JSONObject(request("/auth/v1/token?grant_type=password", "POST", body, "application/json").body)
+        val body = JSONObject().apply {
+            put("identifier", identifier.trim())
+            put("password", password)
+        }.toString()
+        val json = JSONObject(request(PHONE_LOGIN_FUNCTION, "POST", body, "application/json").body)
         val access = json.optString("access_token").ifBlank { error("No access token returned") }
         val refresh = json.optString("refresh_token")
         val user = json.optJSONObject("user") ?: error("No user returned")
