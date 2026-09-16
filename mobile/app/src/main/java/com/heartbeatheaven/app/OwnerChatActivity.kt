@@ -66,9 +66,23 @@ private suspend fun loadOwnerMessages(context: Context, category: String): List<
     buildList { for (i in 0 until array.length()) { val o = array.optJSONObject(i) ?: continue; add(OwnerMessage(o.optString("id"), o.optString("body"), o.optString("sender_type"), o.optString("created_at"))) } }
 }
 
-private suspend fun sendOwnerMessage(context: Context, body: String): List<OwnerMessage> = withContext(Dispatchers.IO) {
-    ownerChatRequest(context, JSONObject().put("action", "send").put("body", body))
-    loadOwnerMessages(context, "General")
+private suspend fun sendOwnerMessage(context: Context, category: String, body: String): List<OwnerMessage> = withContext(Dispatchers.IO) {
+    // Ensure the selected category has an open conversation, then obtain its ID.
+    ownerChatRequest(context, JSONObject().put("action", "create").put("category", category))
+    val current = ownerChatRequest(context, JSONObject().put("action", "list"))
+    val conversationId = current.optJSONObject("conversation")?.optString("id").orEmpty()
+    if (conversationId.isBlank()) error("Conversation could not be created. Please try again.")
+    ownerChatRequest(
+        context,
+        JSONObject()
+            .put("action", "send")
+            .put("conversation_id", conversationId)
+            .put("category", category)
+            .put("body", body)
+    )
+    val refreshed = ownerChatRequest(context, JSONObject().put("action", "list"))
+    val array = refreshed.optJSONArray("messages") ?: JSONArray()
+    buildList { for (i in 0 until array.length()) { val o = array.optJSONObject(i) ?: continue; add(OwnerMessage(o.optString("id"), o.optString("body"), o.optString("sender_type"), o.optString("created_at"))) } }
 }
 
 class OwnerChatActivity : ComponentActivity() {
@@ -116,7 +130,7 @@ private fun OwnerChatScreen(onBack: () -> Unit) {
                 Spacer(Modifier.width(8.dp))
                 IconButton(enabled = text.trim().isNotEmpty() && !sending, onClick = {
                     val body = text.trim(); text = ""; sending = true; error = null
-                    scope.launch { runCatching { sendOwnerMessage(context, body) }.onSuccess { messages = it }.onFailure { error = it.message ?: "Unable to send message." }; sending = false }
+                    scope.launch { runCatching { sendOwnerMessage(context, category, body) }.onSuccess { messages = it }.onFailure { error = it.message ?: "Unable to send message." }; sending = false }
                 }) { Icon(Icons.Default.Send, "Send") }
             }
         }
