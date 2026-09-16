@@ -8,7 +8,7 @@ import java.net.URL
 import java.net.URLEncoder
 
 private const val SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.co"
-private const val SUPABASE_PUBLISHABLE_KEY = "sb_" + "publishable_MlBmbt3bdFDjMkikxrwg_fa3MqBKs"
+private const val SUPABASE_PUBLISHABLE_KEY = "sb_" + "publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
 private const val AUTH_REDIRECT_URL = "https://heartbeat-heaven.onrender.com"
 private const val PASSWORD_RESET_REDIRECT_URL = "heartbeatheaven://auth/reset"
 private const val PHONE_SIGNUP_FUNCTION = "/functions/v1/phone-signup"
