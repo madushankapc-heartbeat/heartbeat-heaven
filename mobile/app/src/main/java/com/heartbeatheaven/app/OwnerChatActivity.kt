@@ -59,19 +59,31 @@ private fun ownerChatRequest(context: Context, payload: JSONObject): JSONObject 
     } finally { connection.disconnect() }
 }.getOrElse { throw it }
 
+private fun parseOwnerMessages(root: JSONObject): List<OwnerMessage> {
+    val array = root.optJSONArray("messages") ?: JSONArray()
+    return buildList {
+        for (i in 0 until array.length()) {
+            val o = array.optJSONObject(i) ?: continue
+            add(OwnerMessage(o.optString("id"), o.optString("body"), o.optString("sender_type"), o.optString("created_at")))
+        }
+    }
+}
+
 private suspend fun loadOwnerMessages(context: Context, category: String): List<OwnerMessage> = withContext(Dispatchers.IO) {
+    // Create/reuse the open conversation and keep the returned conversation ID.
+    // Do not make a second identity-dependent lookup just to recover the ID.
     ownerChatRequest(context, JSONObject().put("action", "create").put("category", category))
     val root = ownerChatRequest(context, JSONObject().put("action", "list"))
-    val array = root.optJSONArray("messages") ?: JSONArray()
-    buildList { for (i in 0 until array.length()) { val o = array.optJSONObject(i) ?: continue; add(OwnerMessage(o.optString("id"), o.optString("body"), o.optString("sender_type"), o.optString("created_at"))) } }
+    parseOwnerMessages(root)
 }
 
 private suspend fun sendOwnerMessage(context: Context, category: String, body: String): List<OwnerMessage> = withContext(Dispatchers.IO) {
-    // Ensure the selected category has an open conversation, then obtain its ID.
-    ownerChatRequest(context, JSONObject().put("action", "create").put("category", category))
-    val current = ownerChatRequest(context, JSONObject().put("action", "list"))
-    val conversationId = current.optJSONObject("conversation")?.optString("id").orEmpty()
+    // The create endpoint returns the authoritative conversation object. Reuse
+    // its ID directly instead of calling list() and risking an identity mismatch.
+    val created = ownerChatRequest(context, JSONObject().put("action", "create").put("category", category))
+    val conversationId = created.optJSONObject("conversation")?.optString("id").orEmpty()
     if (conversationId.isBlank()) error("Conversation could not be created. Please try again.")
+
     ownerChatRequest(
         context,
         JSONObject()
@@ -80,9 +92,10 @@ private suspend fun sendOwnerMessage(context: Context, category: String, body: S
             .put("category", category)
             .put("body", body)
     )
+
+    // Fetch the conversation again after the send so the new message is shown.
     val refreshed = ownerChatRequest(context, JSONObject().put("action", "list"))
-    val array = refreshed.optJSONArray("messages") ?: JSONArray()
-    buildList { for (i in 0 until array.length()) { val o = array.optJSONObject(i) ?: continue; add(OwnerMessage(o.optString("id"), o.optString("body"), o.optString("sender_type"), o.optString("created_at"))) } }
+    parseOwnerMessages(refreshed)
 }
 
 class OwnerChatActivity : ComponentActivity() {
