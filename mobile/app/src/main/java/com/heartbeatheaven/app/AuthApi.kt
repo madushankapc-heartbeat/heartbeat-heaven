@@ -59,19 +59,33 @@ internal class AuthApi(context: Context) {
         else Result.success("Account created. Check your email to confirm your account.")
     } catch (e: Exception) { Result.failure(e) }
 
-    fun signUpPhone(phone: String, password: String, username: String, gender: String, age: Int, recoveryQuestion: String, recoveryAnswer: String): Result<AuthSession> = try {
-        val normalizedPhone = normalizePhone(phone).ifBlank { error("Enter a valid mobile number.") }
-        val body = JSONObject().apply {
-            put("phone", normalizedPhone); put("password", password); put("username", username.trim()); put("gender", gender.lowercase()); put("age", age)
-            put("device_id", deviceId); put("recovery_question", recoveryQuestion.trim()); put("recovery_answer", recoveryAnswer)
+    fun signUpPhone(phone: String, password: String, username: String, gender: String, age: Int, recoveryQuestion: String, recoveryAnswer: String): Result<AuthSession> {
+        return try {
+            val normalizedPhone = normalizePhone(phone).ifBlank { error("Enter a valid mobile number.") }
+            val body = JSONObject().apply {
+                put("phone", normalizedPhone); put("password", password); put("username", username.trim()); put("gender", gender.lowercase()); put("age", age)
+                put("device_id", deviceId); put("recovery_question", recoveryQuestion.trim()); put("recovery_answer", recoveryAnswer)
+            }
+            val json = JSONObject(request(PHONE_SIGNUP_FUNCTION, "POST", body.toString(), "application/json").body)
+            val access = json.optString("access_token")
+            if (access.isBlank()) {
+                if (json.optBoolean("auto_login_failed", false)) return signInPhone(normalizedPhone, password)
+                error(json.optString("error").ifBlank { "Phone account creation failed." })
+            }
+            val refresh = json.optString("refresh_token")
+            val user = json.optJSONObject("user") ?: error("Account creation did not return a user.")
+            val id = user.optString("id").ifBlank { error("No user id returned") }
+            saveTokens(access, refresh, id)
+            val profile = fetchProfile(access, id, user)
+            saveProfile(profile)
+            Result.success(AuthSession(access, refresh, profile))
+        } catch (e: Exception) {
+            val message = e.message.orEmpty()
+            if (message.contains("automatic login failed", ignoreCase = true) || message.contains("account was created", ignoreCase = true)) {
+                return signInPhone(normalizePhone(phone), password)
+            }
+            Result.failure(e)
         }
-        val json = JSONObject(request(PHONE_SIGNUP_FUNCTION, "POST", body.toString(), "application/json").body)
-        val access = json.optString("access_token")
-        if (access.isBlank()) { if (json.optBoolean("auto_login_failed", false)) return signInPhone(normalizedPhone, password); error(json.optString("error").ifBlank { "Phone account creation failed." }) }
-        val refresh = json.optString("refresh_token"); val user = json.optJSONObject("user") ?: error("Account creation did not return a user."); val id = user.optString("id").ifBlank { error("No user id returned") }
-        saveTokens(access, refresh, id); val profile = fetchProfile(access, id, user); saveProfile(profile); Result.success(AuthSession(access, refresh, profile))
-    } catch (e: Exception) {
-        val message = e.message.orEmpty(); if (message.contains("automatic login failed", ignoreCase = true) || message.contains("account was created", ignoreCase = true)) return signInPhone(normalizePhone(phone), password); Result.failure(e)
     }
 
     fun signIn(email: String, password: String): Result<AuthSession> = try {
