@@ -113,7 +113,20 @@ internal class AuthApi(context: Context) {
     fun signOut() { prefs.getString("access_token", null)?.let { runCatching { request("/auth/v1/logout", "POST", "{}", "application/json", it) } }; clear() }
 
     private fun refreshSession(refreshToken: String): AuthSession { val json = JSONObject(request("/auth/v1/token?grant_type=refresh_token", "POST", JSONObject().put("refresh_token", refreshToken).toString(), "application/json").body); val access = json.optString("access_token").ifBlank { error("Refresh failed") }; val refresh = json.optString("refresh_token").ifBlank { refreshToken }; val user = json.optJSONObject("user") ?: requestUser(access); val id = user.optString("id").ifBlank { error("No user id returned") }; saveTokens(access, refresh, id); val profile = fetchProfile(access, id, user); saveProfile(profile); return AuthSession(access, refresh, profile) }
-    private fun isExpiredOrNearExpiry(token: String): Boolean = try { val parts = token.split('.'); if (parts.size < 2) return false; val payload = Base64.decode(parts[1], Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING); val exp = JSONObject(String(payload, Charsets.UTF_8)).optLong("exp", 0L); exp > 0L && exp <= System.currentTimeMillis() / 1000L + 60L } catch (_: Exception) { false }
+    private fun isExpiredOrNearExpiry(token: String): Boolean {
+        return try {
+            val parts = token.split('.')
+            if (parts.size < 2) {
+                false
+            } else {
+                val payload = Base64.decode(parts[1], Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+                val exp = JSONObject(String(payload, Charsets.UTF_8)).optLong("exp", 0L)
+                exp > 0L && exp <= System.currentTimeMillis() / 1000L + 60L
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
     private fun requestUser(accessToken: String) = JSONObject(request("/auth/v1/user", "GET", null, null, accessToken).body)
     private fun fetchProfile(accessToken: String, userId: String, user: JSONObject): AccountProfile { val a = org.json.JSONArray(request("/rest/v1/profiles?id=eq.${encode(userId)}&select=id,username,gender,age,phone", "GET", null, null, accessToken).body); if (a.length() == 0) error("Profile is not ready yet. Please try again."); val row = a.getJSONObject(0); val metadata = user.optJSONObject("user_metadata"); val phone = row.optString("phone").takeIf { it.isNotBlank() } ?: user.optString("phone").takeIf { it.isNotBlank() } ?: metadata?.optString("phone")?.takeIf { !it.isNullOrBlank() }; val age = row.optInt("age", 0).takeIf { it > 0 }; val isAdmin = request("/rest/v1/rpc/is_admin", "POST", "{}", "application/json", accessToken).body.trim().equals("true", ignoreCase = true); return AccountProfile(row.optString("id", userId), row.optString("username", "User"), row.optString("gender", "male"), user.optString("email").takeIf { it.isNotBlank() }, phone, age, isAdmin) }
     private fun saveTokens(access: String, refresh: String, userId: String) { prefs.edit().putString("access_token", access).putString("refresh_token", refresh).putString("user_id", userId).apply() }
