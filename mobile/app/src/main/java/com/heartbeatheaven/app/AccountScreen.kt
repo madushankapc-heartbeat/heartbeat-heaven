@@ -14,6 +14,12 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+private val PHONE_RECOVERY_QUESTIONS = listOf(
+    "What is your mother's maiden name?",
+    "What was the name of your first school?",
+    "What was the name of your favorite childhood teacher?"
+)
+
 @Composable
 internal fun AccountScreen() {
     val context = LocalContext.current
@@ -41,6 +47,7 @@ internal fun AccountScreen() {
     var gender by remember { mutableStateOf("male") }
     var recoveryQuestionInput by remember { mutableStateOf("") }
     var recoveryAnswerInput by remember { mutableStateOf("") }
+    var recoveryQuestionMenuOpen by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -115,7 +122,38 @@ internal fun AccountScreen() {
                 if (phoneMode) {
                     OutlinedTextField(phone, { phone = it }, label = { Text("Mobile number") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(ageText, { value -> ageText = value.filter { it.isDigit() }.take(3) }, label = { Text("Age") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(recoveryQuestionInput, { recoveryQuestionInput = it.take(160) }, label = { Text("Recovery question") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Box(Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = recoveryQuestionInput,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Recovery question") },
+                            placeholder = { Text("Select a recovery question") },
+                            trailingIcon = { Text(if (recoveryQuestionMenuOpen) "▲" else "▼") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        DropdownMenu(
+                            expanded = recoveryQuestionMenuOpen,
+                            onDismissRequest = { recoveryQuestionMenuOpen = false },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            PHONE_RECOVERY_QUESTIONS.forEach { question ->
+                                DropdownMenuItem(
+                                    text = { Text(question) },
+                                    onClick = {
+                                        recoveryQuestionInput = question
+                                        recoveryQuestionMenuOpen = false
+                                    }
+                                )
+                            }
+                        }
+                        Spacer(
+                            Modifier
+                                .matchParentSize()
+                                .clickable { recoveryQuestionMenuOpen = true }
+                        )
+                    }
                     OutlinedTextField(recoveryAnswerInput, { recoveryAnswerInput = it.take(160) }, label = { Text("Recovery answer") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     Text("Choose a question and answer only you can reliably remember. The answer is stored only as a secure hash.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text("No SMS or OTP verification is used.", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -132,7 +170,7 @@ internal fun AccountScreen() {
             if (signup) {
                 OutlinedTextField(password, { password = it }, label = { Text("Password") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 val age = ageText.toIntOrNull()
-                val validPhoneSignup = username.trim().length >= 3 && phone.trim().length >= 7 && age != null && age in 13..120 && recoveryQuestionInput.trim().length >= 5 && recoveryAnswerInput.trim().length >= 2
+                val validPhoneSignup = username.trim().length >= 3 && phone.trim().length >= 7 && age != null && age in 13..120 && recoveryQuestionInput in PHONE_RECOVERY_QUESTIONS && recoveryAnswerInput.trim().length >= 2
                 val enabled = if (phoneMode) !busy && password.length >= 8 && validPhoneSignup else !busy && password.length >= 6 && email.contains("@") && username.trim().length >= 3 && phone.trim().length >= 7 && age != null && age in 13..120
                 Button(enabled = enabled, onClick = { busy = true; message = null; error = null; Thread { val result = when { phoneMode -> api.signUpPhone(phone, password, username, gender, age!!, recoveryQuestionInput, recoveryAnswerInput).map { "Account created successfully. Welcome, ${it.profile.username}." }; else -> api.signUp(email, password, username, gender, phone, age!!).map { it } }; android.os.Handler(android.os.Looper.getMainLooper()).post { busy = false; result.onSuccess { text -> message = text; session = api.currentSession(); if (session == null) signup = false }.onFailure { error = it.message ?: "Account creation failed." } } }.start() }, modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Please wait..." else "Create account") }
                 TextButton(onClick = { signup = false; message = null; error = null }) { Text("Back to login") }
