@@ -7,12 +7,13 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 
-private const val SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.co"
+private const val SUPABASE_URL = "https://fafvhyeesenpimxncuupp.supabase.co"
 private const val SUPABASE_PUBLISHABLE_KEY = "sb_" + "publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
 private const val AUTH_REDIRECT_URL = "https://heartbeat-heaven.onrender.com"
 private const val PASSWORD_RESET_REDIRECT_URL = "heartbeatheaven://auth/reset"
 private const val PHONE_SIGNUP_FUNCTION = "/functions/v1/phone-signup"
 private const val PHONE_LOGIN_FUNCTION = "/functions/v1/phone-login"
+private const val PHONE_RECOVERY_FUNCTION = "/functions/v1/phone-recovery"
 private const val DELETE_MY_ACCOUNT_FUNCTION = "/functions/v1/delete-my-account"
 
 internal data class AccountProfile(
@@ -27,7 +28,9 @@ internal data class AccountProfile(
 internal data class AuthSession(val accessToken: String, val refreshToken: String, val profile: AccountProfile)
 
 internal class AuthApi(context: Context) {
-    private val prefs = context.getSharedPreferences("heartbeat_auth", Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext
+    private val prefs = appContext.getSharedPreferences("heartbeat_auth", Context.MODE_PRIVATE)
+    private val deviceId: String get() = DeviceIdentity.get(appContext)
     fun hasStoredSession(): Boolean = !prefs.getString("access_token", null).isNullOrBlank()
 
     @Synchronized
@@ -47,144 +50,72 @@ internal class AuthApi(context: Context) {
 
     fun signUp(email: String, password: String, username: String, gender: String, phone: String, age: Int): Result<String> = try {
         val body = JSONObject().apply {
-            put("email", email.trim())
-            put("password", password)
-            put("data", JSONObject().apply {
-                put("username", username.trim())
-                put("gender", gender.lowercase())
-                put("phone", phone.trim())
-                put("age", age)
-            })
+            put("email", email.trim()); put("password", password)
+            put("data", JSONObject().apply { put("username", username.trim()); put("gender", gender.lowercase()); put("phone", phone.trim()); put("age", age) })
         }
         val json = JSONObject(request("/auth/v1/signup?redirect_to=${encode(AUTH_REDIRECT_URL)}", "POST", body.toString(), "application/json").body)
-        val access = json.optString("access_token")
-        val refresh = json.optString("refresh_token")
-        val user = json.optJSONObject("user")
-        if (access.isNotBlank() && user != null) {
-            saveTokens(access, refresh, user.optString("id"))
-            val profile = fetchProfile(access, user.optString("id"), user)
-            saveProfile(profile)
-            Result.success("Account created successfully. Welcome, ${profile.username}.")
-        } else Result.success("Account created. Check your email to confirm your account.")
+        val access = json.optString("access_token"); val refresh = json.optString("refresh_token"); val user = json.optJSONObject("user")
+        if (access.isNotBlank() && user != null) { saveTokens(access, refresh, user.optString("id")); val profile = fetchProfile(access, user.optString("id"), user); saveProfile(profile); Result.success("Account created successfully. Welcome, ${profile.username}.") }
+        else Result.success("Account created. Check your email to confirm your account.")
     } catch (e: Exception) { Result.failure(e) }
 
-    fun signUpPhone(phone: String, password: String, username: String, gender: String, age: Int): Result<AuthSession> {
-        return try {
-            val normalizedPhone = normalizePhone(phone).ifBlank { error("Enter a valid mobile number.") }
-            val body = JSONObject().apply {
-                put("phone", normalizedPhone)
-                put("password", password)
-                put("username", username.trim())
-                put("gender", gender.lowercase())
-                put("age", age)
-            }
-            val json = JSONObject(request(PHONE_SIGNUP_FUNCTION, "POST", body.toString(), "application/json").body)
-            val access = json.optString("access_token")
-            if (access.isBlank()) {
-                if (json.optBoolean("auto_login_failed", false)) return signInPhone(normalizedPhone, password)
-                error(json.optString("error").ifBlank { "Phone account creation failed." })
-            }
-            val refresh = json.optString("refresh_token")
-            val user = json.optJSONObject("user") ?: error("Account creation did not return a user.")
-            val id = user.optString("id").ifBlank { error("No user id returned") }
-            saveTokens(access, refresh, id)
-            val profile = fetchProfile(access, id, user)
-            saveProfile(profile)
-            Result.success(AuthSession(access, refresh, profile))
-        } catch (e: Exception) {
-            val message = e.message.orEmpty()
-            if (message.contains("automatic login failed", ignoreCase = true) || message.contains("account was created", ignoreCase = true)) {
-                return signInPhone(normalizePhone(phone), password)
-            }
-            Result.failure(e)
+    fun signUpPhone(phone: String, password: String, username: String, gender: String, age: Int, recoveryQuestion: String, recoveryAnswer: String): Result<AuthSession> = try {
+        val normalizedPhone = normalizePhone(phone).ifBlank { error("Enter a valid mobile number.") }
+        val body = JSONObject().apply {
+            put("phone", normalizedPhone); put("password", password); put("username", username.trim()); put("gender", gender.lowercase()); put("age", age)
+            put("device_id", deviceId); put("recovery_question", recoveryQuestion.trim()); put("recovery_answer", recoveryAnswer)
         }
+        val json = JSONObject(request(PHONE_SIGNUP_FUNCTION, "POST", body.toString(), "application/json").body)
+        val access = json.optString("access_token")
+        if (access.isBlank()) { if (json.optBoolean("auto_login_failed", false)) return signInPhone(normalizedPhone, password); error(json.optString("error").ifBlank { "Phone account creation failed." }) }
+        val refresh = json.optString("refresh_token"); val user = json.optJSONObject("user") ?: error("Account creation did not return a user."); val id = user.optString("id").ifBlank { error("No user id returned") }
+        saveTokens(access, refresh, id); val profile = fetchProfile(access, id, user); saveProfile(profile); Result.success(AuthSession(access, refresh, profile))
+    } catch (e: Exception) {
+        val message = e.message.orEmpty(); if (message.contains("automatic login failed", ignoreCase = true) || message.contains("account was created", ignoreCase = true)) return signInPhone(normalizePhone(phone), password); Result.failure(e)
     }
 
     fun signIn(email: String, password: String): Result<AuthSession> = try {
-        val body = JSONObject().apply { put("email", email.trim()); put("password", password) }.toString()
-        val json = JSONObject(request("/auth/v1/token?grant_type=password", "POST", body, "application/json").body)
-        val access = json.optString("access_token").ifBlank { error("No access token returned") }
-        val refresh = json.optString("refresh_token")
-        val user = json.optJSONObject("user") ?: error("No user returned")
-        val id = user.optString("id").ifBlank { error("No user id returned") }
-        saveTokens(access, refresh, id)
-        val profile = fetchProfile(access, id, user)
-        saveProfile(profile)
-        Result.success(AuthSession(access, refresh, profile))
+        val json = JSONObject(request("/auth/v1/token?grant_type=password", "POST", JSONObject().apply { put("email", email.trim()); put("password", password) }.toString(), "application/json").body)
+        val access = json.optString("access_token").ifBlank { error("No access token returned") }; val refresh = json.optString("refresh_token"); val user = json.optJSONObject("user") ?: error("No user returned"); val id = user.optString("id").ifBlank { error("No user id returned") }
+        saveTokens(access, refresh, id); val profile = fetchProfile(access, id, user); saveProfile(profile); Result.success(AuthSession(access, refresh, profile))
     } catch (e: Exception) { Result.failure(e) }
 
     fun signInPhone(identifier: String, password: String): Result<AuthSession> = try {
-        val body = JSONObject().apply { put("identifier", identifier.trim()); put("password", password) }.toString()
-        val json = JSONObject(request(PHONE_LOGIN_FUNCTION, "POST", body, "application/json").body)
-        val access = json.optString("access_token").ifBlank { error("No access token returned") }
-        val refresh = json.optString("refresh_token")
-        val user = json.optJSONObject("user") ?: error("No user returned")
-        val id = user.optString("id").ifBlank { error("No user id returned") }
-        saveTokens(access, refresh, id)
-        val profile = fetchProfile(access, id, user)
-        saveProfile(profile)
-        Result.success(AuthSession(access, refresh, profile))
+        val body = JSONObject().apply { put("identifier", identifier.trim()); put("password", password); put("device_id", deviceId) }
+        val json = JSONObject(request(PHONE_LOGIN_FUNCTION, "POST", body.toString(), "application/json").body)
+        val access = json.optString("access_token").ifBlank { error(json.optString("error").ifBlank { "No access token returned" }) }; val refresh = json.optString("refresh_token"); val user = json.optJSONObject("user") ?: error("No user returned"); val id = user.optString("id").ifBlank { error("No user id returned") }
+        saveTokens(access, refresh, id); val profile = fetchProfile(access, id, user); saveProfile(profile); Result.success(AuthSession(access, refresh, profile))
     } catch (e: Exception) { Result.failure(e) }
 
-    private fun resolvePhoneLogin(identifier: String): String {
-        val body = request("/rest/v1/rpc/resolve_phone_login", "POST", JSONObject().put("p_identifier", identifier.trim()).toString(), "application/json").body.trim()
-        if (body.isBlank() || body == "null") error("Invalid username or password.")
-        return runCatching { JSONObject(body).optString("phone") }.getOrElse { body.trim('"') }.takeIf { it.isNotBlank() } ?: error("Invalid username or password.")
-    }
+    fun getPhoneRecoveryQuestion(identifier: String): Result<String> = try {
+        val body = JSONObject().apply { put("action", "question"); put("identifier", identifier.trim()); put("device_id", deviceId) }
+        val json = JSONObject(request(PHONE_RECOVERY_FUNCTION, "POST", body.toString(), "application/json").body)
+        Result.success(json.optString("recovery_question").ifBlank { error(json.optString("error").ifBlank { "Phone password recovery is not available." }) })
+    } catch (e: Exception) { Result.failure(e) }
 
-    private fun normalizePhone(value: String): String {
-        val raw = value.trim().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
-        if (raw.startsWith("+")) return "+" + raw.drop(1).filter { it.isDigit() }
-        val digits = raw.filter { it.isDigit() }
-        return when {
-            digits.startsWith("0") && digits.length >= 9 -> "+94" + digits.drop(1)
-            digits.startsWith("94") && digits.length >= 10 -> "+$digits"
-            digits.length >= 8 -> "+$digits"
-            else -> ""
-        }
-    }
+    fun resetPhonePassword(identifier: String, answer: String, newPassword: String): Result<String> = try {
+        val body = JSONObject().apply { put("action", "reset"); put("identifier", identifier.trim()); put("device_id", deviceId); put("recovery_answer", answer); put("new_password", newPassword) }
+        val json = JSONObject(request(PHONE_RECOVERY_FUNCTION, "POST", body.toString(), "application/json").body)
+        Result.success(json.optString("message").ifBlank { "Password changed successfully. Please log in with your new password." })
+    } catch (e: Exception) { Result.failure(e) }
+
+    fun deletePhoneAccountWithoutLogin(identifier: String): Result<String> = try {
+        val body = JSONObject().apply { put("action", "delete"); put("identifier", identifier.trim()); put("device_id", deviceId); put("confirmation", "DELETE") }
+        val json = JSONObject(request(PHONE_RECOVERY_FUNCTION, "POST", body.toString(), "application/json").body)
+        clear(); Result.success(json.optString("message").ifBlank { "Your phone account has been permanently deleted." })
+    } catch (e: Exception) { Result.failure(e) }
+
+    private fun normalizePhone(value: String): String { val raw = value.trim().replace(" ", "").replace("-", "").replace("(", "").replace(")", ""); if (raw.startsWith("+")) return "+" + raw.drop(1).filter { it.isDigit() }; val digits = raw.filter { it.isDigit() }; return when { digits.startsWith("0") && digits.length >= 9 -> "+94" + digits.drop(1); digits.startsWith("94") && digits.length >= 10 -> "+$digits"; digits.length >= 8 -> "+$digits"; else -> "" } }
 
     fun requestPasswordReset(email: String): Result<String> = try { request("/auth/v1/recover?redirect_to=${encode(PASSWORD_RESET_REDIRECT_URL)}", "POST", JSONObject().put("email", email.trim()).toString(), "application/json"); Result.success("If an account exists for this email, a password reset link has been sent.") } catch (e: Exception) { Result.failure(e) }
     fun updatePassword(accessToken: String, newPassword: String): Result<String> = try { request("/auth/v1/user", "PUT", JSONObject().put("password", newPassword).toString(), "application/json", accessToken); Result.success("Password updated successfully.") } catch (e: Exception) { Result.failure(e) }
-    fun deleteMyAccount(accessToken: String): Result<String> = try {
-        request(DELETE_MY_ACCOUNT_FUNCTION, "POST", "{}", "application/json", accessToken)
-        clear()
-        Result.success("Your account has been permanently deleted.")
-    } catch (e: Exception) { Result.failure(e) }
+    fun deleteMyAccount(accessToken: String): Result<String> = try { request(DELETE_MY_ACCOUNT_FUNCTION, "POST", "{}", "application/json", accessToken); clear(); Result.success("Your account has been permanently deleted.") } catch (e: Exception) { Result.failure(e) }
     fun signOut() { prefs.getString("access_token", null)?.let { runCatching { request("/auth/v1/logout", "POST", "{}", "application/json", it) } }; clear() }
 
-    private fun refreshSession(refreshToken: String): AuthSession {
-        val json = JSONObject(request("/auth/v1/token?grant_type=refresh_token", "POST", JSONObject().put("refresh_token", refreshToken).toString(), "application/json").body)
-        val access = json.optString("access_token").ifBlank { error("Refresh failed") }
-        val refresh = json.optString("refresh_token").ifBlank { refreshToken }
-        val user = json.optJSONObject("user") ?: requestUser(access)
-        val id = user.optString("id").ifBlank { error("No user id returned") }
-        saveTokens(access, refresh, id)
-        val profile = fetchProfile(access, id, user)
-        saveProfile(profile)
-        return AuthSession(access, refresh, profile)
-    }
-    private fun isExpiredOrNearExpiry(token: String): Boolean {
-        return try {
-            val parts = token.split('.')
-            if (parts.size < 2) return false
-            val payload = Base64.decode(parts[1], Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
-            val exp = JSONObject(String(payload, Charsets.UTF_8)).optLong("exp", 0L)
-            exp > 0L && exp <= System.currentTimeMillis() / 1000L + 60L
-        } catch (_: Exception) { false }
-    }
+    private fun refreshSession(refreshToken: String): AuthSession { val json = JSONObject(request("/auth/v1/token?grant_type=refresh_token", "POST", JSONObject().put("refresh_token", refreshToken).toString(), "application/json").body); val access = json.optString("access_token").ifBlank { error("Refresh failed") }; val refresh = json.optString("refresh_token").ifBlank { refreshToken }; val user = json.optJSONObject("user") ?: requestUser(access); val id = user.optString("id").ifBlank { error("No user id returned") }; saveTokens(access, refresh, id); val profile = fetchProfile(access, id, user); saveProfile(profile); return AuthSession(access, refresh, profile) }
+    private fun isExpiredOrNearExpiry(token: String): Boolean = try { val parts = token.split('.'); if (parts.size < 2) return false; val payload = Base64.decode(parts[1], Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING); val exp = JSONObject(String(payload, Charsets.UTF_8)).optLong("exp", 0L); exp > 0L && exp <= System.currentTimeMillis() / 1000L + 60L } catch (_: Exception) { false }
     private fun requestUser(accessToken: String) = JSONObject(request("/auth/v1/user", "GET", null, null, accessToken).body)
-
-    private fun fetchProfile(accessToken: String, userId: String, user: JSONObject): AccountProfile {
-        val a = org.json.JSONArray(request("/rest/v1/profiles?id=eq.${encode(userId)}&select=id,username,gender,age,phone", "GET", null, null, accessToken).body)
-        if (a.length() == 0) error("Profile is not ready yet. Please try again.")
-        val row = a.getJSONObject(0)
-        val metadata = user.optJSONObject("user_metadata")
-        val phone = row.optString("phone").takeIf { it.isNotBlank() } ?: user.optString("phone").takeIf { it.isNotBlank() } ?: metadata?.optString("phone")?.takeIf { !it.isNullOrBlank() }
-        val age = row.optInt("age", 0).takeIf { it > 0 }
-        val isAdmin = request("/rest/v1/rpc/is_admin", "POST", "{}", "application/json", accessToken).body.trim().equals("true", ignoreCase = true)
-        return AccountProfile(row.optString("id", userId), row.optString("username", "User"), row.optString("gender", "male"), user.optString("email").takeIf { it.isNotBlank() }, phone, age, isAdmin)
-    }
+    private fun fetchProfile(accessToken: String, userId: String, user: JSONObject): AccountProfile { val a = org.json.JSONArray(request("/rest/v1/profiles?id=eq.${encode(userId)}&select=id,username,gender,age,phone", "GET", null, null, accessToken).body); if (a.length() == 0) error("Profile is not ready yet. Please try again."); val row = a.getJSONObject(0); val metadata = user.optJSONObject("user_metadata"); val phone = row.optString("phone").takeIf { it.isNotBlank() } ?: user.optString("phone").takeIf { it.isNotBlank() } ?: metadata?.optString("phone")?.takeIf { !it.isNullOrBlank() }; val age = row.optInt("age", 0).takeIf { it > 0 }; val isAdmin = request("/rest/v1/rpc/is_admin", "POST", "{}", "application/json", accessToken).body.trim().equals("true", ignoreCase = true); return AccountProfile(row.optString("id", userId), row.optString("username", "User"), row.optString("gender", "male"), user.optString("email").takeIf { it.isNotBlank() }, phone, age, isAdmin) }
     private fun saveTokens(access: String, refresh: String, userId: String) { prefs.edit().putString("access_token", access).putString("refresh_token", refresh).putString("user_id", userId).apply() }
     private fun saveProfile(p: AccountProfile) { prefs.edit().putString("profile_username", p.username).putString("profile_gender", p.gender).putBoolean("profile_admin", p.isAdmin).apply { if (p.email != null) putString("profile_email", p.email) else remove("profile_email"); if (p.phone != null) putString("profile_phone", p.phone) else remove("profile_phone"); if (p.age != null) putInt("profile_age", p.age) else remove("profile_age") }.apply() }
     private fun clear() { prefs.edit().clear().apply() }
