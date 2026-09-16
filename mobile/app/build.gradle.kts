@@ -174,6 +174,17 @@ val prepareChatStatusColors by tasks.registering {
     }
 }
 
+val prepareOwnerChatFeature by tasks.registering {
+    doLast {
+        val source = rootProject.projectDir.resolve("app/src/main/java/com/heartbeatheaven/app/MainActivity.kt")
+        var text = source.readText()
+        val marker = "Button(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(YOUTUBE_URL))) }, Modifier.fillMaxWidth()) { Text(\"▶ Watch ViBORA on YouTube\") }"
+        val addition = marker + "\n                        Spacer(Modifier.height(8.dp))\n                        Button(onClick = { context.startActivity(Intent(context, OwnerChatActivity::class.java)) }, Modifier.fillMaxWidth()) { Text(\"💬 Contact Owner\") }\n                        Text(\"Report a bug • Ask a question • Suggest an improvement\", Modifier.fillMaxWidth(), fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)"
+        if (marker in text && !text.contains("OwnerChatActivity::class.java")) text = text.replace(marker, addition)
+        source.writeText(text)
+    }
+}
+
 android.sourceSets["main"].res.srcDir(heartbeatIconResDir)
 tasks.named("preBuild").configure {
     dependsOn(prepareHeartbeatIcon)
@@ -185,6 +196,7 @@ tasks.named("preBuild").configure {
     dependsOn(prepareChatV2NullStateFix)
     dependsOn(prepareNotificationPermission)
     dependsOn(prepareChatStatusColors)
+    dependsOn(prepareOwnerChatFeature)
 }
 
 dependencies {
