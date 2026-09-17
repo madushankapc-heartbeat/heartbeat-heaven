@@ -15,7 +15,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-internal data class RealtimeMessageChange(
+data class RealtimeMessageChange(
     val eventType: String,
     val id: String,
     val senderId: String,
@@ -33,6 +33,13 @@ class RealtimeMessagesClient(
     private val onMessage: (id: String, senderId: String, body: String, createdAt: String) -> Unit,
     private val onMessageChange: (RealtimeMessageChange) -> Unit = {}
 ) {
+    constructor(
+        accessTokenProvider: () -> String,
+        userId: String,
+        apiKey: String,
+        onMessage: (id: String, senderId: String, body: String, createdAt: String) -> Unit
+    ) : this(accessTokenProvider, userId, apiKey, onMessage, {})
+
     private val client = OkHttpClient.Builder().pingInterval(20, TimeUnit.SECONDS).build()
     private val scope = CoroutineScope(Dispatchers.IO)
     private var socket: WebSocket? = null
