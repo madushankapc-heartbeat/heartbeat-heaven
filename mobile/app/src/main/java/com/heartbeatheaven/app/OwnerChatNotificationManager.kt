@@ -20,7 +20,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 internal object OwnerChatNotificationManager {
-    private const val URL = "https://fafvhyeesenpimxncupp.supabase.co/functions/v1/owner-chat"
+    private const val OWNER_CHAT_URL = "https://fafvhyeesenpimxncupp.supabase.co/functions/v1/owner-chat"
     private const val KEY = "sb_" + "publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
     private const val CHANNEL_ID = "owner_chat_messages_v1"
     private const val CHANNEL_NAME = "Contact Owner"
@@ -80,7 +80,7 @@ internal object OwnerChatNotificationManager {
     }
 
     private fun request(context: Context, token: String?, payload: JSONObject): JSONObject {
-        val c = URL(URL).openConnection() as HttpURLConnection
+        val c = URL(OWNER_CHAT_URL).openConnection() as HttpURLConnection
         try {
             c.requestMethod = "POST"
             c.connectTimeout = 10_000
