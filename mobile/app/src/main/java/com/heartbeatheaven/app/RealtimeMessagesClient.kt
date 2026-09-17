@@ -11,14 +11,27 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
+
+internal data class RealtimeMessageChange(
+    val eventType: String,
+    val id: String,
+    val senderId: String,
+    val receiverId: String,
+    val body: String,
+    val createdAt: String,
+    val deliveredAt: String,
+    val readAt: String
+)
 
 class RealtimeMessagesClient(
     private val accessTokenProvider: () -> String,
     private val userId: String,
     private val apiKey: String,
-    private val onMessage: (id: String, senderId: String, body: String, createdAt: String) -> Unit
+    private val onMessage: (id: String, senderId: String, body: String, createdAt: String) -> Unit,
+    private val onMessageChange: (RealtimeMessageChange) -> Unit = {}
 ) {
     private val client = OkHttpClient.Builder().pingInterval(20, TimeUnit.SECONDS).build()
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -29,7 +42,11 @@ class RealtimeMessagesClient(
     private var joinRef = "0"
     private var stopped = false
 
-    fun start() { stopped = false; connect() }
+    fun start() {
+        stopped = false
+        connect()
+    }
+
     private fun nextRef(): String = (++ref).toString()
 
     private fun connect() {
@@ -39,25 +56,62 @@ class RealtimeMessagesClient(
         joinRef = nextRef()
         socket = client.newWebSocket(Request.Builder().url(url).build(), object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                val changes = JSONArray()
+                    .put(JSONObject()
+                        .put("event", "INSERT")
+                        .put("schema", "public")
+                        .put("table", "messages")
+                        .put("filter", "receiver_id=eq.$userId"))
+                    .put(JSONObject()
+                        .put("event", "UPDATE")
+                        .put("schema", "public")
+                        .put("table", "messages")
+                        .put("filter", "receiver_id=eq.$userId"))
+                    .put(JSONObject()
+                        .put("event", "UPDATE")
+                        .put("schema", "public")
+                        .put("table", "messages")
+                        .put("filter", "sender_id=eq.$userId"))
+
                 val payload = JSONObject()
                     .put("config", JSONObject()
                         .put("broadcast", JSONObject().put("ack", false).put("self", false))
                         .put("presence", JSONObject().put("enabled", false).put("key", userId))
-                        .put("postgres_changes", org.json.JSONArray().put(JSONObject()
-                            .put("event", "INSERT")
-                            .put("schema", "public")
-                            .put("table", "messages")
-                            .put("filter", "receiver_id=eq.$userId"))))
+                        .put("postgres_changes", changes))
                     .put("access_token", accessTokenProvider())
-                webSocket.send(JSONObject().put("topic", topic).put("event", "phx_join").put("payload", payload).put("ref", joinRef).put("join_ref", joinRef).toString())
+
+                webSocket.send(
+                    JSONObject()
+                        .put("topic", topic)
+                        .put("event", "phx_join")
+                        .put("payload", payload)
+                        .put("ref", joinRef)
+                        .put("join_ref", joinRef)
+                        .toString()
+                )
 
                 heartbeatJob?.cancel()
                 heartbeatJob = scope.launch {
                     while (isActive && !stopped) {
                         delay(25000)
                         val token = accessTokenProvider()
-                        webSocket.send(JSONObject().put("topic", topic).put("event", "access_token").put("payload", JSONObject().put("access_token", token)).put("ref", nextRef()).put("join_ref", joinRef).toString())
-                        webSocket.send(JSONObject().put("topic", "phoenix").put("event", "heartbeat").put("payload", JSONObject()).put("ref", nextRef()).toString())
+                        webSocket.send(
+                            JSONObject()
+                                .put("topic", topic)
+                                .put("event", "access_token")
+                                .put("payload", JSONObject().put("access_token", token))
+                                .put("ref", nextRef())
+                                .put("join_ref", joinRef)
+                                .toString()
+                        )
+                        webSocket.send(
+                            JSONObject()
+                                .put("topic", "phoenix")
+                                .put("event", "heartbeat")
+                                .put("payload", JSONObject())
+                                .put("ref", nextRef())
+                                .toString()
+                        )
                     }
                 }
             }
@@ -70,9 +124,26 @@ class RealtimeMessagesClient(
                             val payload = root.optJSONObject("payload") ?: return@runCatching
                             val data = payload.optJSONObject("data") ?: payload
                             val record = data.optJSONObject("record") ?: return@runCatching
+                            val eventType = data.optString("type").ifBlank {
+                                payload.optString("eventType").ifBlank { root.optString("event_type") }
+                            }
                             val senderId = record.optString("sender_id")
-                            if (record.optString("receiver_id") == userId && senderId != userId) {
-                                onMessage(record.optString("id"), senderId, record.optString("body"), record.optString("created_at"))
+                            val receiverId = record.optString("receiver_id")
+                            if (senderId == userId || receiverId == userId) {
+                                val change = RealtimeMessageChange(
+                                    eventType = eventType.ifBlank { "INSERT" },
+                                    id = record.optString("id"),
+                                    senderId = senderId,
+                                    receiverId = receiverId,
+                                    body = record.optString("body"),
+                                    createdAt = record.optString("created_at"),
+                                    deliveredAt = record.optString("delivered_at"),
+                                    readAt = record.optString("read_at")
+                                )
+                                onMessageChange(change)
+                                if (change.eventType.equals("INSERT", true) && receiverId == userId && senderId != userId) {
+                                    onMessage(change.id, senderId, change.body, change.createdAt)
+                                }
                             }
                         }
                         "system" -> {
@@ -84,14 +155,24 @@ class RealtimeMessagesClient(
                 }
             }
 
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { heartbeatJob?.cancel(); reconnect() }
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) { heartbeatJob?.cancel(); reconnect() }
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                heartbeatJob?.cancel()
+                reconnect()
+            }
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                heartbeatJob?.cancel()
+                reconnect()
+            }
         })
     }
 
     private fun reconnect() {
         if (stopped || reconnectJob?.isActive == true) return
-        reconnectJob = scope.launch { delay(2000); if (!stopped) connect() }
+        reconnectJob = scope.launch {
+            delay(2000)
+            if (!stopped) connect()
+        }
     }
 
     fun stop() {
