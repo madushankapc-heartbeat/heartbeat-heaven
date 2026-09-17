@@ -1,5 +1,5 @@
-gradle.afterProject { project ->
-    if (project.name != "app") return@afterProject
+gradle.afterProject(org.gradle.api.Action<org.gradle.api.Project> { project ->
+    if (project.name != "app") return@Action
     val patch = project.tasks.register("prepareFinalAppFixes") {
         doLast {
             fun patchFile(path: String, transform: (String) -> String) {
@@ -45,5 +45,5 @@ gradle.afterProject { project ->
             }
         }
     }
-    project.tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(patch) }
-}
+    project.tasks.getByName("preBuild").dependsOn(patch)
+})
