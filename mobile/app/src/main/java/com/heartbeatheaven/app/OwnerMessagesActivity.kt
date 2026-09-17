@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -69,15 +70,34 @@ private fun OwnerMessagesScreen(onBack:()->Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var deleteTarget by remember { mutableStateOf<OwnerConversationRow?>(null) }
 
-    fun loadInbox() {
+    fun parseConversations(root: JSONObject): List<OwnerConversationRow> {
+        val a = root.optJSONArray("conversations") ?: JSONArray()
+        return buildList {
+            for (i in 0 until a.length()) {
+                val o = a.optJSONObject(i) ?: continue
+                add(OwnerConversationRow(o.optString("id"), o.optString("label","Guest User"), o.optString("category","General"), o.optString("status","open"), o.optString("updated_at")))
+            }
+        }
+    }
+
+    fun parseMessages(root: JSONObject): List<OwnerAdminMessage> {
+        val a = root.optJSONArray("messages") ?: JSONArray()
+        return buildList {
+            for (i in 0 until a.length()) {
+                val o = a.optJSONObject(i) ?: continue
+                add(OwnerAdminMessage(o.optString("id"), o.optString("body"), o.optString("sender_type"), o.optString("created_at")))
+            }
+        }
+    }
+
+    fun loadInbox(showLoading: Boolean = true) {
         scope.launch {
-            loading = true; error = null
+            if (showLoading) loading = true
+            error = null
             runCatching { withContext(Dispatchers.IO) { adminOwnerRequest(context, JSONObject().put("action","list")) } }
-                .onSuccess { root ->
-                    val a = root.optJSONArray("conversations") ?: JSONArray()
-                    conversations = buildList { for (i in 0 until a.length()) { val o=a.optJSONObject(i)?:continue; add(OwnerConversationRow(o.optString("id"),o.optString("label","Guest User"),o.optString("category","General"),o.optString("status","open"),o.optString("updated_at"))) } }
-                }.onFailure { error = it.message ?: "Could not load owner messages." }
-            loading = false
+                .onSuccess { root -> conversations = parseConversations(root) }
+                .onFailure { error = it.message ?: "Could not load owner messages." }
+            if (showLoading) loading = false
         }
     }
 
@@ -85,10 +105,8 @@ private fun OwnerMessagesScreen(onBack:()->Unit) {
         selected = c; messages = emptyList(); error = null; busy = true
         scope.launch {
             runCatching { withContext(Dispatchers.IO) { adminOwnerRequest(context, JSONObject().put("action","list").put("conversation_id",c.id)) } }
-                .onSuccess { root ->
-                    val a=root.optJSONArray("messages")?:JSONArray(); messages=buildList { for(i in 0 until a.length()){val o=a.optJSONObject(i)?:continue;add(OwnerAdminMessage(o.optString("id"),o.optString("body"),o.optString("sender_type"),o.optString("created_at"))) } }
-                    scope.launch(Dispatchers.IO) { runCatching { adminOwnerRequest(context,JSONObject().put("action","read").put("conversation_id",c.id)) } }
-                }.onFailure { error=it.message ?: "Could not load conversation." }
+                .onSuccess { root -> messages = parseMessages(root); scope.launch(Dispatchers.IO) { runCatching { adminOwnerRequest(context,JSONObject().put("action","read").put("conversation_id",c.id)) } } }
+                .onFailure { error=it.message ?: "Could not load conversation." }
             busy=false
         }
     }
@@ -98,8 +116,8 @@ private fun OwnerMessagesScreen(onBack:()->Unit) {
         reply=""; busy=true
         scope.launch {
             runCatching { withContext(Dispatchers.IO) { adminOwnerRequest(context,JSONObject().put("action","reply").put("conversation_id",c.id).put("body",body)); adminOwnerRequest(context,JSONObject().put("action","list").put("conversation_id",c.id)) } }
-                .onSuccess { root -> val a=root.optJSONArray("messages")?:JSONArray(); messages=buildList{for(i in 0 until a.length()){val o=a.optJSONObject(i)?:continue;add(OwnerAdminMessage(o.optString("id"),o.optString("body"),o.optString("sender_type"),o.optString("created_at"))) };loadInbox() }
-                }.onFailure { error=it.message ?: "Could not send reply." }
+                .onSuccess { root -> messages=parseMessages(root); loadInbox(false) }
+                .onFailure { error=it.message ?: "Could not send reply." }
             busy=false
         }
     }
@@ -115,6 +133,26 @@ private fun OwnerMessagesScreen(onBack:()->Unit) {
     }
 
     LaunchedEffect(Unit) { loadInbox() }
+
+    LaunchedEffect(selected?.id) {
+        while (true) {
+            delay(2_000L)
+            if (!busy) {
+                val c = selected
+                if (c == null) {
+                    runCatching { withContext(Dispatchers.IO) { adminOwnerRequest(context, JSONObject().put("action","list")) } }
+                        .onSuccess { root -> conversations = parseConversations(root) }
+                } else {
+                    runCatching { withContext(Dispatchers.IO) { adminOwnerRequest(context, JSONObject().put("action","list").put("conversation_id",c.id)) } }
+                        .onSuccess { root ->
+                            val fresh = parseMessages(root)
+                            if (fresh != messages) messages = fresh
+                            conversations = conversations.map { if (it.id == c.id) it.copy(updatedAt = root.optJSONObject("conversation")?.optString("updated_at").orEmpty().ifBlank { it.updatedAt }) else it }
+                        }
+                }
+            }
+        }
+    }
 
     deleteTarget?.let { c ->
         AlertDialog(onDismissRequest={if(!busy)deleteTarget=null},title={Text("Delete report?")},text={Text("Delete this conversation and all of its messages? This cannot be undone.")},confirmButton={TextButton(enabled=!busy,onClick={deleteConversation(c)}){Text("Delete",color=MaterialTheme.colorScheme.error)}},dismissButton={TextButton(enabled=!busy,onClick={deleteTarget=null}){Text("Cancel")}})
