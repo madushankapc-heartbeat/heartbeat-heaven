@@ -79,7 +79,6 @@ val prepareFinalAppFixes = tasks.register("prepareFinalAppFixes") {
                 "Cover(s.coverUrl, Modifier.size(46.dp), true); Column(Modifier.weight(1f).padding(horizontal = 8.dp)) { Text(s.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(s.artist, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }; IconButton(onClick = onPrevious, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.SkipPrevious, \"Previous\") }; IconButton(onClick = { if (playing) onPause() else onPlay(s) }, modifier = Modifier.size(40.dp)) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) \"Pause\" else \"Play\") }; IconButton(onClick = onNext, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.SkipNext, \"Next\") }; IconButton(onClick = onStop, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.Close, \"Close\") }"
             )
 
-            // When the Home/Search song request fails, show a visible retry action.
             val errorUi = "else if (error != null) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(error!!) }"
             val errorUiWithRetry = "else if (error != null) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {\n                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {\n                            Text(error!!, textAlign = androidx.compose.ui.text.style.TextAlign.Center)\n                            Button(onClick = {\n                                if (!refreshing) {\n                                    refreshing = true\n                                    refreshScope.launch {\n                                        runCatching { fetchSongs() }\n                                            .onSuccess { songs = it; error = null }\n                                            .onFailure { error = \"Unable to refresh. Please check your connection.\" }\n                                        refreshing = false\n                                    }\n                                }\n                            }) {\n                                Text(\"↻ Refresh\")\n                            }\n                        }\n                    }"
             t = t.replace(errorUi, errorUiWithRetry)
@@ -89,3 +88,7 @@ val prepareFinalAppFixes = tasks.register("prepareFinalAppFixes") {
 }
 
 tasks.named("preBuild").configure { dependsOn(prepareFinalAppFixes) }
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    kotlinOptions { freeCompilerArgs += "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi" }
+}
