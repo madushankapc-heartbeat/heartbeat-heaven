@@ -123,6 +123,13 @@ val prepareRealtimeChatFix by tasks.registering {
         val source = rootProject.projectDir.resolve("app/src/main/java/com/heartbeatheaven/app/FriendsScreen.kt")
         var text = source.readText()
         text = text.replace("private class FriendsApi(private val session: AuthSession)", "private class FriendsApi(internal val session: AuthSession)")
+        // Keep the existing realtime client API call compatible with the current constructor.
+        text = text.replace("tokenProvider =", "accessTokenProvider =")
+        text = text.replace("currentUserId =", "userId =")
+        // Compose 2024.12 exposes weight as a RowScope/ColumnScope member; the direct import is invalid here.
+        text = text.replace("import androidx.compose.foundation.layout.weight\n", "")
+        // Avoid relying on an unimported ExperimentalMaterial3Api symbol in this generated source.
+        text = text.replace("@OptIn(ExperimentalMaterial3Api::class)", "@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)")
         source.writeText(text)
     }
 }
