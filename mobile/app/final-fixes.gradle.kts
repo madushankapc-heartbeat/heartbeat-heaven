@@ -87,13 +87,18 @@ val prepareFinalAppFixes = tasks.register("prepareFinalAppFixes") {
             nullableMessageFields.forEach { field ->
                 t = t.replace(
                     "row.optString(\"$field\")",
-                    "row.optString(\"$field\").takeUnless { it == \"null\" }.orEmpty()"
+                    "if (row.isNull(\"$field\")) \"\" else row.optString(\"$field\").takeUnless { it == \"null\" }.orEmpty()"
                 )
                 t = t.replace(
                     "objectValue.optString(\"$field\")",
-                    "objectValue.optString(\"$field\").takeUnless { it == \"null\" }.orEmpty()"
+                    "if (objectValue.isNull(\"$field\")) \"\" else objectValue.optString(\"$field\").takeUnless { it == \"null\" }.orEmpty()"
                 )
             }
+            // Final defensive rendering guard: the literal JSON-null string must never be treated as a real state.
+            t = t.replace("message.deletedAt.isNotBlank()", "message.deletedAt.isNotBlank() && message.deletedAt != \"null\"")
+            t = t.replace("message.editedAt.isNotBlank()", "message.editedAt.isNotBlank() && message.editedAt != \"null\"")
+            t = t.replace("message.readAt.isNotBlank()", "message.readAt.isNotBlank() && message.readAt != \"null\"")
+            t = t.replace("message.deliveredAt.isBlank()", "message.deliveredAt.isBlank() || message.deliveredAt == \"null\"")
             t
         }
     }
