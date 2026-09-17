@@ -23,7 +23,7 @@ import java.time.Instant
 
 internal object GlobalChatManager {
     private const val SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.co"
-    private const val SUPABASE_KEY = "sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
+    private const val SUPABASE_KEY = "sb_publishable_MlBmbt3bdFDjMkjxrdwg_fa3MqBKs"
     private const val CHANNEL_ID = "chat_messages_v2"
     private const val CHANNEL_NAME = "Chat messages"
     private const val NOTIFICATION_ID_BASE = 4101
@@ -37,6 +37,7 @@ internal object GlobalChatManager {
     fun start(context: Context) {
         val app = context.applicationContext
         createChannel(app)
+        OwnerChatNotificationManager.start(app)
         if (monitorJob?.isActive == true) return
         monitorJob = scope.launch {
             val auth = AuthApi(app)
