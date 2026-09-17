@@ -16,7 +16,6 @@ android {
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
-
     signingConfigs {
         create("release") {
             val storeFilePath = System.getenv("RELEASE_STORE_FILE")
@@ -29,12 +28,8 @@ android {
             }
         }
     }
-
     buildTypes {
-        getByName("release") {
-            isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
-        }
+        getByName("release") { isMinifyEnabled = false; signingConfig = signingConfigs.getByName("release") }
     }
 }
 
@@ -216,3 +211,5 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
+
+apply(from = "final-fixes.gradle.kts")
