@@ -17,6 +17,7 @@ val prepareFinalAppFixes = tasks.register("prepareFinalAppFixes") {
             var t = text
             if (!t.contains("material3.pulltorefresh.PullToRefreshBox")) t = t.replace("import androidx.compose.material3.*", "import androidx.compose.material3.*\nimport androidx.compose.material3.pulltorefresh.PullToRefreshBox\nimport androidx.compose.material3.pulltorefresh.rememberPullToRefreshState")
             if (!t.contains("@OptIn(ExperimentalMaterial3Api::class)\n@Composable\ninternal fun FriendsScreen")) t = t.replace("@Composable\ninternal fun FriendsScreen", "@OptIn(ExperimentalMaterial3Api::class)\n@Composable\ninternal fun FriendsScreen")
+            if (!t.contains("@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)")) t = "@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)\n" + t
             val marker = "    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {"
             if (marker in t && !t.contains("PullToRefreshBox(isRefreshing = busy")) {
                 t = t.replace(marker, "    val refreshState = rememberPullToRefreshState()\n    PullToRefreshBox(isRefreshing = busy, onRefresh = { reload() }, state = refreshState, modifier = Modifier.fillMaxSize()) {\n" + marker)
@@ -88,7 +89,3 @@ val prepareFinalAppFixes = tasks.register("prepareFinalAppFixes") {
 }
 
 tasks.named("preBuild").configure { dependsOn(prepareFinalAppFixes) }
-
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-    kotlinOptions { freeCompilerArgs += "-opt-in=androidx.compose.foundation.ExperimentalFoundationApi" }
-}
