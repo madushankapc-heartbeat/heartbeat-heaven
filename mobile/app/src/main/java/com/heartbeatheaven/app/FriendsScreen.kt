@@ -1,5 +1,6 @@
 package com.heartbeatheaven.app
 
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -29,7 +30,7 @@ private const val FRIENDS_SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.
 private const val FRIENDS_KEY = "sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
 private data class FriendUser(val id: String, val username: String, val gender: String)
 private data class FriendRequest(val id: String, val user: FriendUser, val incoming: Boolean)
-private data class ChatMessage(val id: String, val senderId: String, val body: String, val createdAt: String, val deliveredAt: String = "", val readAt: String = "")
+private data class ChatMessage(val id: String, val senderId: String, val body: String, val createdAt: String, val deliveredAt: String = "", val readAt: String = "", val editedAt: String = "")
 
 private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession) {
     private var session = initialSession
@@ -159,11 +160,11 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
 
     suspend fun messages(other: String): List<ChatMessage> = withContext(Dispatchers.IO) {
         val mine = userId()
-        val a = JSONArray(request("/rest/v1/messages?or=(and(sender_id.eq.$mine,receiver_id.eq.$other),and(sender_id.eq.$other,receiver_id.eq.$mine))&select=id,sender_id,body,created_at,delivered_at,read_at&order=created_at.asc&limit=100", "GET"))
+        val a = JSONArray(request("/rest/v1/messages?or=(and(sender_id.eq.$mine,receiver_id.eq.$other),and(sender_id.eq.$other,receiver_id.eq.$mine))&select=id,sender_id,body,created_at,delivered_at,read_at,edited_at&order=created_at.asc&limit=100", "GET"))
         buildList {
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
-                add(ChatMessage(o.optString("id"), o.optString("sender_id"), o.optString("body"), o.optString("created_at"), o.optString("delivered_at"), o.optString("read_at")))
+                add(ChatMessage(o.optString("id"), o.optString("sender_id"), o.optString("body"), o.optString("created_at"), o.optString("delivered_at"), o.optString("read_at"), o.optString("edited_at")))
             }
         }
     }
@@ -184,9 +185,18 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
             val a = JSONArray(response)
             if (a.length() > 0) {
                 val o = a.getJSONObject(0)
-                ChatMessage(o.optString("id"), o.optString("sender_id"), o.optString("body"), o.optString("created_at"), o.optString("delivered_at"), o.optString("read_at"))
+                ChatMessage(o.optString("id"), o.optString("sender_id"), o.optString("body"), o.optString("created_at"), o.optString("delivered_at"), o.optString("read_at"), o.optString("edited_at"))
             } else null
         }.getOrNull()
+    }
+
+    suspend fun editMessage(messageId: String, body: String): ChatMessage = withContext(Dispatchers.IO) {
+        val clean = body.trim()
+        if (clean.isBlank()) throw IllegalStateException("Message cannot be empty")
+        if (clean.length > 4000) throw IllegalStateException("Message is too long")
+        val response = request("/rest/v1/rpc/edit_my_message", "POST", JSONObject().put("p_message_id", messageId).put("p_body", clean).toString())
+        val o = JSONObject(response)
+        ChatMessage(o.optString("id"), o.optString("sender_id"), o.optString("body"), o.optString("created_at"), o.optString("delivered_at"), o.optString("read_at"), o.optString("edited_at"))
     }
 }
 
@@ -205,6 +215,8 @@ internal fun FriendsScreen() {
     var selected by remember { mutableStateOf<FriendUser?>(null) }
     var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
     var text by remember { mutableStateOf("") }
+    var editingMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var editText by remember { mutableStateOf("") }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
 
@@ -306,6 +318,36 @@ internal fun FriendsScreen() {
             if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
         }
 
+        if (editingMessage != null) {
+            AlertDialog(
+                onDismissRequest = { editingMessage = null },
+                title = { Text("Edit message") },
+                text = {
+                    OutlinedTextField(
+                        value = editText,
+                        onValueChange = { if (it.length <= 4000) editText = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = false,
+                        maxLines = 6,
+                        supportingText = { Text("${editText.length}/4000") }
+                    )
+                },
+                confirmButton = {
+                    TextButton(enabled = editText.trim().isNotBlank(), onClick = {
+                        val target = editingMessage ?: return@TextButton
+                        val newBody = editText.trim()
+                        editingMessage = null
+                        scope.launch {
+                            runCatching { api.editMessage(target.id, newBody) }
+                                .onSuccess { updated -> messages = messages.map { if (it.id == updated.id) updated else it }; statusMessage = null }
+                                .onFailure { statusMessage = it.message ?: "Message could not be edited." }
+                        }
+                    }) { Text("Save") }
+                },
+                dismissButton = { TextButton(onClick = { editingMessage = null }) { Text("Cancel") } }
+            )
+        }
+
         Column(Modifier.fillMaxSize()) {
             Surface(shadowElevation = 2.dp) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -324,7 +366,14 @@ internal fun FriendsScreen() {
                     val mine = m.senderId == api.userId()
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
                         Column(horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
-                            Surface(color = if (mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(18.dp)) {
+                            Surface(
+                                color = if (mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                                shape = RoundedCornerShape(18.dp),
+                                modifier = if (mine && !m.id.startsWith("local-")) Modifier.combinedClickable(
+                                    onClick = {},
+                                    onLongClick = { editingMessage = m; editText = m.body }
+                                ) else Modifier
+                            ) {
                                 Text(m.body, Modifier.padding(horizontal = 14.dp, vertical = 9.dp), color = MaterialTheme.colorScheme.onSurface)
                             }
                             val delivery = if (mine) when {
@@ -332,7 +381,8 @@ internal fun FriendsScreen() {
                                 m.deliveredAt.isNotBlank() -> "✓✓ Delivered"
                                 else -> "✓ Sent"
                             } else ""
-                            Text(if (mine) "You  ${ChatTimeFormatter.time(m.createdAt)}  $delivery" else "${chat.username}  ${ChatTimeFormatter.time(m.createdAt)}", style = MaterialTheme.typography.labelSmall, color = if (mine && m.readAt.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp))
+                            val editedLabel = if (m.editedAt.isNotBlank()) "  • edited" else ""
+                            Text(if (mine) "You  ${ChatTimeFormatter.time(m.createdAt)}  $delivery$editedLabel" else "${chat.username}  ${ChatTimeFormatter.time(m.createdAt)}", style = MaterialTheme.typography.labelSmall, color = if (mine && m.readAt.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp))
                         }
                     }
                 }
