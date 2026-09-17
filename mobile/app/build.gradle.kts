@@ -150,6 +150,9 @@ val prepareChatV2NullStateFix by tasks.registering {
         val old = "o.optString(\"delivered_at\"), o.optString(\"read_at\")"
         val updated = "o.optString(\"delivered_at\").takeUnless { it == \"null\" }.orEmpty(), o.optString(\"read_at\").takeUnless { it == \"null\" }.orEmpty()"
         text = text.replace(old, updated)
+        // JSONObject.optString returns the literal \"null\" for JSON null values in this Android JSON path.
+        // Normalize deleted_at too, otherwise every non-deleted message can be rendered as deleted.
+        text = text.replace("o.optString(\"edited_at\"), o.optString(\"reply_to_id\"), o.optString(\"deleted_at\")", "o.optString(\"edited_at\").takeUnless { it == \"null\" }.orEmpty(), o.optString(\"reply_to_id\").takeUnless { it == \"null\" }.orEmpty(), o.optString(\"deleted_at\").takeUnless { it == \"null\" }.orEmpty()")
         source.writeText(text)
     }
 }
