@@ -3,7 +3,6 @@ package com.heartbeatheaven.app
 import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -19,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -70,30 +70,16 @@ private fun parseOwnerMessages(root: JSONObject): List<OwnerMessage> {
 }
 
 private suspend fun loadOwnerMessages(context: Context, category: String): List<OwnerMessage> = withContext(Dispatchers.IO) {
-    // Create/reuse the open conversation and keep the returned conversation ID.
-    // Do not make a second identity-dependent lookup just to recover the ID.
     ownerChatRequest(context, JSONObject().put("action", "create").put("category", category))
     val root = ownerChatRequest(context, JSONObject().put("action", "list"))
     parseOwnerMessages(root)
 }
 
 private suspend fun sendOwnerMessage(context: Context, category: String, body: String): List<OwnerMessage> = withContext(Dispatchers.IO) {
-    // The create endpoint returns the authoritative conversation object. Reuse
-    // its ID directly instead of calling list() and risking an identity mismatch.
     val created = ownerChatRequest(context, JSONObject().put("action", "create").put("category", category))
     val conversationId = created.optJSONObject("conversation")?.optString("id").orEmpty()
     if (conversationId.isBlank()) error("Conversation could not be created. Please try again.")
-
-    ownerChatRequest(
-        context,
-        JSONObject()
-            .put("action", "send")
-            .put("conversation_id", conversationId)
-            .put("category", category)
-            .put("body", body)
-    )
-
-    // Fetch the conversation again after the send so the new message is shown.
+    ownerChatRequest(context, JSONObject().put("action", "send").put("conversation_id", conversationId).put("category", category).put("body", body))
     val refreshed = ownerChatRequest(context, JSONObject().put("action", "list"))
     parseOwnerMessages(refreshed)
 }
@@ -120,6 +106,16 @@ private fun OwnerChatScreen(onBack: () -> Unit) {
 
     fun reload() { scope.launch { loading = true; error = null; runCatching { loadOwnerMessages(context, category) }.onSuccess { messages = it }.onFailure { error = it.message ?: "Unable to load owner chat." }; loading = false } }
     LaunchedEffect(category) { reload() }
+
+    LaunchedEffect(category) {
+        while (true) {
+            delay(2_000L)
+            if (!loading && !sending) {
+                runCatching { loadOwnerMessages(context, category) }
+                    .onSuccess { fresh -> if (fresh != messages) messages = fresh }
+            }
+        }
+    }
 
     Scaffold(topBar = { TopAppBar(title = { Column { Text("Contact Owner", fontWeight = FontWeight.Bold); Text("Report bugs • Ask questions • Suggest improvements", fontSize = 11.sp) } }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") } }) }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
