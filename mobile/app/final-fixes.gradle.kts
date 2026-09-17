@@ -83,6 +83,17 @@ val prepareFinalAppFixes = tasks.register("prepareFinalAppFixes") {
             val errorUi = "else if (error != null) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text(error!!) }"
             val errorUiWithRetry = "else if (error != null) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {\n                        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {\n                            Text(error!!, textAlign = androidx.compose.ui.text.style.TextAlign.Center)\n                            Button(onClick = {\n                                if (!refreshing) {\n                                    refreshing = true\n                                    refreshScope.launch {\n                                        runCatching { fetchSongs() }\n                                            .onSuccess { songs = it; error = null }\n                                            .onFailure { error = \"Unable to refresh. Please check your connection.\" }\n                                        refreshing = false\n                                    }\n                                }\n                            }) {\n                                Text(\"↻ Refresh\")\n                            }\n                        }\n                    }"
             t = t.replace(errorUi, errorUiWithRetry)
+            val nullableMessageFields = listOf("delivered_at", "read_at", "edited_at", "reply_to_id", "deleted_at")
+            nullableMessageFields.forEach { field ->
+                t = t.replace(
+                    "row.optString(\"$field\")",
+                    "row.optString(\"$field\").takeUnless { it == \"null\" }.orEmpty()"
+                )
+                t = t.replace(
+                    "objectValue.optString(\"$field\")",
+                    "objectValue.optString(\"$field\").takeUnless { it == \"null\" }.orEmpty()"
+                )
+            }
             t
         }
     }
