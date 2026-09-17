@@ -16,4 +16,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "HeartbeatHeaven"
 include(":app")
-apply(from = "final-fixes.gradle.kts")
