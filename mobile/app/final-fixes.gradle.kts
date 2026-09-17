@@ -39,6 +39,45 @@ val prepareFinalAppFixes = tasks.register("prepareFinalAppFixes") {
                 val idx = t.lastIndexOf(exactEnd)
                 if (idx >= 0) t = t.substring(0, idx) + "        }\n        }\n    }\n}\n\n@Composable\nprivate fun SongCard" + t.substring(idx + exactEnd.length)
             }
+
+            if (!t.contains("private var playbackQueue: List<Song> = emptyList()")) {
+                t = t.replace(
+                    "private var durationMs by mutableLongStateOf(0L)",
+                    "private var durationMs by mutableLongStateOf(0L)\n    private var playbackQueue: List<Song> = emptyList()\n    private var playbackIndex: Int = -1"
+                )
+            }
+            t = t.replace("if (state == Player.STATE_ENDED) stopPlayback()", "if (state == Player.STATE_ENDED) playNext()")
+            t = t.replace(
+                "HeartbeatApp(currentSong, currentSongId, isPlaying, positionMs, durationMs, ::playSong, ::pausePlayback, ::seekPlayback, ::stopPlayback)",
+                "HeartbeatApp(currentSong, currentSongId, isPlaying, positionMs, durationMs, ::playSong, ::pausePlayback, ::seekPlayback, ::stopPlayback, ::previousPlayback, ::nextPlayback, ::setPlaybackQueue)"
+            )
+            if (!t.contains("private fun setPlaybackQueue(songs: List<Song>)")) {
+                t = t.replace(
+                    "    private fun playSong(song: Song) {",
+                    "    private fun setPlaybackQueue(songs: List<Song>) {\n        playbackQueue = songs\n        playbackIndex = currentSongId?.let { id -> songs.indexOfFirst { it.id == id } } ?: -1\n    }\n\n    private fun playNext() {\n        val nextIndex = playbackIndex + 1\n        if (nextIndex in playbackQueue.indices) playSong(playbackQueue[nextIndex]) else stopPlayback()\n    }\n\n    private fun nextPlayback() { playNext() }\n\n    private fun previousPlayback() {\n        if (player?.currentPosition?.let { it > 3000L } == true) {\n            player?.seekTo(0L)\n            positionMs = 0L\n            return\n        }\n        val previousIndex = playbackIndex - 1\n        if (previousIndex in playbackQueue.indices) playSong(playbackQueue[previousIndex]) else player?.seekTo(0L)\n    }\n\n    private fun playSong(song: Song) {"
+                )
+            }
+            t = t.replace(
+                "val url = song.audioUrl.trim(); if (url.isBlank()) return\n        if (currentSongId == song.id && player != null)",
+                "val url = song.audioUrl.trim(); if (url.isBlank()) return\n        playbackIndex = playbackQueue.indexOfFirst { it.id == song.id }\n        if (currentSongId == song.id && player != null)"
+            )
+            t = t.replace(
+                "private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit)",
+                "private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit, onQueueChanged: (List<Song>) -> Unit)"
+            )
+            t = t.replace("LaunchedEffect(Unit) { try { songs = fetchSongs() }", "LaunchedEffect(Unit) { try { songs = fetchSongs(); onQueueChanged(songs) }")
+            t = t.replace(
+                "MiniPlayer(song, playing, position, duration, onPlay, onPause, onSeek, onStop)",
+                "MiniPlayer(song, playing, position, duration, onPlay, onPause, onSeek, onStop, onPrevious, onNext)"
+            )
+            t = t.replace(
+                "private fun MiniPlayer(s: Song, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit)",
+                "private fun MiniPlayer(s: Song, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit)"
+            )
+            t.replace(
+                "Cover(s.coverUrl, Modifier.size(46.dp), true); Column(Modifier.weight(1f).padding(horizontal = 10.dp)) { Text(s.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(s.artist, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }; IconButton(onClick = { if (playing) onPause() else onPlay(s) }) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) \"Pause\" else \"Play\") }; IconButton(onClick = onStop) { Icon(Icons.Default.Close, \"Close\") }",
+                "Cover(s.coverUrl, Modifier.size(46.dp), true); Column(Modifier.weight(1f).padding(horizontal = 8.dp)) { Text(s.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(s.artist, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }; IconButton(onClick = onPrevious, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.SkipPrevious, \"Previous\") }; IconButton(onClick = { if (playing) onPause() else onPlay(s) }, modifier = Modifier.size(40.dp)) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) \"Pause\" else \"Play\") }; IconButton(onClick = onNext, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.SkipNext, \"Next\") }; IconButton(onClick = onStop, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.Close, \"Close\") }"
+            )
             t
         }
     }
