@@ -23,7 +23,8 @@ internal data class AccountProfile(
     val email: String?,
     val phone: String?,
     val age: Int?,
-    val isAdmin: Boolean = false
+    val isAdmin: Boolean = false,
+    val avatarUrl: String = ""
 )
 internal data class AuthSession(val accessToken: String, val refreshToken: String, val profile: AccountProfile)
 
@@ -40,7 +41,7 @@ internal class AuthApi(context: Context) {
         val userId = prefs.getString("user_id", null) ?: return null
         val cachedUsername = prefs.getString("profile_username", null)
         val cached = if (!cachedUsername.isNullOrBlank()) {
-            AuthSession(access, refresh, AccountProfile(userId, cachedUsername, prefs.getString("profile_gender", "male").orEmpty().ifBlank { "male" }, prefs.getString("profile_email", null), prefs.getString("profile_phone", null), prefs.getInt("profile_age", -1).takeIf { it > 0 }, prefs.getBoolean("profile_admin", false)))
+            AuthSession(access, refresh, AccountProfile(userId, cachedUsername, prefs.getString("profile_gender", "male").orEmpty().ifBlank { "male" }, prefs.getString("profile_email", null), prefs.getString("profile_phone", null), prefs.getInt("profile_age", -1).takeIf { it > 0 }, prefs.getBoolean("profile_admin", false), prefs.getString("profile_avatar_url", "").orEmpty()))
         } else null
         if (refresh.isNotBlank() && isExpiredOrNearExpiry(access)) return runCatching { refreshSession(refresh) }.getOrElse { cached ?: run { clear(); null } }
         if (cached != null) return cached
@@ -142,9 +143,21 @@ internal class AuthApi(context: Context) {
         }
     }
     private fun requestUser(accessToken: String) = JSONObject(request("/auth/v1/user", "GET", null, null, accessToken).body)
-    private fun fetchProfile(accessToken: String, userId: String, user: JSONObject): AccountProfile { val a = org.json.JSONArray(request("/rest/v1/profiles?id=eq.${encode(userId)}&select=id,username,gender,age,phone", "GET", null, null, accessToken).body); if (a.length() == 0) error("Profile is not ready yet. Please try again."); val row = a.getJSONObject(0); val metadata = user.optJSONObject("user_metadata"); val phone = row.optString("phone").takeIf { it.isNotBlank() } ?: user.optString("phone").takeIf { it.isNotBlank() } ?: metadata?.optString("phone")?.takeIf { !it.isNullOrBlank() }; val age = row.optInt("age", 0).takeIf { it > 0 }; val isAdmin = request("/rest/v1/rpc/is_admin", "POST", "{}", "application/json", accessToken).body.trim().equals("true", ignoreCase = true); return AccountProfile(row.optString("id", userId), row.optString("username", "User"), row.optString("gender", "male"), user.optString("email").takeIf { it.isNotBlank() }, phone, age, isAdmin) }
-    private fun saveTokens(access: String, refresh: String, userId: String) { prefs.edit().putString("access_token", access).putString("refresh_token", refresh).putString("user_id", userId).apply() }
-    private fun saveProfile(p: AccountProfile) { prefs.edit().putString("profile_username", p.username).putString("profile_gender", p.gender).putBoolean("profile_admin", p.isAdmin).apply { if (p.email != null) putString("profile_email", p.email) else remove("profile_email"); if (p.phone != null) putString("profile_phone", p.phone) else remove("profile_phone"); if (p.age != null) putInt("profile_age", p.age) else remove("profile_age") }.apply() }
+    private fun fetchProfile(accessToken: String, userId: String, user: JSONObject): AccountProfile {
+        val a = try {
+            org.json.JSONArray(request("/rest/v1/profiles?id=eq.${encode(userId)}&select=id,username,gender,age,phone,avatar_url", "GET", null, null, accessToken).body)
+        } catch (_: Exception) {
+            org.json.JSONArray(request("/rest/v1/profiles?id=eq.${encode(userId)}&select=id,username,gender,age,phone", "GET", null, null, accessToken).body)
+        }
+        if (a.length() == 0) error("Profile is not ready yet. Please try again.")
+        val row = a.getJSONObject(0)
+        val metadata = user.optJSONObject("user_metadata")
+        val phone = row.optString("phone").takeIf { it.isNotBlank() } ?: user.optString("phone").takeIf { it.isNotBlank() } ?: metadata?.optString("phone")?.takeIf { !it.isNullOrBlank() }
+        val age = row.optInt("age", 0).takeIf { it > 0 }
+        val isAdmin = request("/rest/v1/rpc/is_admin", "POST", "{}", "application/json", accessToken).body.trim().equals("true", ignoreCase = true)
+        return AccountProfile(row.optString("id", userId), row.optString("username", "User"), row.optString("gender", "male"), user.optString("email").takeIf { it.isNotBlank() }, phone, age, isAdmin, row.optString("avatar_url").takeUnless { it == "null" }.orEmpty())
+    }    private fun saveTokens(access: String, refresh: String, userId: String) { prefs.edit().putString("access_token", access).putString("refresh_token", refresh).putString("user_id", userId).apply() }
+    private fun saveProfile(p: AccountProfile) { prefs.edit().putString("profile_username", p.username).putString("profile_gender", p.gender).putBoolean("profile_admin", p.isAdmin).putString("profile_avatar_url", p.avatarUrl).apply { if (p.email != null) putString("profile_email", p.email) else remove("profile_email"); if (p.phone != null) putString("profile_phone", p.phone) else remove("profile_phone"); if (p.age != null) putInt("profile_age", p.age) else remove("profile_age") }.apply() }
     private fun clear() { prefs.edit().clear().apply() }
     private fun encode(v: String) = URLEncoder.encode(v, Charsets.UTF_8.name())
     private data class Response(val code: Int, val body: String)
