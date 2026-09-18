@@ -922,6 +922,28 @@ internal fun FriendsScreen() {
                                             )
                                         }
                                     }
+                                    if (m.messageType != "text" && m.mediaUrl.isNotBlank()) {
+                                        Surface(
+                                            tonalElevation = 2.dp,
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp)
+                                        ) {
+                                            Column(Modifier.padding(8.dp)) {
+                                                Text(
+                                                    when (m.messageType) {
+                                                        "image" -> "🖼️ Image"
+                                                        "video" -> "🎬 Video"
+                                                        "audio" -> "🎵 Audio"
+                                                        else -> "📎 File"
+                                                    },
+                                                    style = MaterialTheme.typography.labelMedium
+                                                )
+                                                if (m.mediaName.isNotBlank()) Text(m.mediaName, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                                if (m.mediaSize > 0) Text("${m.mediaSize / 1024} KB", style = MaterialTheme.typography.labelSmall)
+                                                Text(m.mediaUrl, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
+                                            }
+                                        }
+                                    }
                                     Text(
                                         if (m.deletedAt.isNotBlank()) "This message was deleted" else m.body,
                                         Modifier.padding(top = if (replyPreview != null) 1.dp else 0.dp),
