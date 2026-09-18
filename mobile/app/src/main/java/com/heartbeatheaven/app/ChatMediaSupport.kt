@@ -10,7 +10,7 @@ import java.util.UUID
 internal data class UploadedChatMedia(val type: String, val url: String, val name: String, val size: Long)
 
 internal object ChatMediaSupport {
-    private const val SUPABASE_URL = "https://fafvhyeesenpimxncuup.supabase.co"
+    private const val SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.co"
     private const val KEY = "sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
     private const val BUCKET = "chat-media"
     private const val MAX_BYTES = 6L * 1024L * 1024L
