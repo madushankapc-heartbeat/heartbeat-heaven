@@ -30,7 +30,7 @@ private val PHONE_RECOVERY_QUESTIONS = listOf(
 )
 
 @Composable
-internal fun AccountScreen() {
+internal fun AccountScreen(refreshTrigger: Int = 0) {
     val context = LocalContext.current
     val api = remember { AuthApi(context) }
     val scope = rememberCoroutineScope()
@@ -73,7 +73,7 @@ internal fun AccountScreen() {
         }
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(refreshTrigger) {
         session = withContext(Dispatchers.IO) { api.currentSession() }
         if (session != null) {
             session = withContext(Dispatchers.IO) { api.refreshCurrentProfile() } ?: session
