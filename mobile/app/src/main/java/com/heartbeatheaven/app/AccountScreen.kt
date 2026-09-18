@@ -61,6 +61,9 @@ internal fun AccountScreen(refreshTrigger: Int = 0) {
     var message by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var profilePhotoBusy by remember { mutableStateOf(false) }
+    var showEditProfile by remember { mutableStateOf(false) }
+    var bioInput by remember { mutableStateOf("") }
+    var visibilityInput by remember { mutableStateOf("everyone") }
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null && session != null) {
             profilePhotoBusy = true
@@ -81,6 +84,37 @@ internal fun AccountScreen(refreshTrigger: Int = 0) {
         loading = false
     }
     if (loading) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }; return }
+
+    if (showEditProfile && session != null) {
+        AlertDialog(
+            onDismissRequest = { if (!busy) showEditProfile = false },
+            title = { Text("Edit profile") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(bioInput, { bioInput = it.take(160) }, label = { Text("About / Bio") }, supportingText = { Text(bioInput.length.toString() + "/160") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+                    Text("Last seen", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                    Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(visibilityInput == "everyone", { visibilityInput = "everyone" }); Text("Everyone") }
+                    Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(visibilityInput == "friends", { visibilityInput = "friends" }); Text("Friends") }
+                    Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(visibilityInput == "nobody", { visibilityInput = "nobody" }); Text("Nobody") }
+                }
+            },
+            confirmButton = {
+                Button(enabled = !busy, onClick = {
+                    busy = true
+                    scope.launch {
+                        val result = withContext(Dispatchers.IO) { api.updateProfile(session!!.accessToken, bioInput, visibilityInput) }
+                        result.onSuccess {
+                            session = withContext(Dispatchers.IO) { api.refreshCurrentProfile() } ?: session
+                            showEditProfile = false
+                            message = it
+                        }.onFailure { error = it.message ?: "Could not update profile." }
+                        busy = false
+                    }
+                }) { Text(if (busy) "Saving..." else "Save") }
+            },
+            dismissButton = { TextButton(enabled = !busy, onClick = { showEditProfile = false }) { Text("Cancel") } }
+        )
+    }
 
     if (showSignupChoice) {
         AlertDialog(onDismissRequest = { showSignupChoice = false }, title = { Text("Create account") }, text = { Text("How would you like to create your HEARTBEAT HEAVEN account?") },
@@ -120,8 +154,9 @@ internal fun AccountScreen(refreshTrigger: Int = 0) {
                         OutlinedButton(enabled = !profilePhotoBusy, onClick = { profilePhotoBusy = true; scope.launch { val result = withContext(Dispatchers.IO) { ProfilePictureSupport.remove(session!!) }; result.onSuccess { session = withContext(Dispatchers.IO) { api.refreshCurrentProfile() } ?: session; message = "Profile picture removed." }.onFailure { error = it.message ?: "Could not remove profile picture." }; profilePhotoBusy = false } }) { Text("Remove") }
                     }
                 }
-                Text(p.username, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(p.username, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); Text(if (p.bio.isBlank()) "Add a short bio" else p.bio, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3) }; IconButton(onClick = { bioInput = p.bio; visibilityInput = p.lastSeenVisibility; showEditProfile = true }) { Icon(Icons.Default.Edit, "Edit profile") } }
                 Text("Gender: ${p.gender.replaceFirstChar { it.uppercase() }}"); Text("Age: ${p.age ?: "Not available"}"); Text("Email: ${p.email ?: "Not available"}"); Text("Mobile: ${p.phone ?: "Not available"}")
+                Text("Last seen: " + when (p.lastSeenVisibility) { "nobody" -> "Hidden"; "friends" -> "Friends only"; else -> "Visible to everyone" }, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text("Your login contacts are never shown publicly.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (p.isAdmin) Button(onClick = { context.startActivity(Intent(context, StudioActivity::class.java)) }, modifier = Modifier.fillMaxWidth()) { Text("🎵 Open Studio") }
                 Button(enabled = !busy, onClick = { busy = true; Thread { api.signOut(); android.os.Handler(android.os.Looper.getMainLooper()).post { session = null; busy = false; message = "You are signed out." } } .start() }, modifier = Modifier.fillMaxWidth()) { Text("Log out") }
