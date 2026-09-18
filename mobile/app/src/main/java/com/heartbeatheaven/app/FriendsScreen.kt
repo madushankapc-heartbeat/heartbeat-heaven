@@ -30,6 +30,7 @@ private const val FRIENDS_SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.
 private const val FRIENDS_KEY = "sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
 private data class FriendUser(val id: String, val username: String, val gender: String)
 private data class FriendRequest(val id: String, val user: FriendUser, val incoming: Boolean)
+private data class ChatSummary(val user: FriendUser, val lastMessage: String, val lastMessageAt: String, val unreadCount: Int)
 private data class ChatMessage(val id: String, val senderId: String, val body: String, val createdAt: String, val deliveredAt: String = "", val readAt: String = "", val editedAt: String = "", val deletedAt: String = "", val replyToId: String = "")
 private data class MessageReaction(val messageId: String, val userId: String, val reaction: String)
 
@@ -159,6 +160,71 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
         }
     }
 
+    suspend fun chatSummaries(): List<ChatSummary> = withContext(Dispatchers.IO) {
+        val mine = userId()
+        val friendList = friends()
+        if (friendList.isEmpty()) return@withContext emptyList()
+
+        val hidden = runCatching {
+            val d = JSONArray(request("/rest/v1/message_deletions?user_id=eq.$mine&select=message_id&limit=1000", "GET"))
+            buildSet { for (i in 0 until d.length()) add(d.getJSONObject(i).optString("message_id")) }
+        }.getOrDefault(emptySet())
+
+        val a = JSONArray(
+            request(
+                "/rest/v1/messages?or=(sender_id.eq.$mine,receiver_id.eq.$mine)&select=id,sender_id,receiver_id,body,created_at,deleted_at&order=created_at.desc&limit=1000",
+                "GET"
+            )
+        )
+
+        data class Row(val otherId: String, val body: String, val createdAt: String, val unread: Boolean)
+        val latest = LinkedHashMap<String, Row>()
+
+        for (i in 0 until a.length()) {
+            val o = a.getJSONObject(i)
+            val id = o.optString("id")
+            if (id in hidden) continue
+
+            val sender = o.optString("sender_id")
+            val receiver = o.optString("receiver_id")
+            val otherId = if (sender == mine) receiver else sender
+            if (otherId.isBlank() || latest.containsKey(otherId)) continue
+
+            val deleted = o.optString("deleted_at").takeUnless { it == "null" }.orEmpty().isNotBlank()
+            val body = if (deleted) "This message was deleted" else o.optString("body")
+            latest[otherId] = Row(
+                otherId = otherId,
+                body = body,
+                createdAt = o.optString("created_at"),
+                unread = sender != mine && o.optString("read_at").takeUnless { it == "null" }.orEmpty().isBlank()
+            )
+        }
+
+        val unreadCounts = HashMap<String, Int>()
+        for (i in 0 until a.length()) {
+            val o = a.getJSONObject(i)
+            val id = o.optString("id")
+            if (id in hidden) continue
+            if (o.optString("receiver_id") == mine && o.optString("read_at").takeUnless { it == "null" }.orEmpty().isBlank()) {
+                unreadCounts[o.optString("sender_id")] = (unreadCounts[o.optString("sender_id")] ?: 0) + 1
+            }
+        }
+
+        friendList.map { friend ->
+            val row = latest[friend.id]
+            ChatSummary(
+                user = friend,
+                lastMessage = row?.body.orEmpty(),
+                lastMessageAt = row?.createdAt.orEmpty(),
+                unreadCount = unreadCounts[friend.id] ?: 0
+            )
+        }.sortedWith(
+            compareByDescending<ChatSummary> { it.lastMessageAt.isNotBlank() }
+                .thenByDescending { it.lastMessageAt }
+                .thenBy { it.user.username.lowercase() }
+        )
+    }
+
     suspend fun messages(other: String): List<ChatMessage> = withContext(Dispatchers.IO) {
         val mine = userId()
         val a = JSONArray(request("/rest/v1/messages?or=(and(sender_id.eq.$mine,receiver_id.eq.$other),and(sender_id.eq.$other,receiver_id.eq.$mine))&select=id,sender_id,body,created_at,delivered_at,read_at,edited_at,deleted_at,reply_to_id&order=created_at.asc&limit=100", "GET"))
@@ -276,6 +342,7 @@ internal fun FriendsScreen() {
     var results by remember { mutableStateOf<List<FriendUser>>(emptyList()) }
     var online by remember { mutableStateOf<List<FriendUser>>(emptyList()) }
     var friends by remember { mutableStateOf<List<FriendUser>>(emptyList()) }
+    var chatSummaries by remember { mutableStateOf<List<ChatSummary>>(emptyList()) }
     var requests by remember { mutableStateOf<List<FriendRequest>>(emptyList()) }
     var selected by remember { mutableStateOf<FriendUser?>(null) }
     var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
@@ -303,12 +370,14 @@ internal fun FriendsScreen() {
             runCatching {
                 withContext(Dispatchers.IO) {
                     a.touchPresence()
-                    Triple(a.friends(), a.requests(), a.onlineUsers())
+                    val friendList = a.friends()
+                    Triple(friendList, a.requests(), a.onlineUsers())
                 }
             }.onSuccess { (f, r, o) ->
                 friends = f
                 requests = r
                 online = o
+                chatSummaries = runCatching { a.chatSummaries() }.getOrDefault(emptyList())
             }.onFailure { statusMessage = it.message ?: "Could not load Friends." }
             busy = false
         }
@@ -322,6 +391,7 @@ internal fun FriendsScreen() {
                 api.touchPresence()
                 online = api.onlineUsers()
                 friends = api.friends()
+                chatSummaries = api.chatSummaries()
             }
             delay(30000)
         }
@@ -674,9 +744,54 @@ internal fun FriendsScreen() {
             Text("Friend requests", style = MaterialTheme.typography.titleMedium)
             requests.forEach { r -> ListItem(headlineContent = { Text(r.user.username) }, supportingContent = { Text(if (r.incoming) "Wants to be your friend" else "Pending") }, trailingContent = { if (r.incoming) Button(onClick = { scope.launch { runCatching { api.accept(r.id); reload() }.onFailure { statusMessage = it.message } } }) { Text("Accept") } else Text("Pending") }) }
         }
-        Text("Friends", style = MaterialTheme.typography.titleMedium)
-        if (friends.isEmpty()) Text("No friends yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        friends.forEach { u -> ListItem(headlineContent = { Text(u.username) }, supportingContent = { Text(if (online.any { it.id == u.id }) "Online" else "Offline") }, leadingContent = { Icon(Icons.Default.Person, "Friend") }, trailingContent = { FilledTonalButton(onClick = { selected = u; statusMessage = null }) { Text("Chat") } }) }
+        Text("Chats", style = MaterialTheme.typography.titleMedium)
+        if (chatSummaries.isEmpty()) {
+            if (friends.isEmpty()) Text("No friends yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            else Text("No chats yet. Open a friend to start chatting.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        chatSummaries.forEach { chatItem ->
+            val isOnline = online.any { it.id == chatItem.user.id }
+            ListItem(
+                headlineContent = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(chatItem.user.username)
+                        if (chatItem.unreadCount > 0) {
+                            Spacer(Modifier.width(8.dp))
+                            Badge { Text(chatItem.unreadCount.toString()) }
+                        }
+                    }
+                },
+                supportingContent = {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            when {
+                                chatItem.lastMessage.isBlank() -> if (isOnline) "Online" else "No messages yet"
+                                else -> chatItem.lastMessage
+                            },
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
+                        if (chatItem.lastMessageAt.isNotBlank()) {
+                            Text(
+                                ChatTimeFormatter.time(chatItem.lastMessageAt),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                },
+                leadingContent = {
+                    Icon(
+                        if (isOnline) Icons.Default.Circle else Icons.Default.Person,
+                        if (isOnline) "Online" else "Friend",
+                        tint = if (isOnline) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                    )
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Divider()
+        }
         statusMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
         if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
     }
