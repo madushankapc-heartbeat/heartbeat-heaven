@@ -42,6 +42,7 @@ internal object ChatMediaSupport {
         val path = session.profile.id + "/" + otherUserId + "/" + UUID.randomUUID().toString() + "." + extension
         val input = resolver.openInputStream(uri) ?: error("Could not read the selected file.")
         val c = URL(SUPABASE_URL + "/storage/v1/object/" + BUCKET + "/" + path).openConnection() as HttpURLConnection
+        var uploadedBytes = 0L
         try {
             c.requestMethod = "POST"
             c.connectTimeout = 20000
@@ -63,6 +64,7 @@ internal object ChatMediaSupport {
                         }
                         out.write(buffer, 0, read)
                         sent += read
+                        uploadedBytes = sent
                         onProgress(sent, if (size > 0L) size else MAX_BYTES)
                     }
                     out.flush()
@@ -71,6 +73,6 @@ internal object ChatMediaSupport {
             if (c.responseCode !in 200..299) error("Attachment upload failed (${c.responseCode}).")
         } finally { c.disconnect() }
         val publicUrl = SUPABASE_URL + "/storage/v1/object/public/" + BUCKET + "/" + path
-        UploadedChatMedia(type, publicUrl, name, if (size >= 0) size else sent)
+        UploadedChatMedia(type, publicUrl, name, if (size >= 0) size else uploadedBytes)
     }
 }
