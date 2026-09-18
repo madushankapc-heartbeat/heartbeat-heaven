@@ -561,7 +561,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
         }
     }
 
-    LaunchedEffect(selected?.id, api) {
+    LaunchedEffect(selected?.id, api, refreshTrigger) {
         val current = selected ?: return@LaunchedEffect
         val a = api ?: return@LaunchedEffect
         messages = emptyList()
