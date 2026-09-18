@@ -420,6 +420,7 @@ internal fun FriendsScreen() {
     var chatBlocked by remember { mutableStateOf(false) }
     var showReportDialog by remember { mutableStateOf(false) }
     var reportReason by remember { mutableStateOf("") }
+    var otherTyping by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         session = withContext(Dispatchers.IO) { auth.currentSession() }
@@ -502,6 +503,15 @@ internal fun FriendsScreen() {
         onDispose { realtime?.stop() }
     }
 
+    DisposableEffect(api, selected?.id) {
+        val selectedId = selected?.id
+        val typing = if (api != null && selectedId != null) RealtimeTypingClient(
+            { api.token() }, api.userId(), FRIENDS_KEY, selectedId
+        ) { value -> scope.launch(Dispatchers.Main) { if (selected?.id == selectedId) otherTyping = value } } else null
+        typing?.start()
+        onDispose { typing?.stop(); otherTyping = false }
+    }
+
     if (checkingSession) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         return
@@ -519,6 +529,7 @@ internal fun FriendsScreen() {
 
     if (selected != null) {
         val chat = selected!!
+        val typingClient = remember(api, chat.id) { api?.let { a -> RealtimeTypingClient({ a.token() }, a.userId(), FRIENDS_KEY, chat.id) {} } }
         val listState = rememberLazyListState()
         val selectedForActions = selectedMessage
         val replyTarget = replyingTo
@@ -874,6 +885,7 @@ internal fun FriendsScreen() {
             }
 
             statusMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) }
+            if (otherTyping) Text("Typing…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp))
             Surface(tonalElevation = 2.dp) {
                 Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom) {
                     OutlinedTextField(
@@ -986,6 +998,7 @@ internal fun FriendsScreen() {
                         editingMessage = null
                         editText = ""
                         text = ""
+                        typingClient?.setTyping(false)
                         statusMessage = null
                     }
             )
