@@ -1,5 +1,6 @@
 package com.heartbeatheaven.app
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -788,7 +789,18 @@ internal fun FriendsScreen() {
                         tint = if (isOnline) MaterialTheme.colorScheme.primary else LocalContentColor.current
                     )
                 },
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        selected = chatItem.user
+                        selectedMessage = null
+                        replyingTo = null
+                        deleteTarget = null
+                        editingMessage = null
+                        editText = ""
+                        text = ""
+                        statusMessage = null
+                    }
             )
             Divider()
         }
