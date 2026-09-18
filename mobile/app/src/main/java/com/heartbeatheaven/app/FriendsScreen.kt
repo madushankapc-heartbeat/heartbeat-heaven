@@ -503,15 +503,6 @@ internal fun FriendsScreen() {
         onDispose { realtime?.stop() }
     }
 
-    DisposableEffect(api, selected?.id) {
-        val selectedId = selected?.id
-        val typing = if (api != null && selectedId != null) RealtimeTypingClient(
-            { api.token() }, api.userId(), FRIENDS_KEY, selectedId
-        ) { value -> scope.launch(Dispatchers.Main) { if (selected?.id == selectedId) otherTyping = value } } else null
-        typing?.start()
-        onDispose { typing?.stop(); otherTyping = false }
-    }
-
     if (checkingSession) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         return
@@ -529,7 +520,19 @@ internal fun FriendsScreen() {
 
     if (selected != null) {
         val chat = selected!!
-        val typingClient = remember(api, chat.id) { api?.let { a -> RealtimeTypingClient({ a.token() }, a.userId(), FRIENDS_KEY, chat.id) {} } }
+        val typingClient = remember(api, chat.id) {
+            api?.let { a ->
+                RealtimeTypingClient(
+                    { a.token() }, a.userId(), FRIENDS_KEY, chat.id
+                ) { value ->
+                    scope.launch(Dispatchers.Main) { if (selected?.id == chat.id) otherTyping = value }
+                }
+            }
+        }
+        DisposableEffect(typingClient) {
+            typingClient?.start()
+            onDispose { typingClient?.stop(); otherTyping = false }
+        }
         val listState = rememberLazyListState()
         val selectedForActions = selectedMessage
         val replyTarget = replyingTo
