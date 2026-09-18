@@ -92,7 +92,7 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
     suspend fun onlineUsers(): List<FriendUser> = withContext(Dispatchers.IO) {
         val since = Instant.now().minus(2, ChronoUnit.MINUTES).toString()
         val encoded = URLEncoder.encode(since, "UTF-8")
-        val a = JSONArray(request("/rest/v1/profiles?last_seen_at=gte.$encoded&select=id,username,gender,avatar_url&limit=50", "GET"))
+        val a = runCatching { JSONArray(request("/rest/v1/profiles?last_seen_at=gte.$encoded&select=id,username,gender,avatar_url&limit=50", "GET")) }.getOrElse { JSONArray(request("/rest/v1/profiles?last_seen_at=gte.$encoded&select=id,username,gender&limit=50", "GET")) }
         buildList {
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
@@ -103,7 +103,7 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
 
     suspend fun search(username: String): List<FriendUser> = withContext(Dispatchers.IO) {
         val q = URLEncoder.encode(username.trim(), "UTF-8")
-        val a = JSONArray(request("/rest/v1/profiles?username=ilike.*$q*&select=id,username,gender,avatar_url&limit=20", "GET"))
+        val a = runCatching { JSONArray(request("/rest/v1/profiles?username=ilike.*$q*&select=id,username,gender,avatar_url&limit=20", "GET")) }.getOrElse { JSONArray(request("/rest/v1/profiles?username=ilike.*$q*&select=id,username,gender&limit=20", "GET")) }
         buildList {
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
@@ -120,10 +120,10 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
                 val o = a.getJSONObject(i)
                 val incoming = o.optString("addressee_id") == mine
                 val uid = if (incoming) o.optString("requester_id") else o.optString("addressee_id")
-                val p = JSONArray(request("/rest/v1/profiles?id=eq.$uid&select=id,username,gender,avatar_url", "GET"))
+                val p = runCatching { JSONArray(request("/rest/v1/profiles?id=eq.$uid&select=id,username,gender,avatar_url", "GET")) }.getOrElse { JSONArray(request("/rest/v1/profiles?id=eq.$uid&select=id,username,gender", "GET")) }
                 if (p.length() > 0) {
                     val u = p.getJSONObject(0)
-                    add(FriendRequest(o.optString("id"), FriendUser(uid, u.optString("username"), u.optString("gender")), incoming))
+                    add(FriendRequest(o.optString("id"), FriendUser(uid, u.optString("username"), u.optString("gender"), u.optString("avatar_url").takeUnless { it == "null" }.orEmpty()), incoming))
                 }
             }
         }
@@ -159,10 +159,10 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
                 val uid = if (o.optString("requester_id") == mine) o.optString("addressee_id") else o.optString("requester_id")
-                val p = JSONArray(request("/rest/v1/profiles?id=eq.$uid&select=id,username,gender", "GET"))
+                val p = runCatching { JSONArray(request("/rest/v1/profiles?id=eq.$uid&select=id,username,gender,avatar_url", "GET")) }.getOrElse { JSONArray(request("/rest/v1/profiles?id=eq.$uid&select=id,username,gender", "GET")) }
                 if (p.length() > 0) {
                     val u = p.getJSONObject(0)
-                    add(FriendUser(uid, u.optString("username"), u.optString("gender")))
+                    add(FriendUser(uid, u.optString("username"), u.optString("gender"), u.optString("avatar_url").takeUnless { it == "null" }.orEmpty()))
                 }
             }
         }
@@ -1090,7 +1090,16 @@ internal fun FriendsScreen() {
     }
 
     Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Text("Friends", style = MaterialTheme.typography.headlineMedium)
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Friends", style = MaterialTheme.typography.headlineMedium)
+            IconButton(onClick = { reload() }, enabled = !busy) {
+                Icon(Icons.Default.Refresh, contentDescription = "Refresh Friends")
+            }
+        }
         Text("Online people and accepted friends are shown here.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (online.isNotEmpty()) {
             Text("Online now", style = MaterialTheme.typography.titleMedium)
