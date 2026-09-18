@@ -172,7 +172,7 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
 
         val a = JSONArray(
             request(
-                "/rest/v1/messages?or=(sender_id.eq.$mine,receiver_id.eq.$mine)&select=id,sender_id,receiver_id,body,created_at,deleted_at&order=created_at.desc&limit=1000",
+                "/rest/v1/messages?or=(sender_id.eq.$mine,receiver_id.eq.$mine)&select=id,sender_id,receiver_id,body,created_at,read_at,deleted_at&order=created_at.desc&limit=1000",
                 "GET"
             )
         )
