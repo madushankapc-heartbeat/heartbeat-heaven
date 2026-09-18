@@ -70,8 +70,14 @@ internal fun AccountScreen(refreshTrigger: Int = 0) {
             profilePhotoBusy = true
             scope.launch {
                 val result = withContext(Dispatchers.IO) { ProfilePictureSupport.upload(context, uri, session!!) }
-                result.onSuccess { session = withContext(Dispatchers.IO) { api.refreshCurrentProfile() } ?: session; message = "Profile picture updated." }
-                    .onFailure { error = it.message ?: "Could not update profile picture." }
+                result.onSuccess { newUrl ->
+                        val current = session
+                        if (current != null) {
+                            api.cacheAvatarUrl(newUrl)
+                            session = current.copy(profile = current.profile.copy(avatarUrl = newUrl))
+                        }
+                        message = "Profile picture updated."
+                    }.onFailure { error = it.message ?: "Could not update profile picture." }
                 profilePhotoBusy = false
             }
         }
@@ -152,7 +158,14 @@ internal fun AccountScreen(refreshTrigger: Int = 0) {
                     Button(enabled = !profilePhotoBusy, onClick = { photoPicker.launch("image/*") }) { Text(if (profilePhotoBusy) "Uploading..." else "📷 Change photo") }
                     if (p.avatarUrl.isNotBlank()) {
                         Spacer(Modifier.width(8.dp))
-                        OutlinedButton(enabled = !profilePhotoBusy, onClick = { profilePhotoBusy = true; scope.launch { val result = withContext(Dispatchers.IO) { ProfilePictureSupport.remove(session!!) }; result.onSuccess { session = withContext(Dispatchers.IO) { api.refreshCurrentProfile() } ?: session; message = "Profile picture removed." }.onFailure { error = it.message ?: "Could not remove profile picture." }; profilePhotoBusy = false } }) { Text("Remove") }
+                        OutlinedButton(enabled = !profilePhotoBusy, onClick = { profilePhotoBusy = true; scope.launch { val result = withContext(Dispatchers.IO) { ProfilePictureSupport.remove(session!!) }; result.onSuccess {
+                            val current = session
+                            if (current != null) {
+                                api.cacheAvatarUrl("")
+                                session = current.copy(profile = current.profile.copy(avatarUrl = ""))
+                            }
+                            message = "Profile picture removed."
+                        }.onFailure { error = it.message ?: "Could not remove profile picture." }; profilePhotoBusy = false } }) { Text("Remove") }
                     }
                 }
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Column(Modifier.weight(1f)) { Text(p.username, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); Text(if (p.bio.isBlank()) "Add a short bio" else p.bio, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3) }; IconButton(onClick = { bioInput = p.bio; visibilityInput = p.lastSeenVisibility; showEditProfile = true }) { Icon(Icons.Default.Edit, "Edit profile") } }
