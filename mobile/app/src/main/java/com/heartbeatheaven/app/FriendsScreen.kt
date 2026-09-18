@@ -92,7 +92,7 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
     }
 
     suspend fun touchPresence() = withContext(Dispatchers.IO) {
-        request("/rest/v1/profiles?id=eq.${userId()}&select=id", "PATCH", JSONObject().put("last_seen_at", Instant.now().toString()).toString())
+        request("/rest/v1/public_profiles?id=eq.${userId()}&select=id", "PATCH", JSONObject().put("last_seen_at", Instant.now().toString()).toString())
     }
 
     suspend fun onlineUsers(): List<FriendUser> = withContext(Dispatchers.IO) {
@@ -108,7 +108,7 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
                 }
             }
         }.getOrDefault(emptySet())
-        val a = JSONArray(request("/rest/v1/profiles?last_seen_at=gte." + encoded + "&select=id,username,gender,avatar_url,last_seen_at,last_seen_visibility&limit=100", "GET"))
+        val a = JSONArray(request("/rest/v1/public_profiles?last_seen_at=gte." + encoded + "&select=id,username,gender,avatar_url,last_seen_at,last_seen_visibility&limit=100", "GET"))
         buildList {
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
@@ -122,7 +122,7 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
 
     suspend fun search(username: String): List<FriendUser> = withContext(Dispatchers.IO) {
         val q = URLEncoder.encode(username.trim(), "UTF-8")
-        val a = runCatching { JSONArray(request("/rest/v1/profiles?username=ilike.*$q*&select=id,username,gender,avatar_url&limit=20", "GET")) }.getOrElse { JSONArray(request("/rest/v1/profiles?username=ilike.*$q*&select=id,username,gender&limit=20", "GET")) }
+        val a = runCatching { JSONArray(request("/rest/v1/public_profiles?username=ilike.*$q*&select=id,username,gender,avatar_url&limit=20", "GET")) }.getOrElse { JSONArray(request("/rest/v1/public_profiles?username=ilike.*$q*&select=id,username,gender&limit=20", "GET")) }
         buildList {
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
@@ -146,7 +146,7 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
                 val o = a.getJSONObject(i)
                 val incoming = o.optString("addressee_id") == mine
                 val uid = if (incoming) o.optString("requester_id") else o.optString("addressee_id")
-                val p = runCatching { JSONArray(request("/rest/v1/profiles?id=eq.$uid&select=id,username,gender,avatar_url", "GET")) }.getOrElse { JSONArray(request("/rest/v1/profiles?id=eq.$uid&select=id,username,gender", "GET")) }
+                val p = runCatching { JSONArray(request("/rest/v1/public_profiles?id=eq.$uid&select=id,username,gender,avatar_url", "GET")) }.getOrElse { JSONArray(request("/rest/v1/public_profiles?id=eq.$uid&select=id,username,gender", "GET")) }
                 if (p.length() > 0) {
                     val u = p.getJSONObject(0)
                     add(FriendRequest(o.optString("id"), FriendUser(uid, u.optString("username"), u.optString("gender"), u.optString("avatar_url").takeUnless { it == "null" }.orEmpty()), incoming))
@@ -185,7 +185,7 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
                 val uid = if (o.optString("requester_id") == mine) o.optString("addressee_id") else o.optString("requester_id")
-                val p = runCatching { JSONArray(request("/rest/v1/profiles?id=eq." + uid + "&select=id,username,gender,avatar_url,last_seen_at,last_seen_visibility", "GET")) }.getOrElse { JSONArray(request("/rest/v1/profiles?id=eq." + uid + "&select=id,username,gender,avatar_url", "GET")) }
+                val p = runCatching { JSONArray(request("/rest/v1/public_profiles?id=eq." + uid + "&select=id,username,gender,avatar_url,last_seen_at,last_seen_visibility", "GET")) }.getOrElse { JSONArray(request("/rest/v1/public_profiles?id=eq." + uid + "&select=id,username,gender,avatar_url", "GET")) }
                 if (p.length() > 0) {
                     val u = p.getJSONObject(0)
                     add(FriendUser(uid, u.optString("username"), u.optString("gender"), u.optString("avatar_url").takeUnless { it == "null" }.orEmpty(), u.optString("last_seen_at").takeUnless { it == "null" }.orEmpty(), u.optString("last_seen_visibility").ifBlank { "everyone" }))
@@ -274,9 +274,9 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
 
     suspend fun profile(other: String): FriendProfile? = withContext(Dispatchers.IO) {
         val a = runCatching {
-            JSONArray(request("/rest/v1/profiles?id=eq." + other + "&select=id,username,gender,last_seen_at,last_seen_visibility,avatar_url&limit=1", "GET"))
+            JSONArray(request("/rest/v1/public_profiles?id=eq." + other + "&select=id,username,gender,last_seen_at,last_seen_visibility,avatar_url&limit=1", "GET"))
         }.getOrElse {
-            JSONArray(request("/rest/v1/profiles?id=eq." + other + "&select=id,username,gender,last_seen_at,avatar_url&limit=1", "GET"))
+            JSONArray(request("/rest/v1/public_profiles?id=eq." + other + "&select=id,username,gender,last_seen_at,avatar_url&limit=1", "GET"))
         }
         if (a.length() == 0) return@withContext null
         val o = a.getJSONObject(0)
@@ -891,11 +891,11 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             val everyone = mode == "everyone"
             AlertDialog(
                 onDismissRequest = { clearChatMode = null },
-                title = { Text(if (everyone) "Clear chat for everyone?" else "Clear chat?") },
+                title = { Text(if (everyone) "Clear my messages for everyone?" else "Clear chat?") },
                 text = {
                     Text(
                         if (everyone)
-                            "All messages in this chat will be removed for both people."
+                            "Your sent messages in this chat will be removed for both people."
                         else
                             "All messages in this chat will be cleared from your view."
                     )
@@ -914,7 +914,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                 initialMessagesLoaded = true
                                 showLatestButton = false
                                 chatSummaries = api.chatSummaries()
-                                statusMessage = if (everyone) "Chat cleared for everyone" else "Chat cleared"
+                                statusMessage = if (everyone) "Your messages were cleared for everyone" else "Chat cleared"
                             }.onFailure { statusMessage = it.message ?: "Chat could not be cleared." }
                         }
                     }) { Text("Clear") }
