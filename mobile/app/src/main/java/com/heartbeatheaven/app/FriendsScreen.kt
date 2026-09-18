@@ -1350,7 +1350,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                         }
                     }) { Icon(Icons.Default.Send, "Send") }
                 }
-            }            }
+            }
         }
         return
     }
