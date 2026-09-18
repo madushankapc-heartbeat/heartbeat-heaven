@@ -30,7 +30,8 @@ private const val FRIENDS_SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.
 private const val FRIENDS_KEY = "sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
 private data class FriendUser(val id: String, val username: String, val gender: String)
 private data class FriendRequest(val id: String, val user: FriendUser, val incoming: Boolean)
-private data class ChatMessage(val id: String, val senderId: String, val body: String, val createdAt: String, val deliveredAt: String = "", val readAt: String = "", val editedAt: String = "")
+private data class ChatMessage(val id: String, val senderId: String, val body: String, val createdAt: String, val deliveredAt: String = "", val readAt: String = "", val editedAt: String = "", val deletedAt: String = "", val replyToId: String = "")
+private data class MessageReaction(val messageId: String, val userId: String, val reaction: String)
 
 private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession) {
     private var session = initialSession
@@ -160,11 +161,30 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
 
     suspend fun messages(other: String): List<ChatMessage> = withContext(Dispatchers.IO) {
         val mine = userId()
-        val a = JSONArray(request("/rest/v1/messages?or=(and(sender_id.eq.$mine,receiver_id.eq.$other),and(sender_id.eq.$other,receiver_id.eq.$mine))&select=id,sender_id,body,created_at,delivered_at,read_at,edited_at&order=created_at.asc&limit=100", "GET"))
+        val a = JSONArray(request("/rest/v1/messages?or=(and(sender_id.eq.$mine,receiver_id.eq.$other),and(sender_id.eq.$other,receiver_id.eq.$mine))&select=id,sender_id,body,created_at,delivered_at,read_at,edited_at,deleted_at,reply_to_id&order=created_at.asc&limit=100", "GET"))
+        val hidden = runCatching {
+            val d = JSONArray(request("/rest/v1/message_deletions?user_id=eq.$mine&select=message_id&limit=200", "GET"))
+            buildSet { for (i in 0 until d.length()) add(d.getJSONObject(i).optString("message_id")) }
+        }.getOrDefault(emptySet())
         buildList {
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
-                add(ChatMessage(o.optString("id"), o.optString("sender_id"), o.optString("body"), o.optString("created_at"), o.optString("delivered_at").takeUnless { it == "null" }.orEmpty(), o.optString("read_at").takeUnless { it == "null" }.orEmpty(), o.optString("edited_at").takeUnless { it == "null" }.orEmpty()))
+                val id = o.optString("id")
+                if (id !in hidden) {
+                    add(
+                        ChatMessage(
+                            id,
+                            o.optString("sender_id"),
+                            o.optString("body"),
+                            o.optString("created_at"),
+                            o.optString("delivered_at").takeUnless { it == "null" }.orEmpty(),
+                            o.optString("read_at").takeUnless { it == "null" }.orEmpty(),
+                            o.optString("edited_at").takeUnless { it == "null" }.orEmpty(),
+                            o.optString("deleted_at").takeUnless { it == "null" }.orEmpty(),
+                            o.optString("reply_to_id").takeUnless { it == "null" }.orEmpty()
+                        )
+                    )
+                }
             }
         }
     }
@@ -177,17 +197,58 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
         request("/rest/v1/messages?sender_id=eq.$other&receiver_id=eq.${userId()}&read_at=is.null", "PATCH", JSONObject().put("read_at", Instant.now().toString()).toString())
     }
 
-    suspend fun sendMessage(other: String, body: String): ChatMessage? = withContext(Dispatchers.IO) {
+    suspend fun sendMessage(other: String, body: String, replyToId: String? = null): ChatMessage? = withContext(Dispatchers.IO) {
         val clean = body.trim()
         if (clean.isBlank()) return@withContext null
-        val response = request("/rest/v1/messages", "POST", JSONObject().put("sender_id", userId()).put("receiver_id", other).put("body", clean).toString())
+        val payload = JSONObject().put("sender_id", userId()).put("receiver_id", other).put("body", clean)
+        replyToId?.takeIf { it.isNotBlank() }?.let { payload.put("reply_to_id", it) }
+        val response = request("/rest/v1/messages", "POST", payload.toString())
         runCatching {
             val a = JSONArray(response)
             if (a.length() > 0) {
                 val o = a.getJSONObject(0)
-                ChatMessage(o.optString("id"), o.optString("sender_id"), o.optString("body"), o.optString("created_at"), o.optString("delivered_at").takeUnless { it == "null" }.orEmpty(), o.optString("read_at").takeUnless { it == "null" }.orEmpty(), o.optString("edited_at").takeUnless { it == "null" }.orEmpty())
+                ChatMessage(o.optString("id"), o.optString("sender_id"), o.optString("body"), o.optString("created_at"), o.optString("delivered_at").takeUnless { it == "null" }.orEmpty(), o.optString("read_at").takeUnless { it == "null" }.orEmpty(), o.optString("edited_at").takeUnless { it == "null" }.orEmpty(), o.optString("deleted_at").takeUnless { it == "null" }.orEmpty(), o.optString("reply_to_id").takeUnless { it == "null" }.orEmpty())
             } else null
         }.getOrNull()
+    }
+
+    suspend fun deleteForMe(messageId: String) = withContext(Dispatchers.IO) {
+        request("/rest/v1/rpc/delete_message_for_me", "POST", JSONObject().put("p_message_id", messageId).toString())
+    }
+
+    suspend fun deleteForEveryone(messageId: String): ChatMessage = withContext(Dispatchers.IO) {
+        val response = request("/rest/v1/rpc/delete_message_for_everyone", "POST", JSONObject().put("p_message_id", messageId).toString())
+        val o = JSONObject(response)
+        ChatMessage(
+            o.optString("id"),
+            o.optString("sender_id"),
+            o.optString("body"),
+            o.optString("created_at"),
+            o.optString("delivered_at").takeUnless { it == "null" }.orEmpty(),
+            o.optString("read_at").takeUnless { it == "null" }.orEmpty(),
+            o.optString("edited_at").takeUnless { it == "null" }.orEmpty(),
+            o.optString("deleted_at").takeUnless { it == "null" }.orEmpty(),
+            o.optString("reply_to_id").takeUnless { it == "null" }.orEmpty()
+        )
+    }
+
+    suspend fun reactions(other: String): List<MessageReaction> = withContext(Dispatchers.IO) {
+        val mine = userId()
+        val a = JSONArray(request("/rest/v1/message_reactions?select=message_id,user_id,reaction&message_id=in.(select=id%20from%20messages%20where%20or%3D(and(sender_id.eq.$mine,receiver_id.eq.$other),and(sender_id.eq.$other,receiver_id.eq.$mine)))&limit=500", "GET"))
+        buildList {
+            for (i in 0 until a.length()) {
+                val o = a.getJSONObject(i)
+                add(MessageReaction(o.optString("message_id"), o.optString("user_id"), o.optString("reaction")))
+            }
+        }
+    }
+
+    suspend fun setReaction(messageId: String, reaction: String) = withContext(Dispatchers.IO) {
+        request("/rest/v1/rpc/set_message_reaction", "POST", JSONObject().put("p_message_id", messageId).put("p_reaction", reaction).toString())
+    }
+
+    suspend fun removeReaction(messageId: String) = withContext(Dispatchers.IO) {
+        request("/rest/v1/rpc/remove_message_reaction", "POST", JSONObject().put("p_message_id", messageId).toString())
     }
 
     suspend fun editMessage(messageId: String, body: String): ChatMessage = withContext(Dispatchers.IO) {
@@ -196,9 +257,11 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
         if (clean.length > 4000) throw IllegalStateException("Message is too long")
         val response = request("/rest/v1/rpc/edit_my_message", "POST", JSONObject().put("p_message_id", messageId).put("p_body", clean).toString())
         val o = JSONObject(response)
-        ChatMessage(o.optString("id"), o.optString("sender_id"), o.optString("body"), o.optString("created_at"), o.optString("delivered_at").takeUnless { it == "null" }.orEmpty(), o.optString("read_at").takeUnless { it == "null" }.orEmpty(), o.optString("edited_at").takeUnless { it == "null" }.orEmpty())
+        ChatMessage(o.optString("id"), o.optString("sender_id"), o.optString("body"), o.optString("created_at"), o.optString("delivered_at").takeUnless { it == "null" }.orEmpty(), o.optString("read_at").takeUnless { it == "null" }.orEmpty(), o.optString("edited_at").takeUnless { it == "null" }.orEmpty(), o.optString("deleted_at").takeUnless { it == "null" }.orEmpty(), o.optString("reply_to_id").takeUnless { it == "null" }.orEmpty())
     }
 }
+
+private fun targetIsMine(message: ChatMessage?, userId: String): Boolean = message?.senderId == userId
 
 @Composable
 internal fun FriendsScreen() {
@@ -217,6 +280,10 @@ internal fun FriendsScreen() {
     var text by remember { mutableStateOf("") }
     var editingMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var editText by remember { mutableStateOf("") }
+    var selectedMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var replyingTo by remember { mutableStateOf<ChatMessage?>(null) }
+    var deleteTarget by remember { mutableStateOf<ChatMessage?>(null) }
+    var reactions by remember { mutableStateOf<List<MessageReaction>>(emptyList()) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
 
@@ -265,6 +332,8 @@ internal fun FriendsScreen() {
             runCatching {
                 a.markSeen(current.id)
                 val fresh = a.messages(current.id)
+                val freshReactions = runCatching { a.reactions(current.id) }.getOrDefault(emptyList())
+                reactions = freshReactions
                 fresh.filter { it.senderId == current.id && it.deliveredAt.isBlank() }.forEach { a.markDelivered(it.id) }
                 val updated = if (fresh.any { it.senderId == current.id && it.deliveredAt.isBlank() }) a.messages(current.id) else fresh
                 if (updated != messages) messages = updated
@@ -283,7 +352,7 @@ internal fun FriendsScreen() {
             ) { id, senderId, body, createdAt ->
                 scope.launch(Dispatchers.Main) {
                     if (selectedId != null && selected?.id == selectedId && senderId == selectedId && messages.none { it.id == id }) {
-                        messages = messages + ChatMessage(id, senderId, body, createdAt, Instant.now().toString(), "")
+                        messages = messages + ChatMessage(id, senderId, body, createdAt, Instant.now().toString(), "", "", "", "")
                         scope.launch(Dispatchers.IO) {
                             currentApi.markDelivered(id)
                             currentApi.markSeen(selectedId)
@@ -314,6 +383,9 @@ internal fun FriendsScreen() {
     if (selected != null) {
         val chat = selected!!
         val listState = rememberLazyListState()
+        val selectedForActions = selectedMessage
+        val replyTarget = replyingTo
+
         LaunchedEffect(messages.size) {
             if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
         }
@@ -325,21 +397,25 @@ internal fun FriendsScreen() {
                 text = {
                     OutlinedTextField(
                         value = editText,
-                        onValueChange = { if (it.length <= 4000) editText = it },
+                        onValueChange = { if (it.length <= 2000) editText = it },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = false,
                         maxLines = 6,
-                        supportingText = { Text("${editText.length}/4000") }
+                        supportingText = { Text("${editText.length}/2000") }
                     )
                 },
                 confirmButton = {
                     TextButton(enabled = editText.trim().isNotBlank(), onClick = {
                         val target = editingMessage ?: return@TextButton
                         val newBody = editText.trim()
-                        editingMessage = null
                         scope.launch {
                             runCatching { api.editMessage(target.id, newBody) }
-                                .onSuccess { updated -> messages = messages.map { if (it.id == updated.id) updated else it }; statusMessage = null }
+                                .onSuccess { updated ->
+                                    messages = messages.map { if (it.id == updated.id) updated else it }
+                                    editingMessage = null
+                                    selectedMessage = null
+                                    statusMessage = null
+                                }
                                 .onFailure { statusMessage = it.message ?: "Message could not be edited." }
                         }
                     }) { Text("Save") }
@@ -348,42 +424,195 @@ internal fun FriendsScreen() {
             )
         }
 
+        if (deleteTarget != null) {
+            AlertDialog(
+                onDismissRequest = { deleteTarget = null },
+                title = { Text("Delete message") },
+                text = { Text("Choose how you want to delete this message.") },
+                confirmButton = {
+                    Column(horizontalAlignment = Alignment.End) {
+                        TextButton(onClick = {
+                            val target = deleteTarget ?: return@TextButton
+                            deleteTarget = null
+                            selectedMessage = null
+                            scope.launch {
+                                runCatching {
+                                    api.deleteForMe(target.id)
+                                    messages = api.messages(chat.id)
+                                }.onFailure { statusMessage = it.message ?: "Message could not be deleted." }
+                            }
+                        }) { Text("Delete for me") }
+                        if (targetIsMine(deleteTarget, api.userId())) {
+                            TextButton(onClick = {
+                                val target = deleteTarget ?: return@TextButton
+                                deleteTarget = null
+                                selectedMessage = null
+                                scope.launch {
+                                    runCatching {
+                                        val updated = api.deleteForEveryone(target.id)
+                                        messages = messages.map { if (it.id == updated.id) updated else it }
+                                    }.onFailure { statusMessage = it.message ?: "Message could not be deleted for everyone." }
+                                }
+                            }) { Text("Delete for everyone") }
+                        }
+                    }
+                },
+                dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Cancel") } }
+            )
+        }
+
         Column(Modifier.fillMaxSize()) {
             Surface(shadowElevation = 2.dp) {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { selected = null; messages = emptyList(); text = "" }) { Icon(Icons.Default.ArrowBack, "Back") }
-                    Column(Modifier.weight(1f)) {
-                        Text(chat.username, style = MaterialTheme.typography.titleLarge)
-                        val isOnline = online.any { it.id == chat.id }
-                        Text(if (isOnline) "Online" else "Offline", style = MaterialTheme.typography.bodySmall, color = if (isOnline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                if (selectedForActions != null) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { selectedMessage = null }) { Icon(Icons.Default.Close, "Close selection") }
+                        Text("1", modifier = Modifier.width(20.dp), style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.width(2.dp))
+                        IconButton(onClick = {
+                            replyingTo = selectedForActions
+                            selectedMessage = null
+                            text = ""
+                        }) { Icon(Icons.Default.Reply, "Reply") }
+                        IconButton(onClick = { deleteTarget = selectedForActions }) { Icon(Icons.Default.Delete, "Delete") }
+                        IconButton(onClick = {
+                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Message", selectedForActions.body))
+                            selectedMessage = null
+                            statusMessage = "Copied"
+                        }) { Icon(Icons.Default.ContentCopy, "Copy") }
+                        if (selectedForActions.senderId == api.userId() && selectedForActions.deletedAt.isBlank()) {
+                            IconButton(onClick = {
+                                editingMessage = selectedForActions
+                                editText = selectedForActions.body
+                                selectedMessage = null
+                            }) { Icon(Icons.Default.Edit, "Edit") }
+                        }
                     }
-                    Icon(Icons.Default.Person, "Profile", Modifier.padding(end = 8.dp))
+                } else {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { selected = null; messages = emptyList(); text = ""; replyingTo = null }) { Icon(Icons.Default.ArrowBack, "Back") }
+                        Column(Modifier.weight(1f)) {
+                            Text(chat.username, style = MaterialTheme.typography.titleLarge)
+                            val isOnline = online.any { it.id == chat.id }
+                            Text(if (isOnline) "Online" else "Offline", style = MaterialTheme.typography.bodySmall, color = if (isOnline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Icon(Icons.Default.Person, "Profile", Modifier.padding(end = 8.dp))
+                    }
                 }
             }
 
-            LazyColumn(state = listState, modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            if (selectedForActions != null) {
+                Surface(
+                    tonalElevation = 3.dp,
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        listOf("👍", "❤️", "😂", "😮", "😢", "😡").forEach { emoji ->
+                            TextButton(onClick = {
+                                scope.launch {
+                                    runCatching {
+                                        val mineReaction = reactions.firstOrNull { it.messageId == selectedForActions.id && it.userId == api.userId() }
+                                        if (mineReaction?.reaction == emoji) api.removeReaction(selectedForActions.id)
+                                        else api.setReaction(selectedForActions.id, emoji)
+                                        reactions = api.reactions(chat.id)
+                                    }.onFailure { statusMessage = it.message ?: "Reaction failed." }
+                                }
+                            }) { Text(emoji, style = MaterialTheme.typography.titleLarge) }
+                        }
+                    }
+                }
+            }
+
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(5.dp)
+            ) {
                 items(messages, key = { it.id }) { m ->
                     val mine = m.senderId == api.userId()
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
+                    val isSelected = selectedForActions?.id == m.id
+                    val reacted = reactions.filter { it.messageId == m.id }
+                    val myReaction = reacted.firstOrNull { it.userId == api.userId() }
+                    val replyPreview = m.replyToId.takeIf { it.isNotBlank() }?.let { rid -> messages.firstOrNull { it.id == rid } }
+
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start
+                    ) {
                         Column(horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
                             Surface(
                                 color = if (mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                                 shape = RoundedCornerShape(18.dp),
-                                modifier = if (mine && !m.id.startsWith("local-")) Modifier.combinedClickable(
-                                    onClick = {},
-                                    onLongClick = { editingMessage = m; editText = m.body }
-                                ) else Modifier
+                                modifier = Modifier.combinedClickable(
+                                    onClick = { if (selectedForActions != null) selectedMessage = if (isSelected) null else m },
+                                    onLongClick = { selectedMessage = m }
+                                )
                             ) {
-                                Text(m.body, Modifier.padding(horizontal = 14.dp, vertical = 9.dp), color = MaterialTheme.colorScheme.onSurface)
+                                Column(Modifier.padding(horizontal = 14.dp, vertical = 9.dp)) {
+                                    replyPreview?.let { quoted ->
+                                        Surface(
+                                            tonalElevation = 2.dp,
+                                            shape = RoundedCornerShape(10.dp),
+                                            modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp)
+                                        ) {
+                                            Text(
+                                                "↩ ${quoted.body}",
+                                                maxLines = 2,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                                style = MaterialTheme.typography.labelMedium,
+                                                modifier = Modifier.padding(6.dp)
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        if (m.deletedAt.isNotBlank()) "This message was deleted" else m.body,
+                                        Modifier.padding(top = if (replyPreview != null) 1.dp else 0.dp),
+                                        color = if (m.deletedAt.isNotBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+                                    )
+                                    myReaction?.let { Text(it.reaction, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 2.dp)) }
+                                    if (reacted.isNotEmpty() && myReaction == null) {
+                                        Text(reacted.first().reaction, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 2.dp))
+                                    }
+                                }
                             }
                             val delivery = if (mine) when {
                                 m.readAt.isNotBlank() -> "✓✓ Seen"
                                 m.deliveredAt.isNotBlank() -> "✓✓ Delivered"
                                 else -> "✓ Sent"
                             } else ""
-                            val editedLabel = if (m.editedAt.isNotBlank()) "  • edited" else ""
-                            Text(if (mine) "You  ${ChatTimeFormatter.time(m.createdAt)}  $delivery$editedLabel" else "${chat.username}  ${ChatTimeFormatter.time(m.createdAt)}", style = MaterialTheme.typography.labelSmall, color = if (mine && m.readAt.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp))
+                            val stateLabel = when {
+                                m.deletedAt.isNotBlank() -> "  • deleted"
+                                m.editedAt.isNotBlank() -> "  • edited"
+                                else -> ""
+                            }
+                            Text(
+                                if (mine) "You  ${ChatTimeFormatter.time(m.createdAt)}  $delivery$stateLabel"
+                                else "${chat.username}  ${ChatTimeFormatter.time(m.createdAt)}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (mine && m.readAt.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
+                            )
                         }
+                    }
+                }
+            }
+
+            replyTarget?.let { target ->
+                Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Replying to", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            Text(target.body, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        }
+                        IconButton(onClick = { replyingTo = null }) { Icon(Icons.Default.Close, "Cancel reply") }
                     }
                 }
             }
@@ -391,18 +620,27 @@ internal fun FriendsScreen() {
             statusMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) }
             Surface(tonalElevation = 2.dp) {
                 Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom) {
-                    OutlinedTextField(value = text, onValueChange = { text = it; statusMessage = null }, modifier = Modifier.weight(1f), placeholder = { Text("Message") }, maxLines = 4)
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it; statusMessage = null },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("Message") },
+                        maxLines = 4
+                    )
                     Spacer(Modifier.width(6.dp))
                     IconButton(enabled = text.isNotBlank(), onClick = {
                         val outgoing = text.trim()
+                        val replyId = replyingTo?.id
                         text = ""
+                        replyingTo = null
                         statusMessage = null
                         val optimistic = ChatMessage("local-${System.nanoTime()}", api.userId(), outgoing, "")
                         messages = messages + optimistic
                         scope.launch {
                             runCatching {
-                                api.sendMessage(chat.id, outgoing)
+                                api.sendMessage(chat.id, outgoing, replyId)
                                 messages = api.messages(chat.id)
+                                reactions = api.reactions(chat.id)
                             }.onFailure {
                                 messages = messages.filterNot { it.id == optimistic.id }
                                 statusMessage = it.message ?: "Message could not be sent."
