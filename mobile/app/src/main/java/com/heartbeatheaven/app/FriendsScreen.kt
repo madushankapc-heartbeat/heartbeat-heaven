@@ -438,6 +438,7 @@ internal fun FriendsScreen() {
     var hasOlderMessages by remember { mutableStateOf(false) }
     var loadingOlderMessages by remember { mutableStateOf(false) }
     var searchResults by remember { mutableStateOf<List<ChatMessage>?>(null) }
+    var initialMessagesLoaded by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         session = withContext(Dispatchers.IO) { auth.currentSession() }
@@ -486,11 +487,13 @@ internal fun FriendsScreen() {
         messages = emptyList()
         searchResults = null
         hasOlderMessages = false
+        initialMessagesLoaded = false
         runCatching {
             a.markSeen(current.id)
             val page = a.messagesPage(current.id)
             messages = page.first
             hasOlderMessages = page.second
+            initialMessagesLoaded = true
             reactions = runCatching { a.reactions(current.id) }.getOrDefault(emptyList())
         }.onFailure { statusMessage = it.message ?: "Could not load messages." }
         while (true) {
@@ -601,10 +604,8 @@ internal fun FriendsScreen() {
             }
         }
 
-        LaunchedEffect(chat.id) {
-            snapshotFlow { messages.size }.collectLatest {
-                if (messages.isNotEmpty() && chatSearch.isBlank() && !loadingOlderMessages) listState.scrollToItem(messages.lastIndex)
-            }
+        LaunchedEffect(initialMessagesLoaded, chat.id) {
+            if (initialMessagesLoaded && messages.isNotEmpty()) listState.scrollToItem(messages.lastIndex)
         }
 
         LaunchedEffect(chat.id) {
