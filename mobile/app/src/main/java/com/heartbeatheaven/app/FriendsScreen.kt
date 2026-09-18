@@ -833,7 +833,12 @@ internal fun FriendsScreen() {
                         if (chat.avatarUrl.isNotBlank()) AsyncImage(model = chat.avatarUrl, contentDescription = "Profile picture", modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
                         else Surface(modifier = Modifier.size(44.dp).clip(CircleShape), tonalElevation = 2.dp) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Person, "Profile picture") } }
                         Column(Modifier.weight(1f).padding(start = 8.dp)) {
-                            Text(chat.username, style = MaterialTheme.typography.titleLarge)
+                            Text(
+                                chat.username,
+                                style = MaterialTheme.typography.titleLarge,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
                             val isOnline = online.any { it.id == chat.id }
                             val seen = chatProfile?.lastSeenAt.orEmpty()
                             Text(
