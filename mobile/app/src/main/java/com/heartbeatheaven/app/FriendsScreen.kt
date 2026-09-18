@@ -46,6 +46,7 @@ private data class FriendRequest(val id: String, val user: FriendUser, val incom
 private data class ChatSummary(val user: FriendUser, val lastMessage: String, val lastMessageAt: String, val unreadCount: Int, val pinned: Boolean)
 private data class ChatMessage(val id: String, val senderId: String, val body: String, val createdAt: String, val deliveredAt: String = "", val readAt: String = "", val editedAt: String = "", val deletedAt: String = "", val replyToId: String = "", val messageType: String = "text", val mediaUrl: String = "", val mediaName: String = "", val mediaSize: Long = 0L)
 private data class MessageReaction(val messageId: String, val userId: String, val reaction: String)
+private data class PendingChatAttachment(val uri: Uri, val name: String, val mime: String, val size: Long)
 
 private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession) {
     private var session = initialSession
@@ -492,10 +493,10 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
     var searchResults by remember { mutableStateOf<List<ChatMessage>?>(null) }
     var initialMessagesLoaded by remember { mutableStateOf(false) }
     var mediaBusy by remember { mutableStateOf(false) }
+    var mediaProgress by remember { mutableStateOf(0) }
+    var mediaProgressLabel by remember { mutableStateOf("") }
+    var pendingMediaItems by remember { mutableStateOf<List<PendingChatAttachment>>(emptyList()) }
     var showLatestButton by remember { mutableStateOf(false) }
-    var pendingMediaUri by remember { mutableStateOf<Uri?>(null) }
-    var pendingMediaName by remember { mutableStateOf("") }
-    var pendingMediaMime by remember { mutableStateOf("") }
     var fullScreenImage by remember { mutableStateOf<ChatMessage?>(null) }
     var saveTarget by remember { mutableStateOf<ChatMessage?>(null) }
 
@@ -511,15 +512,22 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             (message.contains("row-level security policy") && message.contains("messages"))
     }
 
-    val mediaPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        val current = selected
-        if (uri != null && current != null && !chatBlocked) {
-            pendingMediaUri = uri
-            pendingMediaName = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) cursor.getString(cursor.getColumnIndexOrThrow(android.provider.OpenableColumns.DISPLAY_NAME)) else null
-            } ?: "attachment"
-            pendingMediaMime = context.contentResolver.getType(uri).orEmpty()
+    fun readPendingAttachment(uri: Uri): PendingChatAttachment {
+        val name = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(cursor.getColumnIndexOrThrow(android.provider.OpenableColumns.DISPLAY_NAME)) else null
+        } ?: "attachment"
+        val size = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getLong(cursor.getColumnIndexOrThrow(android.provider.OpenableColumns.SIZE)) else -1L
+        } ?: -1L
+        return PendingChatAttachment(uri, name, context.contentResolver.getType(uri).orEmpty(), size)
+    }
+
+    val mediaPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isNotEmpty() && selected != null && !chatBlocked) {
+            pendingMediaItems = uris.map { readPendingAttachment(it) }
             statusMessage = null
+            mediaProgress = 0
+            mediaProgressLabel = ""
         }
     }
 
@@ -574,9 +582,9 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
         val a = api ?: return@LaunchedEffect
         messages = emptyList()
         searchResults = null
-        pendingMediaUri = null
-        pendingMediaName = ""
-        pendingMediaMime = ""
+        pendingMediaItems = emptyList()
+        mediaProgress = 0
+        mediaProgressLabel = ""
         fullScreenImage = null
         hasOlderMessages = false
         initialMessagesLoaded = false
@@ -950,7 +958,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                     }
                 } else {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { selected = null; messages = emptyList(); text = ""; replyingTo = null; pendingMediaUri = null; pendingMediaName = ""; pendingMediaMime = ""; fullScreenImage = null; chatSearch = ""; showChatSearch = false }) { Icon(Icons.Default.ArrowBack, "Back") }
+                        IconButton(onClick = { selected = null; messages = emptyList(); text = ""; replyingTo = null; pendingMediaItems = emptyList(); mediaProgress = 0; mediaProgressLabel = ""; fullScreenImage = null; chatSearch = ""; showChatSearch = false }) { Icon(Icons.Default.ArrowBack, "Back") }
                         if (chat.avatarUrl.isNotBlank()) AsyncImage(model = chat.avatarUrl, contentDescription = "Profile picture", modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
                         else Surface(modifier = Modifier.size(44.dp).clip(CircleShape), tonalElevation = 2.dp) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Person, "Profile picture") } }
                         Column(Modifier.weight(1f).padding(start = 8.dp)) {
@@ -1294,21 +1302,37 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
 
             statusMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) }
             if (otherTyping) Text("Typing…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp))
-            pendingMediaUri?.let { uri ->
+            if (pendingMediaItems.isNotEmpty()) {
                 Surface(tonalElevation = 3.dp, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
-                    Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        if (pendingMediaMime.startsWith("image/")) {
-                            AsyncImage(model = uri, contentDescription = "Selected image", modifier = Modifier.size(64.dp).clip(RoundedCornerShape(8.dp)), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
-                        } else {
-                            Icon(Icons.Default.AttachFile, "Attachment", Modifier.size(40.dp))
+                    Column(Modifier.fillMaxWidth().padding(8.dp)) {
+                        Text(
+                            if (mediaBusy) "Sending ${pendingMediaItems.size} file(s) • ${mediaProgress}%"
+                            else "${pendingMediaItems.size} file(s) ready to send",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        pendingMediaItems.forEachIndexed { index, item ->
+                            Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                if (item.mime.startsWith("image/")) {
+                                    AsyncImage(model = item.uri, contentDescription = "Selected image", modifier = Modifier.size(52.dp).clip(RoundedCornerShape(8.dp)), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                                } else {
+                                    Icon(Icons.Default.AttachFile, "Attachment", Modifier.size(36.dp))
+                                }
+                                Text(item.name, modifier = Modifier.weight(1f).padding(horizontal = 10.dp), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                if (!mediaBusy) {
+                                    IconButton(onClick = {
+                                        pendingMediaItems = pendingMediaItems.filterIndexed { i, _ -> i != index }
+                                    }) { Icon(Icons.Default.Close, "Remove attachment") }
+                                }
+                            }
                         }
-                        Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
-                            Text("Ready to send", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-                            Text(pendingMediaName, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        if (mediaBusy) {
+                            Spacer(Modifier.height(6.dp))
+                            LinearProgressIndicator(progress = mediaProgress / 100f, modifier = Modifier.fillMaxWidth())
+                            if (mediaProgressLabel.isNotBlank()) {
+                                Text(mediaProgressLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
-                        IconButton(enabled = !mediaBusy, onClick = {
-                            pendingMediaUri = null; pendingMediaName = ""; pendingMediaMime = ""
-                        }) { Icon(Icons.Default.Close, "Remove attachment") }
                     }
                 }
             }
@@ -1316,35 +1340,67 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                 if (chatBlocked) {
                     Text("You blocked this user. Unblock from the profile to send messages.", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth().padding(14.dp))
                 } else Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom) {
-                    OutlinedTextField(value = text, onValueChange = { text = it; statusMessage = null }, modifier = Modifier.weight(1f), placeholder = { Text(if (pendingMediaUri != null) "Add a caption (optional)" else "Message") }, maxLines = 4)
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it; statusMessage = null },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text(if (pendingMediaItems.isNotEmpty()) "Add a caption (optional)" else "Message") },
+                        maxLines = 4
+                    )
                     Spacer(Modifier.width(2.dp))
-                    IconButton(enabled = !mediaBusy, onClick = { mediaPicker.launch("*/*") }) {
-                        Icon(Icons.Default.AttachFile, if (mediaBusy) "Choose attachment" else "Attach file")
+                    IconButton(enabled = !mediaBusy, onClick = { mediaPicker.launch(arrayOf("*/*")) }) {
+                        Icon(Icons.Default.AttachFile, if (mediaBusy) "Sending attachment" else "Attach files")
                     }
-                    IconButton(enabled = !mediaBusy && (text.isNotBlank() || pendingMediaUri != null), onClick = {
-                        val pendingUri = pendingMediaUri
+                    IconButton(enabled = !mediaBusy && (text.isNotBlank() || pendingMediaItems.isNotEmpty()), onClick = {
+                        val pendingItems = pendingMediaItems
                         val outgoing = text.trim()
                         val replyId = replyingTo?.id
                         statusMessage = null
                         scope.launch {
-                            if (pendingUri != null) {
+                            if (pendingItems.isNotEmpty()) {
                                 mediaBusy = true
-                                val result = withContext(Dispatchers.IO) { ChatMediaSupport.upload(context, pendingUri, session!!, chat.id) }
-                                result.onSuccess { media ->
-                                    runCatching {
-                                        api.sendMediaMessage(chat.id, media, outgoing)
-                                        messages = api.messages(chat.id)
-                                        reactions = api.reactions(chat.id)
-                                        chatSummaries = api.chatSummaries()
-                                        text = ""; replyingTo = null; pendingMediaUri = null; pendingMediaName = ""; pendingMediaMime = ""
-                                        statusMessage = "Attachment sent."
-                                    }.onFailure { error ->
-                                    statusMessage = if (isBlockedSendError(error)) null else (error.message ?: "Could not send attachment.")
+                                mediaProgress = 0
+                                mediaProgressLabel = "Preparing ${pendingItems.size} file(s)…"
+                                var sentCount = 0
+                                try {
+                                    for ((index, item) in pendingItems.withIndex()) {
+                                        mediaProgressLabel = "Uploading ${index + 1}/${pendingItems.size}: ${item.name}"
+                                        val result = withContext(Dispatchers.IO) {
+                                            ChatMediaSupport.upload(
+                                                context,
+                                                item.uri,
+                                                session!!,
+                                                chat.id
+                                            ) { sentBytes, totalBytes ->
+                                                if (totalBytes > 0L) {
+                                                    val fileFraction = sentBytes.toDouble() / totalBytes.toDouble()
+                                                    mediaProgress = (((index + fileFraction) / pendingItems.size) * 100.0).toInt().coerceIn(0, 99)
+                                                }
+                                            }
+                                        }
+                                        val media = result.getOrElse { throw it }
+                                        api.sendMediaMessage(chat.id, media, if (index == 0) outgoing else "")
+                                        sentCount++
+                                        mediaProgress = ((sentCount.toDouble() / pendingItems.size) * 100.0).toInt().coerceIn(0, 100)
+                                    }
+                                    messages = api.messages(chat.id)
+                                    reactions = api.reactions(chat.id)
+                                    chatSummaries = api.chatSummaries()
+                                    text = ""
+                                    replyingTo = null
+                                    pendingMediaItems = emptyList()
+                                    mediaProgress = 100
+                                    mediaProgressLabel = "${sentCount} file(s) sent"
+                                    statusMessage = "Attachment(s) sent."
+                                } catch (error: Throwable) {
+                                    statusMessage = if (isBlockedSendError(error)) null else (error.message ?: "Could not send attachment(s).")
+                                } finally {
+                                    mediaBusy = false
+                                    if (pendingMediaItems.isEmpty()) {
+                                        mediaProgress = 0
+                                        mediaProgressLabel = ""
+                                    }
                                 }
-                                }.onFailure { error ->
-                                    statusMessage = if (isBlockedSendError(error)) null else (error.message ?: "Could not upload attachment.")
-                                }
-                                mediaBusy = false
                             } else {
                                 text = ""; replyingTo = null
                                 val optimistic = ChatMessage("local-${System.nanoTime()}", api.userId(), outgoing, "")
@@ -1362,6 +1418,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                         }
                     }) { Icon(Icons.Default.Send, "Send") }
                 }
+
             }
         }
         return
