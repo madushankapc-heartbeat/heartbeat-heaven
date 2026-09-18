@@ -325,7 +325,13 @@ class CallActivity : Activity() {
     override fun onDestroy() {
         if (running) {
             running = false
-            runCatching { call?.id?.let { callApi.updateStatus(it, if (isCaller) "cancelled" else "ended") } }
+            val id = call?.id
+            if (!id.isNullOrBlank()) {
+                val statusValue = if (isCaller) "cancelled" else "ended"
+                Thread {
+                    runCatching { callApi.updateStatusBlocking(id, statusValue) }
+                }.start()
+            }
         }
         cleanup()
         super.onDestroy()
