@@ -66,14 +66,20 @@ internal fun AccountScreen() {
             profilePhotoBusy = true
             scope.launch {
                 val result = withContext(Dispatchers.IO) { ProfilePictureSupport.upload(context, uri, session!!) }
-                result.onSuccess { session = api.currentSession(); message = "Profile picture updated." }
+                result.onSuccess { session = withContext(Dispatchers.IO) { api.refreshCurrentProfile() } ?: session; message = "Profile picture updated." }
                     .onFailure { error = it.message ?: "Could not update profile picture." }
                 profilePhotoBusy = false
             }
         }
     }
 
-    LaunchedEffect(Unit) { session = withContext(Dispatchers.IO) { api.currentSession() }; loading = false }
+    LaunchedEffect(Unit) {
+        session = withContext(Dispatchers.IO) { api.currentSession() }
+        if (session != null) {
+            session = withContext(Dispatchers.IO) { api.refreshCurrentProfile() } ?: session
+        }
+        loading = false
+    }
     if (loading) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }; return }
 
     if (showSignupChoice) {
@@ -111,7 +117,7 @@ internal fun AccountScreen() {
                     Button(enabled = !profilePhotoBusy, onClick = { photoPicker.launch("image/*") }) { Text(if (profilePhotoBusy) "Uploading..." else "📷 Change photo") }
                     if (p.avatarUrl.isNotBlank()) {
                         Spacer(Modifier.width(8.dp))
-                        OutlinedButton(enabled = !profilePhotoBusy, onClick = { profilePhotoBusy = true; scope.launch { val result = withContext(Dispatchers.IO) { ProfilePictureSupport.remove(session!!) }; result.onSuccess { session = api.currentSession(); message = "Profile picture removed." }.onFailure { error = it.message ?: "Could not remove profile picture." }; profilePhotoBusy = false } }) { Text("Remove") }
+                        OutlinedButton(enabled = !profilePhotoBusy, onClick = { profilePhotoBusy = true; scope.launch { val result = withContext(Dispatchers.IO) { ProfilePictureSupport.remove(session!!) }; result.onSuccess { session = withContext(Dispatchers.IO) { api.refreshCurrentProfile() } ?: session; message = "Profile picture removed." }.onFailure { error = it.message ?: "Could not remove profile picture." }; profilePhotoBusy = false } }) { Text("Remove") }
                     }
                 }
                 Text(p.username, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
