@@ -24,7 +24,10 @@ internal data class AccountProfile(
     val phone: String?,
     val age: Int?,
     val isAdmin: Boolean = false,
-    val avatarUrl: String = ""
+    val avatarUrl: String = "",
+    val bio: String = "",
+    val lastSeenAt: String? = null,
+    val lastSeenVisibility: String = "everyone"
 )
 internal data class AuthSession(val accessToken: String, val refreshToken: String, val profile: AccountProfile)
 
@@ -41,7 +44,7 @@ internal class AuthApi(context: Context) {
         val userId = prefs.getString("user_id", null) ?: return null
         val cachedUsername = prefs.getString("profile_username", null)
         val cached = if (!cachedUsername.isNullOrBlank()) {
-            AuthSession(access, refresh, AccountProfile(userId, cachedUsername, prefs.getString("profile_gender", "male").orEmpty().ifBlank { "male" }, prefs.getString("profile_email", null), prefs.getString("profile_phone", null), prefs.getInt("profile_age", -1).takeIf { it > 0 }, prefs.getBoolean("profile_admin", false), prefs.getString("profile_avatar_url", "").orEmpty()))
+            AuthSession(access, refresh, AccountProfile(userId, cachedUsername, prefs.getString("profile_gender", "male").orEmpty().ifBlank { "male" }, prefs.getString("profile_email", null), prefs.getString("profile_phone", null), prefs.getInt("profile_age", -1).takeIf { it > 0 }, prefs.getBoolean("profile_admin", false), prefs.getString("profile_avatar_url", "").orEmpty(), prefs.getString("profile_bio", "").orEmpty(), prefs.getString("profile_last_seen_at", null), prefs.getString("profile_last_seen_visibility", "everyone").orEmpty().ifBlank { "everyone" }))
         } else null
         if (refresh.isNotBlank() && isExpiredOrNearExpiry(access)) return runCatching { refreshSession(refresh) }.getOrElse { cached ?: run { clear(); null } }
         if (cached != null) return cached
@@ -136,6 +139,20 @@ internal class AuthApi(context: Context) {
     private fun normalizePhone(value: String): String { val raw = value.trim().replace(" ", "").replace("-", "").replace("(", "").replace(")", ""); if (raw.startsWith("+")) return "+" + raw.drop(1).filter { it.isDigit() }; val digits = raw.filter { it.isDigit() }; return when { digits.startsWith("0") && digits.length >= 9 -> "+94" + digits.drop(1); digits.startsWith("94") && digits.length >= 10 -> "+$digits"; digits.length >= 8 -> "+$digits"; else -> "" } }
 
     fun requestPasswordReset(email: String): Result<String> = try { request("/auth/v1/recover?redirect_to=${encode(PASSWORD_RESET_REDIRECT_URL)}", "POST", JSONObject().put("email", email.trim()).toString(), "application/json"); Result.success("If an account exists for this email, a password reset link has been sent.") } catch (e: Exception) { Result.failure(e) }
+    fun updateProfile(accessToken: String, bio: String, lastSeenVisibility: String): Result<String> = try {
+        val body = JSONObject().put("bio", bio.trim().take(160)).put("last_seen_visibility", lastSeenVisibility)
+        request("/rest/v1/profiles?id=eq." + encode(prefs.getString("user_id", "")!!), "PATCH", body.toString(), "application/json", accessToken)
+        prefs.edit().putString("profile_bio", bio.trim().take(160)).putString("profile_last_seen_visibility", lastSeenVisibility).apply()
+        Result.success("Profile updated successfully.")
+    } catch (e: Exception) { Result.failure(e) }
+
+    fun touchLastSeen(accessToken: String): Result<Unit> = try {
+        val now = java.time.Instant.now().toString()
+        request("/rest/v1/profiles?id=eq." + encode(prefs.getString("user_id", "")!!), "PATCH", JSONObject().put("last_seen_at", now).toString(), "application/json", accessToken)
+        prefs.edit().putString("profile_last_seen_at", now).apply()
+        Result.success(Unit)
+    } catch (e: Exception) { Result.failure(e) }
+
     fun updatePassword(accessToken: String, newPassword: String): Result<String> = try { request("/auth/v1/user", "PUT", JSONObject().put("password", newPassword).toString(), "application/json", accessToken); Result.success("Password updated successfully.") } catch (e: Exception) { Result.failure(e) }
     fun deleteMyAccount(accessToken: String): Result<String> = try { request(DELETE_MY_ACCOUNT_FUNCTION, "POST", "{}", "application/json", accessToken); clear(); Result.success("Your account has been permanently deleted.") } catch (e: Exception) { Result.failure(e) }
     fun signOut() { prefs.getString("access_token", null)?.let { runCatching { request("/auth/v1/logout", "POST", "{}", "application/json", it) } }; clear() }
@@ -158,7 +175,7 @@ internal class AuthApi(context: Context) {
     private fun requestUser(accessToken: String) = JSONObject(request("/auth/v1/user", "GET", null, null, accessToken).body)
     private fun fetchProfile(accessToken: String, userId: String, user: JSONObject): AccountProfile {
         val a = try {
-            org.json.JSONArray(request("/rest/v1/profiles?id=eq.${encode(userId)}&select=id,username,gender,age,phone,avatar_url", "GET", null, null, accessToken).body)
+            org.json.JSONArray(request("/rest/v1/profiles?id=eq.${encode(userId)}&select=id,username,gender,age,phone,avatar_url,bio,last_seen_at,last_seen_visibility", "GET", null, null, accessToken).body)
         } catch (_: Exception) {
             org.json.JSONArray(request("/rest/v1/profiles?id=eq.${encode(userId)}&select=id,username,gender,age,phone", "GET", null, null, accessToken).body)
         }
@@ -168,9 +185,9 @@ internal class AuthApi(context: Context) {
         val phone = row.optString("phone").takeIf { it.isNotBlank() } ?: user.optString("phone").takeIf { it.isNotBlank() } ?: metadata?.optString("phone")?.takeIf { !it.isNullOrBlank() }
         val age = row.optInt("age", 0).takeIf { it > 0 }
         val isAdmin = request("/rest/v1/rpc/is_admin", "POST", "{}", "application/json", accessToken).body.trim().equals("true", ignoreCase = true)
-        return AccountProfile(row.optString("id", userId), row.optString("username", "User"), row.optString("gender", "male"), user.optString("email").takeIf { it.isNotBlank() }, phone, age, isAdmin, row.optString("avatar_url").takeUnless { it == "null" }.orEmpty())
+        return AccountProfile(row.optString("id", userId), row.optString("username", "User"), row.optString("gender", "male"), user.optString("email").takeIf { it.isNotBlank() }, phone, age, isAdmin, row.optString("avatar_url").takeUnless { it == "null" }.orEmpty(), row.optString("bio").takeUnless { it == "null" }.orEmpty(), row.optString("last_seen_at").takeUnless { it == "null" || it.isBlank() }, row.optString("last_seen_visibility").ifBlank { "everyone" })
     }    private fun saveTokens(access: String, refresh: String, userId: String) { prefs.edit().putString("access_token", access).putString("refresh_token", refresh).putString("user_id", userId).apply() }
-    private fun saveProfile(p: AccountProfile) { prefs.edit().putString("profile_username", p.username).putString("profile_gender", p.gender).putBoolean("profile_admin", p.isAdmin).putString("profile_avatar_url", p.avatarUrl).apply { if (p.email != null) putString("profile_email", p.email) else remove("profile_email"); if (p.phone != null) putString("profile_phone", p.phone) else remove("profile_phone"); if (p.age != null) putInt("profile_age", p.age) else remove("profile_age") }.apply() }
+    private fun saveProfile(p: AccountProfile) { prefs.edit().putString("profile_username", p.username).putString("profile_gender", p.gender).putBoolean("profile_admin", p.isAdmin).putString("profile_avatar_url", p.avatarUrl).putString("profile_bio", p.bio).putString("profile_last_seen_visibility", p.lastSeenVisibility).putString("profile_last_seen_at", p.lastSeenAt).apply { if (p.email != null) putString("profile_email", p.email) else remove("profile_email"); if (p.phone != null) putString("profile_phone", p.phone) else remove("profile_phone"); if (p.age != null) putInt("profile_age", p.age) else remove("profile_age") }.apply() }
     private fun clear() { prefs.edit().clear().apply() }
     private fun encode(v: String) = URLEncoder.encode(v, Charsets.UTF_8.name())
     private data class Response(val code: Int, val body: String)
