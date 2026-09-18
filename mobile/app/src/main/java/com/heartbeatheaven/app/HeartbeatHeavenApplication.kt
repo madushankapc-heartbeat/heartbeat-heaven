@@ -136,6 +136,28 @@ internal object GlobalChatManager {
         }
     }
 
+    private fun notificationsSuppressed(accessToken: String, userId: String, senderId: String): Boolean {
+        fun exists(path: String): Boolean = runCatching {
+            val c = URL(SUPABASE_URL + path).openConnection() as HttpURLConnection
+            try {
+                c.requestMethod = "GET"
+                c.connectTimeout = 8_000
+                c.readTimeout = 10_000
+                c.setRequestProperty("apikey", SUPABASE_KEY)
+                c.setRequestProperty("Authorization", "Bearer $accessToken")
+                c.setRequestProperty("Accept", "application/json")
+                val stream = if (c.responseCode in 200..299) c.inputStream else c.errorStream
+                val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                JSONArray(text).length() > 0
+            } finally { c.disconnect() }
+        }.getOrDefault(false)
+
+        val muted = exists("/rest/v1/chat_mutes?user_id=eq.$userId&other_user_id=eq.$senderId&select=other_user_id&limit=1")
+        if (muted) return true
+        val blockedEitherWay = exists("/rest/v1/user_blocks?or=(and(blocker_id.eq.$userId,blocked_id.eq.$senderId),and(blocker_id.eq.$senderId,blocked_id.eq.$userId))&select=blocked_id&limit=1")
+        return blockedEitherWay
+    }
+
     private fun createChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
@@ -151,6 +173,9 @@ internal object GlobalChatManager {
 
     private fun showMessageNotification(context: Context, senderId: String, body: String, createdAt: String, messageId: String) {
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
+        val auth = AuthApi(context)
+        val session = runCatching { auth.currentSession() }.getOrNull() ?: return
+        if (notificationsSuppressed(session.accessToken, session.profile.id, senderId)) return
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("open_chat_sender_id", senderId)
