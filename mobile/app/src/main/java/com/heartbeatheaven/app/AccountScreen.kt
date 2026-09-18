@@ -1,17 +1,24 @@
 package com.heartbeatheaven.app
 
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.draw.clip
+import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -25,6 +32,7 @@ private val PHONE_RECOVERY_QUESTIONS = listOf(
 internal fun AccountScreen() {
     val context = LocalContext.current
     val api = remember { AuthApi(context) }
+    val scope = rememberCoroutineScope()
     var session by remember { mutableStateOf<AuthSession?>(null) }
     var loading by remember { mutableStateOf(true) }
     var busy by remember { mutableStateOf(false) }
@@ -51,6 +59,18 @@ internal fun AccountScreen() {
     var recoveryQuestionMenuOpen by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
+    var profilePhotoBusy by remember { mutableStateOf(false) }
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null && session != null) {
+            profilePhotoBusy = true
+            scope.launch {
+                val result = withContext(Dispatchers.IO) { ProfilePictureSupport.upload(context, uri, session!!) }
+                result.onSuccess { session = api.currentSession(); message = "Profile picture updated." }
+                    .onFailure { error = it.message ?: "Could not update profile picture." }
+                profilePhotoBusy = false
+            }
+        }
+    }
 
     LaunchedEffect(Unit) { session = withContext(Dispatchers.IO) { api.currentSession() }; loading = false }
     if (loading) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }; return }
@@ -81,7 +101,18 @@ internal fun AccountScreen() {
 
         if (session != null) {
             val p = session!!.profile
-            Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    if (p.avatarUrl.isNotBlank()) AsyncImage(model = p.avatarUrl, contentDescription = "Profile picture", modifier = Modifier.size(104.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                    else Surface(modifier = Modifier.size(104.dp).clip(CircleShape), tonalElevation = 2.dp) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Person, "Profile picture", Modifier.size(54.dp)) } }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                    Button(enabled = !profilePhotoBusy, onClick = { photoPicker.launch("image/*") }) { Text(if (profilePhotoBusy) "Uploading..." else "📷 Change photo") }
+                    if (p.avatarUrl.isNotBlank()) {
+                        Spacer(Modifier.width(8.dp))
+                        OutlinedButton(enabled = !profilePhotoBusy, onClick = { profilePhotoBusy = true; scope.launch { val result = withContext(Dispatchers.IO) { ProfilePictureSupport.remove(session!!) }; result.onSuccess { session = api.currentSession(); message = "Profile picture removed." }.onFailure { error = it.message ?: "Could not remove profile picture." }; profilePhotoBusy = false } }) { Text("Remove") }
+                    }
+                }
                 Text(p.username, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                 Text("Gender: ${p.gender.replaceFirstChar { it.uppercase() }}"); Text("Age: ${p.age ?: "Not available"}"); Text("Email: ${p.email ?: "Not available"}"); Text("Mobile: ${p.phone ?: "Not available"}")
                 Text("Your login contacts are never shown publicly.", color = MaterialTheme.colorScheme.onSurfaceVariant)
