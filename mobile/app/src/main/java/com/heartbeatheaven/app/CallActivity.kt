@@ -92,7 +92,10 @@ class CallActivity : Activity() {
         panel.addView(status, LinearLayout.LayoutParams(-1, -2))
         endButton = Button(this).apply { text = "End call"; setOnClickListener { finishCall("ended") } }
         panel.addView(endButton, LinearLayout.LayoutParams(-1, -2))
-        root.addView(panel, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+        root.addView(panel, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply {
+            // Keep call controls above Android gesture/navigation area.
+            bottomMargin = (88 * resources.displayMetrics.density).toInt()
+        })
         setContentView(root)
     }
 
