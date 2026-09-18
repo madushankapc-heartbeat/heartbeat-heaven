@@ -164,7 +164,7 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
         buildList {
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
-                add(ChatMessage(o.optString("id"), o.optString("sender_id"), o.optString("body"), o.optString("created_at"), o.optString("delivered_at"), o.optString("read_at"), o.optString("edited_at")))
+                add(ChatMessage(o.optString("id"), o.optString("sender_id"), o.optString("body"), o.optString("created_at"), o.optString("delivered_at").takeUnless { it == "null" }.orEmpty(), o.optString("read_at").takeUnless { it == "null" }.orEmpty(), o.optString("edited_at").takeUnless { it == "null" }.orEmpty()))
             }
         }
     }
@@ -185,7 +185,7 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
             val a = JSONArray(response)
             if (a.length() > 0) {
                 val o = a.getJSONObject(0)
-                ChatMessage(o.optString("id"), o.optString("sender_id"), o.optString("body"), o.optString("created_at"), o.optString("delivered_at"), o.optString("read_at"), o.optString("edited_at"))
+                ChatMessage(o.optString("id"), o.optString("sender_id"), o.optString("body"), o.optString("created_at"), o.optString("delivered_at").takeUnless { it == "null" }.orEmpty(), o.optString("read_at").takeUnless { it == "null" }.orEmpty(), o.optString("edited_at").takeUnless { it == "null" }.orEmpty())
             } else null
         }.getOrNull()
     }
@@ -196,7 +196,7 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
         if (clean.length > 4000) throw IllegalStateException("Message is too long")
         val response = request("/rest/v1/rpc/edit_my_message", "POST", JSONObject().put("p_message_id", messageId).put("p_body", clean).toString())
         val o = JSONObject(response)
-        ChatMessage(o.optString("id"), o.optString("sender_id"), o.optString("body"), o.optString("created_at"), o.optString("delivered_at"), o.optString("read_at"), o.optString("edited_at"))
+        ChatMessage(o.optString("id"), o.optString("sender_id"), o.optString("body"), o.optString("created_at"), o.optString("delivered_at").takeUnless { it == "null" }.orEmpty(), o.optString("read_at").takeUnless { it == "null" }.orEmpty(), o.optString("edited_at").takeUnless { it == "null" }.orEmpty())
     }
 }
 
