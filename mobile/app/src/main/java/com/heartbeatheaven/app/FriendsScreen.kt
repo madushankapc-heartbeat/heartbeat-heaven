@@ -107,7 +107,14 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
         buildList {
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
-                if (o.optString("id") != userId()) add(FriendUser(o.optString("id"), o.optString("username"), o.optString("gender")))
+                if (o.optString("id") != userId()) add(
+                    FriendUser(
+                        o.optString("id"),
+                        o.optString("username"),
+                        o.optString("gender"),
+                        o.optString("avatar_url").takeUnless { it == "null" }.orEmpty()
+                    )
+                )
             }
         }
     }
@@ -241,7 +248,11 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
     }
 
     suspend fun profile(other: String): FriendProfile? = withContext(Dispatchers.IO) {
-        val a = JSONArray(request("/rest/v1/profiles?id=eq.${other}&select=id,username,gender,last_seen_at&limit=1", "GET"))
+        val a = runCatching {
+            JSONArray(request("/rest/v1/profiles?id=eq.${other}&select=id,username,gender,last_seen_at,avatar_url&limit=1", "GET"))
+        }.getOrElse {
+            JSONArray(request("/rest/v1/profiles?id=eq.${other}&select=id,username,gender,last_seen_at&limit=1", "GET"))
+        }
         if (a.length() == 0) return@withContext null
         val o = a.getJSONObject(0)
         FriendProfile(o.optString("id"), o.optString("username"), o.optString("gender"), o.optString("last_seen_at").takeUnless { it == "null" }.orEmpty(), o.optString("avatar_url").takeUnless { it == "null" }.orEmpty())
@@ -440,6 +451,7 @@ internal fun FriendsScreen() {
     var busy by remember { mutableStateOf(false) }
     var chatProfile by remember { mutableStateOf<FriendProfile?>(null) }
     var showChatProfile by remember { mutableStateOf(false) }
+    var showChatMenu by remember { mutableStateOf(false) }
     var showChatSearch by remember { mutableStateOf(false) }
     var chatSearch by remember { mutableStateOf("") }
     var chatMuted by remember { mutableStateOf(false) }
@@ -646,6 +658,7 @@ internal fun FriendsScreen() {
             chatBlocked = runCatching { api.isBlocked(chat.id) }.getOrDefault(false)
             chatSearch = ""
             showChatSearch = false
+            showChatMenu = false
         }
 
         if (showChatProfile) {
@@ -834,33 +847,75 @@ internal fun FriendsScreen() {
                                 color = if (isOnline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        IconButton(onClick = { showChatSearch = !showChatSearch; if (!showChatSearch) chatSearch = "" }) { Icon(Icons.Default.Search, "Search messages") }
-                        IconButton(onClick = {
-                            scope.launch {
-                                runCatching {
-                                    api.setPinned(chat.id, !chatPinned)
-                                    chatPinned = !chatPinned
-                                    chatSummaries = api.chatSummaries()
-                                    statusMessage = if (chatPinned) "Chat pinned" else "Chat unpinned"
-                                }.onFailure { statusMessage = it.message ?: "Could not update pin." }
+                        Box {
+                            IconButton(onClick = { showChatMenu = true }) {
+                                Icon(Icons.Default.MoreVert, "Chat actions")
                             }
-                        }) { Icon(Icons.Default.PushPin, if (chatPinned) "Unpin chat" else "Pin chat") }
-                        IconButton(onClick = {
-                            scope.launch {
-                                runCatching {
-                                    api.setMuted(chat.id, !chatMuted)
-                                    chatMuted = !chatMuted
-                                    statusMessage = if (chatMuted) "Chat muted" else "Chat unmuted"
-                                }.onFailure { statusMessage = it.message ?: "Could not update mute." }
+                            DropdownMenu(expanded = showChatMenu, onDismissRequest = { showChatMenu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("🔍 Search messages") },
+                                    onClick = { showChatMenu = false; showChatSearch = !showChatSearch; if (!showChatSearch) chatSearch = "" }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(if (chatPinned) "📌 Unpin chat" else "📌 Pin chat") },
+                                    onClick = {
+                                        showChatMenu = false
+                                        scope.launch {
+                                            runCatching {
+                                                api.setPinned(chat.id, !chatPinned)
+                                                chatPinned = !chatPinned
+                                                chatSummaries = api.chatSummaries()
+                                                statusMessage = if (chatPinned) "Chat pinned" else "Chat unpinned"
+                                            }.onFailure { statusMessage = it.message ?: "Could not update pin." }
+                                        }
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(if (chatMuted) "🔕 Unmute chat" else "🔔 Mute chat") },
+                                    onClick = {
+                                        showChatMenu = false
+                                        scope.launch {
+                                            runCatching {
+                                                api.setMuted(chat.id, !chatMuted)
+                                                chatMuted = !chatMuted
+                                                statusMessage = if (chatMuted) "Chat unmuted" else "Chat muted"
+                                            }.onFailure { statusMessage = it.message ?: "Could not update mute." }
+                                        }
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("👤 View profile") },
+                                    onClick = {
+                                        showChatMenu = false
+                                        scope.launch {
+                                            chatProfile = runCatching { api.profile(chat.id) }.getOrNull()
+                                            showChatProfile = true
+                                        }
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(if (chatBlocked) "🚫 Unblock user" else "🚫 Block user") },
+                                    onClick = {
+                                        showChatMenu = false
+                                        scope.launch {
+                                            runCatching {
+                                                api.setBlocked(chat.id, !chatBlocked)
+                                                chatBlocked = !chatBlocked
+                                                statusMessage = if (chatBlocked) "User blocked" else "User unblocked"
+                                            }.onFailure { statusMessage = it.message ?: "Could not update block status." }
+                                        }
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("⚠️ Report user") },
+                                    onClick = {
+                                        showChatMenu = false
+                                        reportReason = ""
+                                        showReportDialog = true
+                                    }
+                                )
                             }
-                        }) { Icon(if (chatMuted) Icons.Default.NotificationsOff else Icons.Default.Notifications, if (chatMuted) "Unmute chat" else "Mute chat") }
-                        IconButton(onClick = {
-                            scope.launch {
-                                chatProfile = runCatching { api.profile(chat.id) }.getOrNull()
-                                showChatProfile = true
-                            }
-                        }) { Icon(Icons.Default.Person, "Chat profile") }
-                    }
+                        }                    }
                 }
             }
 
@@ -1055,7 +1110,6 @@ internal fun FriendsScreen() {
                         modifier = Modifier.fillMaxWidth().padding(14.dp)
                     )
                 } else Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom) {
-                    IconButton(enabled = !mediaBusy, onClick = { mediaPicker.launch("*/*") }) { Icon(Icons.Default.AttachFile, if (mediaBusy) "Uploading attachment" else "Attach file") }
                     OutlinedTextField(
                         value = text,
                         onValueChange = { text = it; statusMessage = null },
@@ -1063,7 +1117,10 @@ internal fun FriendsScreen() {
                         placeholder = { Text("Message") },
                         maxLines = 4
                     )
-                    Spacer(Modifier.width(6.dp))
+                    Spacer(Modifier.width(2.dp))
+                    IconButton(enabled = !mediaBusy, onClick = { mediaPicker.launch("*/*") }) {
+                        Icon(Icons.Default.AttachFile, if (mediaBusy) "Uploading attachment" else "Attach file")
+                    }
                     IconButton(enabled = text.isNotBlank(), onClick = {
                         val outgoing = text.trim()
                         val replyId = replyingTo?.id
