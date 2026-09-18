@@ -897,7 +897,17 @@ internal fun FriendsScreen() {
                                         Surface(
                                             tonalElevation = 2.dp,
                                             shape = RoundedCornerShape(10.dp),
-                                            modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp)
+                                            modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp).clickable {
+                                                    scope.launch {
+                                                        val index = messages.indexOfFirst { it.id == quoted.id }
+                                                        if (index >= 0) {
+                                                            highlightedMessageId = quoted.id
+                                                            listState.animateScrollToItem(index)
+                                                            delay(900)
+                                                            highlightedMessageId = null
+                                                        }
+                                                    }
+                                                }
                                         ) {
                                             Text(
                                                 "↩ ${quoted.body}",
