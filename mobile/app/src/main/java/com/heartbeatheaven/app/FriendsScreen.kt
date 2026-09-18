@@ -537,9 +537,10 @@ internal fun FriendsScreen() {
             if (text.isBlank()) {
                 typingClient?.setTyping(false)
             } else {
+                val snapshot = text
                 typingClient?.setTyping(true)
                 delay(1500)
-                if (text.isNotBlank()) typingClient?.setTyping(false)
+                if (text == snapshot) typingClient?.setTyping(false)
             }
         }
         val listState = rememberLazyListState()
@@ -1010,7 +1011,6 @@ internal fun FriendsScreen() {
                         editingMessage = null
                         editText = ""
                         text = ""
-                        typingClient?.setTyping(false)
                         statusMessage = null
                     }
             )
