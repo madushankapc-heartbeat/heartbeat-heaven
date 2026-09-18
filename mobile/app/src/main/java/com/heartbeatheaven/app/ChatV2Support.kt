@@ -48,6 +48,16 @@ internal object ChatTimeFormatter {
             else -> local.format(dateFormatter)
         }
     }.getOrDefault("")
+
+    fun listTimestamp(iso: String): String = runCatching {
+        val local = parse(iso)?.atZone(ZoneId.systemDefault()) ?: return@runCatching ""
+        val today = java.time.LocalDate.now()
+        when (local.toLocalDate()) {
+            today -> local.format(timeFormatter)
+            today.minusDays(1) -> "Yesterday"
+            else -> local.format(DateTimeFormatter.ofPattern("MMM d", Locale.getDefault()))
+        }
+    }.getOrDefault("")
 }
 
 // Chat v2 integration checkpoint: keep shared models isolated until each UI step builds cleanly.
