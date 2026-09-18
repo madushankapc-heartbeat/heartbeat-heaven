@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -14,6 +15,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.draw.clip
+import coil.compose.AsyncImage
 import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -30,8 +33,8 @@ import java.time.temporal.ChronoUnit
 
 private const val FRIENDS_SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.co"
 private const val FRIENDS_KEY = "sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
-private data class FriendUser(val id: String, val username: String, val gender: String)
-private data class FriendProfile(val id: String, val username: String, val gender: String, val lastSeenAt: String)
+private data class FriendUser(val id: String, val username: String, val gender: String, val avatarUrl: String = "")
+private data class FriendProfile(val id: String, val username: String, val gender: String, val lastSeenAt: String, val avatarUrl: String = "")
 private data class FriendRequest(val id: String, val user: FriendUser, val incoming: Boolean)
 private data class ChatSummary(val user: FriendUser, val lastMessage: String, val lastMessageAt: String, val unreadCount: Int, val pinned: Boolean)
 private data class ChatMessage(val id: String, val senderId: String, val body: String, val createdAt: String, val deliveredAt: String = "", val readAt: String = "", val editedAt: String = "", val deletedAt: String = "", val replyToId: String = "", val messageType: String = "text", val mediaUrl: String = "", val mediaName: String = "", val mediaSize: Long = 0L)
@@ -87,18 +90,18 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
     suspend fun onlineUsers(): List<FriendUser> = withContext(Dispatchers.IO) {
         val since = Instant.now().minus(2, ChronoUnit.MINUTES).toString()
         val encoded = URLEncoder.encode(since, "UTF-8")
-        val a = JSONArray(request("/rest/v1/profiles?last_seen_at=gte.$encoded&select=id,username,gender&limit=50", "GET"))
+        val a = JSONArray(request("/rest/v1/profiles?last_seen_at=gte.$encoded&select=id,username,gender,avatar_url&limit=50", "GET"))
         buildList {
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
-                if (o.optString("id") != userId()) add(FriendUser(o.optString("id"), o.optString("username"), o.optString("gender")))
+                if (o.optString("id") != userId()) add(FriendUser(o.optString("id"), o.optString("username"), o.optString("gender"), o.optString("avatar_url").takeUnless { it == "null" }.orEmpty()))
             }
         }
     }
 
     suspend fun search(username: String): List<FriendUser> = withContext(Dispatchers.IO) {
         val q = URLEncoder.encode(username.trim(), "UTF-8")
-        val a = JSONArray(request("/rest/v1/profiles?username=ilike.*$q*&select=id,username,gender&limit=20", "GET"))
+        val a = JSONArray(request("/rest/v1/profiles?username=ilike.*$q*&select=id,username,gender,avatar_url&limit=20", "GET"))
         buildList {
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
@@ -115,7 +118,7 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
                 val o = a.getJSONObject(i)
                 val incoming = o.optString("addressee_id") == mine
                 val uid = if (incoming) o.optString("requester_id") else o.optString("addressee_id")
-                val p = JSONArray(request("/rest/v1/profiles?id=eq.$uid&select=id,username,gender", "GET"))
+                val p = JSONArray(request("/rest/v1/profiles?id=eq.$uid&select=id,username,gender,avatar_url", "GET"))
                 if (p.length() > 0) {
                     val u = p.getJSONObject(0)
                     add(FriendRequest(o.optString("id"), FriendUser(uid, u.optString("username"), u.optString("gender")), incoming))
@@ -239,7 +242,7 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
         val a = JSONArray(request("/rest/v1/profiles?id=eq.${other}&select=id,username,gender,last_seen_at&limit=1", "GET"))
         if (a.length() == 0) return@withContext null
         val o = a.getJSONObject(0)
-        FriendProfile(o.optString("id"), o.optString("username"), o.optString("gender"), o.optString("last_seen_at").takeUnless { it == "null" }.orEmpty())
+        FriendProfile(o.optString("id"), o.optString("username"), o.optString("gender"), o.optString("last_seen_at").takeUnless { it == "null" }.orEmpty(), o.optString("avatar_url").takeUnless { it == "null" }.orEmpty())
     }
 
     suspend fun isMuted(other: String): Boolean = withContext(Dispatchers.IO) {
@@ -443,6 +446,7 @@ internal fun FriendsScreen() {
     var loadingOlderMessages by remember { mutableStateOf(false) }
     var searchResults by remember { mutableStateOf<List<ChatMessage>?>(null) }
     var initialMessagesLoaded by remember { mutableStateOf(false) }
+    var showLatestButton by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         session = withContext(Dispatchers.IO) { auth.currentSession() }
@@ -594,6 +598,7 @@ internal fun FriendsScreen() {
 
         LaunchedEffect(chat.id) {
             snapshotFlow { listState.firstVisibleItemIndex }.collectLatest { first ->
+                showLatestButton = messages.isNotEmpty() && first < messages.lastIndex - 3
                 if (first <= 2 && chatSearch.isBlank() && !loadingOlderMessages && hasOlderMessages && messages.isNotEmpty()) {
                     loadingOlderMessages = true
                     val oldest = messages.first()
@@ -627,6 +632,11 @@ internal fun FriendsScreen() {
                 title = { Text(chatProfile?.username ?: chat.username) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            val avatar = chatProfile?.avatarUrl.orEmpty().ifBlank { chat.avatarUrl }
+                            if (avatar.isNotBlank()) AsyncImage(model = avatar, contentDescription = "Profile picture", modifier = Modifier.size(92.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                            else Surface(modifier = Modifier.size(92.dp).clip(CircleShape)) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Person, "Profile picture", Modifier.size(48.dp)) } }
+                        }
                         Text("Username: ${chatProfile?.username ?: chat.username}")
                         Text("Gender: ${chatProfile?.gender ?: "—"}")
                         val seen = chatProfile?.lastSeenAt.orEmpty()
@@ -785,7 +795,9 @@ internal fun FriendsScreen() {
                 } else {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = { selected = null; messages = emptyList(); text = ""; replyingTo = null; chatSearch = ""; showChatSearch = false }) { Icon(Icons.Default.ArrowBack, "Back") }
-                        Column(Modifier.weight(1f)) {
+                        if (chat.avatarUrl.isNotBlank()) AsyncImage(model = chat.avatarUrl, contentDescription = "Profile picture", modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                        else Surface(modifier = Modifier.size(44.dp).clip(CircleShape), tonalElevation = 2.dp) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Person, "Profile picture") } }
+                        Column(Modifier.weight(1f).padding(start = 8.dp)) {
                             Text(chat.username, style = MaterialTheme.typography.titleLarge)
                             val isOnline = online.any { it.id == chat.id }
                             val seen = chatProfile?.lastSeenAt.orEmpty()
@@ -903,7 +915,16 @@ internal fun FriendsScreen() {
                                             shape = RoundedCornerShape(10.dp),
                                             modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp).clickable {
                                                     scope.launch {
-                                                        val index = messages.indexOfFirst { it.id == quoted.id }
+                                                        var index = messages.indexOfFirst { it.id == quoted.id }
+                                                        while (index < 0 && hasOlderMessages && messages.isNotEmpty()) {
+                                                            val oldest = messages.first()
+                                                            val page = runCatching { api.messagesPage(chat.id, oldest.createdAt) }.getOrNull() ?: break
+                                                            val beforeCount = messages.size
+                                                            messages = (page.first + messages).distinctBy { it.id }.sortedBy { it.createdAt }
+                                                            hasOlderMessages = page.second
+                                                            if (messages.size == beforeCount) break
+                                                            index = messages.indexOfFirst { it.id == quoted.id }
+                                                        }
                                                         if (index >= 0) {
                                                             highlightedMessageId = quoted.id
                                                             listState.animateScrollToItem(index)
@@ -977,6 +998,12 @@ internal fun FriendsScreen() {
                 }
             }
 
+            if (showLatestButton && chatSearch.isBlank() && selectedForActions == null && messages.isNotEmpty()) {
+                Surface(tonalElevation = 4.dp, shape = RoundedCornerShape(20.dp), modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                    TextButton(onClick = { scope.launch { listState.animateScrollToItem(messages.lastIndex) } }) { Text("↓ Latest messages") }
+                }
+            }
+
             replyTarget?.let { target ->
                 Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1037,7 +1064,7 @@ internal fun FriendsScreen() {
         Text("Online people and accepted friends are shown here.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (online.isNotEmpty()) {
             Text("Online now", style = MaterialTheme.typography.titleMedium)
-            online.forEach { u -> ListItem(headlineContent = { Text(u.username) }, supportingContent = { Text("Online") }, leadingContent = { Icon(Icons.Default.Circle, "Online", tint = MaterialTheme.colorScheme.primary) }, trailingContent = { Button(onClick = { scope.launch { runCatching { statusMessage = api.send(u.id); reload() }.onFailure { statusMessage = it.message } } }) { Text("Add") } }) }
+            online.forEach { u -> ListItem(headlineContent = { Text(u.username) }, supportingContent = { Text("Online") }, leadingContent = { if (u.avatarUrl.isNotBlank()) AsyncImage(model = u.avatarUrl, contentDescription = "Profile picture", modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop) else Icon(Icons.Default.Circle, "Online", tint = MaterialTheme.colorScheme.primary) }, trailingContent = { Button(onClick = { scope.launch { runCatching { statusMessage = api.send(u.id); reload() }.onFailure { statusMessage = it.message } } }) { Text("Add") } }) }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(query, { query = it }, Modifier.weight(1f), label = { Text("Search username") }, singleLine = true)
@@ -1045,7 +1072,7 @@ internal fun FriendsScreen() {
         }
         if (results.isNotEmpty()) {
             Text("Search results", style = MaterialTheme.typography.titleMedium)
-            results.forEach { u -> ListItem(headlineContent = { Text(u.username) }, leadingContent = { Icon(Icons.Default.PersonAdd, "Add friend") }, trailingContent = { Button(onClick = { scope.launch { runCatching { statusMessage = api.send(u.id); reload() }.onFailure { statusMessage = it.message } } }) { Text("Add") } }) }
+            results.forEach { u -> ListItem(headlineContent = { Text(u.username) }, leadingContent = { if (u.avatarUrl.isNotBlank()) AsyncImage(model = u.avatarUrl, contentDescription = "Profile picture", modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop) else Icon(Icons.Default.PersonAdd, "Add friend") }, trailingContent = { Button(onClick = { scope.launch { runCatching { statusMessage = api.send(u.id); reload() }.onFailure { statusMessage = it.message } } }) { Text("Add") } }) }
         }
         if (requests.isNotEmpty()) {
             Text("Friend requests", style = MaterialTheme.typography.titleMedium)
@@ -1093,7 +1120,8 @@ internal fun FriendsScreen() {
                     }
                 },
                 leadingContent = {
-                    Icon(
+                    if (chatItem.user.avatarUrl.isNotBlank()) AsyncImage(model = chatItem.user.avatarUrl, contentDescription = "Profile picture", modifier = Modifier.size(48.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                    else Icon(
                         if (isOnline) Icons.Default.Circle else Icons.Default.Person,
                         if (isOnline) "Online" else "Friend",
                         tint = if (isOnline) MaterialTheme.colorScheme.primary else LocalContentColor.current
