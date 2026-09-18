@@ -139,6 +139,8 @@ internal class AuthApi(context: Context) {
     private fun normalizePhone(value: String): String { val raw = value.trim().replace(" ", "").replace("-", "").replace("(", "").replace(")", ""); if (raw.startsWith("+")) return "+" + raw.drop(1).filter { it.isDigit() }; val digits = raw.filter { it.isDigit() }; return when { digits.startsWith("0") && digits.length >= 9 -> "+94" + digits.drop(1); digits.startsWith("94") && digits.length >= 10 -> "+$digits"; digits.length >= 8 -> "+$digits"; else -> "" } }
 
     fun requestPasswordReset(email: String): Result<String> = try { request("/auth/v1/recover?redirect_to=${encode(PASSWORD_RESET_REDIRECT_URL)}", "POST", JSONObject().put("email", email.trim()).toString(), "application/json"); Result.success("If an account exists for this email, a password reset link has been sent.") } catch (e: Exception) { Result.failure(e) }
+    fun cacheAvatarUrl(avatarUrl: String) { prefs.edit().putString("profile_avatar_url", avatarUrl).apply() }
+
     fun updateProfile(accessToken: String, bio: String, lastSeenVisibility: String): Result<String> = try {
         val body = JSONObject().put("bio", bio.trim().take(160)).put("last_seen_visibility", lastSeenVisibility)
         request("/rest/v1/profiles?id=eq." + encode(prefs.getString("user_id", "")!!), "PATCH", body.toString(), "application/json", accessToken)
@@ -176,8 +178,10 @@ internal class AuthApi(context: Context) {
     private fun fetchProfile(accessToken: String, userId: String, user: JSONObject): AccountProfile {
         val a = try {
             org.json.JSONArray(request("/rest/v1/profiles?id=eq.${encode(userId)}&select=id,username,gender,age,phone,avatar_url,bio,last_seen_at,last_seen_visibility", "GET", null, null, accessToken).body)
-        } catch (_: Exception) {
-            org.json.JSONArray(request("/rest/v1/profiles?id=eq.${encode(userId)}&select=id,username,gender,age,phone,avatar_url,bio,last_seen_at,last_seen_visibility", "GET", null, null, accessToken).body)
+        } catch (e: Exception) {
+            val msg = e.message.orEmpty().lowercase()
+            if (!msg.contains("schema cache") && !msg.contains("bio") && !msg.contains("last_seen")) throw e
+            org.json.JSONArray(request("/rest/v1/profiles?id=eq.${encode(userId)}&select=id,username,gender,age,phone,avatar_url", "GET", null, null, accessToken).body)
         }
         if (a.length() == 0) error("Profile is not ready yet. Please try again.")
         val row = a.getJSONObject(0)
