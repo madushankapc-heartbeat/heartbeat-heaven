@@ -32,6 +32,7 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -154,14 +155,62 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
     val context = LocalContext.current
     var songs by remember { mutableStateOf<List<Song>>(emptyList()) }; var loading by remember { mutableStateOf(true) }; var error by remember { mutableStateOf<String?>(null) }
     var tab by remember { mutableStateOf(0) }; var search by remember { mutableStateOf("") }; var selected by remember { mutableStateOf<Song?>(null) }
+    var refreshTrigger by remember { mutableIntStateOf(0) }
+    var refreshing by remember { mutableStateOf(false) }
+    val refreshScope = rememberCoroutineScope()
     val favorites = remember { FavoriteStore(context) }; var favoriteIds by remember { mutableStateOf(favorites.ids()) }
     val authSession = remember { AuthApi(context).currentSession() }
 
-    LaunchedEffect(Unit) { try { songs = fetchSongs() } catch (e: Exception) { error = "Unable to load songs. Please check your connection." } finally { loading = false } }
+    suspend fun refreshSongs() {
+        try {
+            songs = fetchSongs()
+            error = null
+        } catch (e: Exception) {
+            error = "Unable to load songs. Please check your connection."
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        refreshSongs()
+        loading = false
+    }
+
+    LaunchedEffect(refreshTrigger) {
+        if (refreshTrigger > 0) {
+            refreshing = true
+            if (tab != 1 && tab != 4) refreshSongs()
+            refreshing = false
+        }
+    }
     val filtered = songs.filter { s -> val q = search.trim().lowercase(); q.isBlank() || listOf(s.title, s.artist, s.genre, s.language, s.mood).joinToString(" ").lowercase().contains(q) }.filter { if (tab == 2) favoriteIds.contains(it.id) else true }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Column { Text("HEARTBEAT HEAVEN", fontWeight = FontWeight.Bold); Text("Original Music by Madushanka", fontSize = 11.sp) } }, actions = { if (authSession?.profile?.isAdmin == true) IconButton(onClick = { context.startActivity(Intent(context, StudioActivity::class.java)) }) { Icon(Icons.Default.LibraryMusic, "Studio") } }) },
+        topBar = { TopAppBar(
+        title = { Column { Text("HEARTBEAT HEAVEN", fontWeight = FontWeight.Bold); Text("Original Music by Madushanka", fontSize = 11.sp) } },
+        actions = {
+            IconButton(
+                enabled = !refreshing,
+                onClick = {
+                    refreshTrigger += 1
+                    if (tab != 1 && tab != 4) {
+                        refreshScope.launch {
+                            refreshing = true
+                            refreshSongs()
+                            refreshing = false
+                        }
+                    }
+                }
+            ) {
+                if (refreshing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                else Icon(Icons.Default.Refresh, "Refresh")
+            }
+            if (authSession?.profile?.isAdmin == true) {
+                IconButton(onClick = { context.startActivity(Intent(context, StudioActivity::class.java)) }) {
+                    Icon(Icons.Default.LibraryMusic, "Studio")
+                }
+            }
+        }
+    ) },
         bottomBar = { Column {
             if (song != null && selected == null) MiniPlayer(song, playing, position, duration, onPlay, onPause, onSeek, onStop)
             NavigationBar {
@@ -175,8 +224,8 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             when {
-                tab == 1 -> FriendsScreen()
-                tab == 4 -> AccountScreen()
+                tab == 1 -> FriendsScreen(refreshTrigger)
+                tab == 4 -> AccountScreen(refreshTrigger)
                 selected != null -> DetailScreen(selected!!, songId, playing, position, duration, { selected = null }, { target -> if (songId == target.id && playing) onPause() else onPlay(target) }, onSeek, { favoriteIds = favorites.toggle(selected!!.id) }, { shareSong(context, selected!!) })
                 else -> {
                     if (tab == 3) OutlinedTextField(search, { search = it }, Modifier.fillMaxWidth().padding(16.dp), label = { Text("Search songs, artists...") }, leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true)
