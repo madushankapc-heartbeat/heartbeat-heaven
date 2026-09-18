@@ -533,6 +533,15 @@ internal fun FriendsScreen() {
             typingClient?.start()
             onDispose { typingClient?.stop(); otherTyping = false }
         }
+        LaunchedEffect(text, typingClient) {
+            if (text.isBlank()) {
+                typingClient?.setTyping(false)
+            } else {
+                typingClient?.setTyping(true)
+                delay(1500)
+                if (text.isNotBlank()) typingClient?.setTyping(false)
+            }
+        }
         val listState = rememberLazyListState()
         val selectedForActions = selectedMessage
         val replyTarget = replyingTo
