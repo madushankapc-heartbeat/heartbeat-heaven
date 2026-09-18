@@ -177,7 +177,7 @@ internal class AuthApi(context: Context) {
         val a = try {
             org.json.JSONArray(request("/rest/v1/profiles?id=eq.${encode(userId)}&select=id,username,gender,age,phone,avatar_url,bio,last_seen_at,last_seen_visibility", "GET", null, null, accessToken).body)
         } catch (_: Exception) {
-            org.json.JSONArray(request("/rest/v1/profiles?id=eq.${encode(userId)}&select=id,username,gender,age,phone", "GET", null, null, accessToken).body)
+            org.json.JSONArray(request("/rest/v1/profiles?id=eq.${encode(userId)}&select=id,username,gender,age,phone,avatar_url,bio,last_seen_at,last_seen_visibility", "GET", null, null, accessToken).body)
         }
         if (a.length() == 0) error("Profile is not ready yet. Please try again.")
         val row = a.getJSONObject(0)
