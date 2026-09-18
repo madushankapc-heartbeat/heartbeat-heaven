@@ -30,8 +30,9 @@ import java.time.temporal.ChronoUnit
 private const val FRIENDS_SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.co"
 private const val FRIENDS_KEY = "sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
 private data class FriendUser(val id: String, val username: String, val gender: String)
+private data class FriendProfile(val id: String, val username: String, val gender: String, val lastSeenAt: String)
 private data class FriendRequest(val id: String, val user: FriendUser, val incoming: Boolean)
-private data class ChatSummary(val user: FriendUser, val lastMessage: String, val lastMessageAt: String, val unreadCount: Int)
+private data class ChatSummary(val user: FriendUser, val lastMessage: String, val lastMessageAt: String, val unreadCount: Int, val pinned: Boolean)
 private data class ChatMessage(val id: String, val senderId: String, val body: String, val createdAt: String, val deliveredAt: String = "", val readAt: String = "", val editedAt: String = "", val deletedAt: String = "", val replyToId: String = "")
 private data class MessageReaction(val messageId: String, val userId: String, val reaction: String)
 
@@ -171,6 +172,11 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
             buildSet { for (i in 0 until d.length()) add(d.getJSONObject(i).optString("message_id")) }
         }.getOrDefault(emptySet())
 
+        val pinned = runCatching {
+            val p = JSONArray(request("/rest/v1/chat_pins?user_id=eq.\${mine}&select=other_user_id&limit=1000", "GET"))
+            buildSet { for (i in 0 until p.length()) add(p.getJSONObject(i).optString("other_user_id")) }
+        }.getOrDefault(emptySet())
+
         val a = JSONArray(
             request(
                 "/rest/v1/messages?or=(sender_id.eq.$mine,receiver_id.eq.$mine)&select=id,sender_id,receiver_id,body,created_at,read_at,deleted_at&order=created_at.desc&limit=1000",
@@ -217,13 +223,62 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
                 user = friend,
                 lastMessage = row?.body.orEmpty(),
                 lastMessageAt = row?.createdAt.orEmpty(),
-                unreadCount = unreadCounts[friend.id] ?: 0
+                unreadCount = unreadCounts[friend.id] ?: 0,
+                pinned = friend.id in pinned
             )
         }.sortedWith(
-            compareByDescending<ChatSummary> { it.lastMessageAt.isNotBlank() }
+            compareByDescending<ChatSummary> { it.pinned }
+                .thenByDescending { it.lastMessageAt.isNotBlank() }
                 .thenByDescending { it.lastMessageAt }
                 .thenBy { it.user.username.lowercase() }
         )
+    }
+
+    suspend fun profile(other: String): FriendProfile? = withContext(Dispatchers.IO) {
+        val a = JSONArray(request("/rest/v1/profiles?id=eq.\${other}&select=id,username,gender,last_seen_at&limit=1", "GET"))
+        if (a.length() == 0) return@withContext null
+        val o = a.getJSONObject(0)
+        FriendProfile(o.optString("id"), o.optString("username"), o.optString("gender"), o.optString("last_seen_at").takeUnless { it == "null" }.orEmpty())
+    }
+
+    suspend fun isMuted(other: String): Boolean = withContext(Dispatchers.IO) {
+        JSONArray(request("/rest/v1/chat_mutes?user_id=eq.\${userId()}&other_user_id=eq.\${other}&select=other_user_id&limit=1", "GET")).length() > 0
+    }
+
+    suspend fun setMuted(other: String, muted: Boolean) = withContext(Dispatchers.IO) {
+        val mine = userId()
+        if (muted) {
+            val existing = JSONArray(request("/rest/v1/chat_mutes?user_id=eq.\${mine}&other_user_id=eq.\${other}&select=other_user_id&limit=1", "GET"))
+            if (existing.length() == 0) request("/rest/v1/chat_mutes", "POST", JSONObject().put("user_id", mine).put("other_user_id", other).toString())
+        } else request("/rest/v1/chat_mutes?user_id=eq.\${mine}&other_user_id=eq.\${other}", "DELETE")
+    }
+
+    suspend fun isPinned(other: String): Boolean = withContext(Dispatchers.IO) {
+        JSONArray(request("/rest/v1/chat_pins?user_id=eq.\${userId()}&other_user_id=eq.\${other}&select=other_user_id&limit=1", "GET")).length() > 0
+    }
+
+    suspend fun setPinned(other: String, pinned: Boolean) = withContext(Dispatchers.IO) {
+        val mine = userId()
+        if (pinned) {
+            val existing = JSONArray(request("/rest/v1/chat_pins?user_id=eq.\${mine}&other_user_id=eq.\${other}&select=other_user_id&limit=1", "GET"))
+            if (existing.length() == 0) request("/rest/v1/chat_pins", "POST", JSONObject().put("user_id", mine).put("other_user_id", other).toString())
+        } else request("/rest/v1/chat_pins?user_id=eq.\${mine}&other_user_id=eq.\${other}", "DELETE")
+    }
+
+    suspend fun isBlocked(other: String): Boolean = withContext(Dispatchers.IO) {
+        JSONArray(request("/rest/v1/user_blocks?blocker_id=eq.\${userId()}&blocked_id=eq.\${other}&select=blocked_id&limit=1", "GET")).length() > 0
+    }
+
+    suspend fun setBlocked(other: String, blocked: Boolean) = withContext(Dispatchers.IO) {
+        val mine = userId()
+        if (blocked) {
+            val existing = JSONArray(request("/rest/v1/user_blocks?blocker_id=eq.\${mine}&blocked_id=eq.\${other}&select=blocked_id&limit=1", "GET"))
+            if (existing.length() == 0) request("/rest/v1/user_blocks", "POST", JSONObject().put("blocker_id", mine).put("blocked_id", other).toString())
+        } else request("/rest/v1/user_blocks?blocker_id=eq.\${mine}&blocked_id=eq.\${other}", "DELETE")
+    }
+
+    suspend fun report(other: String, reason: String) = withContext(Dispatchers.IO) {
+        request("/rest/v1/chat_reports", "POST", JSONObject().put("reporter_id", userId()).put("reported_user_id", other).put("reason", reason.trim().take(500)).toString())
     }
 
     suspend fun messages(other: String): List<ChatMessage> = withContext(Dispatchers.IO) {
@@ -356,6 +411,15 @@ internal fun FriendsScreen() {
     var reactions by remember { mutableStateOf<List<MessageReaction>>(emptyList()) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
     var busy by remember { mutableStateOf(false) }
+    var chatProfile by remember { mutableStateOf<FriendProfile?>(null) }
+    var showChatProfile by remember { mutableStateOf(false) }
+    var showChatSearch by remember { mutableStateOf(false) }
+    var chatSearch by remember { mutableStateOf("") }
+    var chatMuted by remember { mutableStateOf(false) }
+    var chatPinned by remember { mutableStateOf(false) }
+    var chatBlocked by remember { mutableStateOf(false) }
+    var showReportDialog by remember { mutableStateOf(false) }
+    var reportReason by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {
         session = withContext(Dispatchers.IO) { auth.currentSession() }
@@ -458,9 +522,82 @@ internal fun FriendsScreen() {
         val listState = rememberLazyListState()
         val selectedForActions = selectedMessage
         val replyTarget = replyingTo
+        val visibleMessages = remember(messages, chatSearch) {
+            if (chatSearch.isBlank()) messages
+            else messages.filter { it.body.contains(chatSearch.trim(), ignoreCase = true) }
+        }
 
-        LaunchedEffect(messages.size) {
-            if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+        LaunchedEffect(messages.size, chatSearch) {
+            if (visibleMessages.isNotEmpty()) listState.animateScrollToItem(visibleMessages.lastIndex)
+        }
+
+        LaunchedEffect(chat.id) {
+            chatProfile = runCatching { api.profile(chat.id) }.getOrNull()
+            chatMuted = runCatching { api.isMuted(chat.id) }.getOrDefault(false)
+            chatPinned = runCatching { api.isPinned(chat.id) }.getOrDefault(false)
+            chatBlocked = runCatching { api.isBlocked(chat.id) }.getOrDefault(false)
+            chatSearch = ""
+            showChatSearch = false
+        }
+
+        if (showChatProfile) {
+            AlertDialog(
+                onDismissRequest = { showChatProfile = false },
+                title = { Text(chatProfile?.username ?: chat.username) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text("Username: \${chatProfile?.username ?: chat.username}")
+                        Text("Gender: \${chatProfile?.gender ?: "—"}")
+                        val seen = chatProfile?.lastSeenAt.orEmpty()
+                        Text(if (online.any { it.id == chat.id }) "Online now" else if (seen.isBlank()) "Last seen: unknown" else "Last seen: \${ChatTimeFormatter.time(seen)}")
+                        Text(if (chatBlocked) "Blocked" else "Not blocked", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        scope.launch {
+                            runCatching {
+                                api.setBlocked(chat.id, !chatBlocked)
+                                chatBlocked = !chatBlocked
+                                statusMessage = if (chatBlocked) "User blocked" else "User unblocked"
+                            }.onFailure { statusMessage = it.message ?: "Could not update block status." }
+                        }
+                    }) { Text(if (chatBlocked) "Unblock" else "Block") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showReportDialog = true; showChatProfile = false }) { Text("Report") }
+                }
+            )
+        }
+
+        if (showReportDialog) {
+            AlertDialog(
+                onDismissRequest = { showReportDialog = false },
+                title = { Text("Report \${chat.username}") },
+                text = {
+                    OutlinedTextField(
+                        value = reportReason,
+                        onValueChange = { if (it.length <= 500) reportReason = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Reason") },
+                        maxLines = 5
+                    )
+                },
+                confirmButton = {
+                    TextButton(enabled = reportReason.trim().isNotBlank(), onClick = {
+                        val reason = reportReason.trim()
+                        scope.launch {
+                            runCatching {
+                                api.report(chat.id, reason)
+                                reportReason = ""
+                                showReportDialog = false
+                                statusMessage = "Report submitted"
+                            }.onFailure { statusMessage = it.message ?: "Could not submit report." }
+                        }
+                    }) { Text("Submit") }
+                },
+                dismissButton = { TextButton(onClick = { showReportDialog = false }) { Text("Cancel") } }
+            )
         }
 
         if (editingMessage != null) {
@@ -566,15 +703,61 @@ internal fun FriendsScreen() {
                     }
                 } else {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { selected = null; messages = emptyList(); text = ""; replyingTo = null }) { Icon(Icons.Default.ArrowBack, "Back") }
+                        IconButton(onClick = { selected = null; messages = emptyList(); text = ""; replyingTo = null; chatSearch = ""; showChatSearch = false }) { Icon(Icons.Default.ArrowBack, "Back") }
                         Column(Modifier.weight(1f)) {
                             Text(chat.username, style = MaterialTheme.typography.titleLarge)
                             val isOnline = online.any { it.id == chat.id }
-                            Text(if (isOnline) "Online" else "Offline", style = MaterialTheme.typography.bodySmall, color = if (isOnline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+                            val seen = chatProfile?.lastSeenAt.orEmpty()
+                            Text(
+                                when {
+                                    chatBlocked -> "Blocked"
+                                    isOnline -> "Online"
+                                    seen.isBlank() -> "Offline"
+                                    else -> "Last seen \${ChatTimeFormatter.time(seen)}"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isOnline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-                        Icon(Icons.Default.Person, "Profile", Modifier.padding(end = 8.dp))
+                        IconButton(onClick = { showChatSearch = !showChatSearch; if (!showChatSearch) chatSearch = "" }) { Icon(Icons.Default.Search, "Search messages") }
+                        IconButton(onClick = {
+                            scope.launch {
+                                runCatching {
+                                    api.setPinned(chat.id, !chatPinned)
+                                    chatPinned = !chatPinned
+                                    chatSummaries = api.chatSummaries()
+                                    statusMessage = if (chatPinned) "Chat pinned" else "Chat unpinned"
+                                }.onFailure { statusMessage = it.message ?: "Could not update pin." }
+                            }
+                        }) { Icon(Icons.Default.PushPin, if (chatPinned) "Unpin chat" else "Pin chat") }
+                        IconButton(onClick = {
+                            scope.launch {
+                                runCatching {
+                                    api.setMuted(chat.id, !chatMuted)
+                                    chatMuted = !chatMuted
+                                    statusMessage = if (chatMuted) "Chat muted" else "Chat unmuted"
+                                }.onFailure { statusMessage = it.message ?: "Could not update mute." }
+                            }
+                        }) { Icon(if (chatMuted) Icons.Default.NotificationsOff else Icons.Default.Notifications, if (chatMuted) "Unmute chat" else "Mute chat") }
+                        IconButton(onClick = {
+                            scope.launch {
+                                chatProfile = runCatching { api.profile(chat.id) }.getOrNull()
+                                showChatProfile = true
+                            }
+                        }) { Icon(Icons.Default.Person, "Chat profile") }
                     }
                 }
+            }
+
+            if (showChatSearch && selectedForActions == null) {
+                OutlinedTextField(
+                    value = chatSearch,
+                    onValueChange = { chatSearch = it },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                    singleLine = true,
+                    label = { Text("Search messages") },
+                    trailingIcon = { if (chatSearch.isNotBlank()) IconButton(onClick = { chatSearch = "" }) { Icon(Icons.Default.Clear, "Clear search") } }
+                )
             }
 
             if (selectedForActions != null) {
@@ -609,7 +792,7 @@ internal fun FriendsScreen() {
                 modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(5.dp)
             ) {
-                items(messages, key = { it.id }) { m ->
+                items(visibleMessages, key = { it.id }) { m ->
                     val mine = m.senderId == api.userId()
                     val isSelected = selectedForActions?.id == m.id
                     val reacted = reactions.filter { it.messageId == m.id }
@@ -755,6 +938,10 @@ internal fun FriendsScreen() {
             ListItem(
                 headlineContent = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (chatItem.pinned) {
+                            Icon(Icons.Default.PushPin, "Pinned", Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                        }
                         Text(chatItem.user.username)
                         if (chatItem.unreadCount > 0) {
                             Spacer(Modifier.width(8.dp))
