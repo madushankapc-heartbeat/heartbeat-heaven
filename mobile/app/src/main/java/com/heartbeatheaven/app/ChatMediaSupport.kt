@@ -13,7 +13,7 @@ internal object ChatMediaSupport {
     private const val SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.co"
     private const val KEY = "sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
     private const val BUCKET = "chat-media"
-    private const val MAX_BYTES = 6L * 1024L * 1024L
+    private const val MAX_BYTES = 50L * 1024L * 1024L
 
     fun upload(
         context: Context,
@@ -26,7 +26,7 @@ internal object ChatMediaSupport {
         val size = resolver.query(uri, arrayOf(OpenableColumns.SIZE, OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
             if (c.moveToFirst()) c.getLong(c.getColumnIndexOrThrow(OpenableColumns.SIZE)) else -1L
         } ?: -1L
-        if (size > MAX_BYTES) error("Please choose a file smaller than 6 MB.")
+        if (size > MAX_BYTES) error("Please choose a file 50 MB or smaller.")
         val name = resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
             if (c.moveToFirst()) c.getString(c.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME)) else null
         } ?: "attachment"
@@ -45,7 +45,7 @@ internal object ChatMediaSupport {
         try {
             c.requestMethod = "POST"
             c.connectTimeout = 20000
-            c.readTimeout = 60000
+            c.readTimeout = 300000
             c.doOutput = true
             c.setRequestProperty("apikey", KEY)
             c.setRequestProperty("Authorization", "Bearer " + session.accessToken)
@@ -58,9 +58,12 @@ internal object ChatMediaSupport {
                     while (true) {
                         val read = src.read(buffer)
                         if (read < 0) break
+                        if (sent + read > MAX_BYTES) {
+                            error("File exceeds the 50 MB upload limit.")
+                        }
                         out.write(buffer, 0, read)
                         sent += read
-                        onProgress(sent, size)
+                        onProgress(sent, if (size > 0L) size else MAX_BYTES)
                     }
                     out.flush()
                 }
@@ -68,6 +71,6 @@ internal object ChatMediaSupport {
             if (c.responseCode !in 200..299) error("Attachment upload failed (${c.responseCode}).")
         } finally { c.disconnect() }
         val publicUrl = SUPABASE_URL + "/storage/v1/object/public/" + BUCKET + "/" + path
-        UploadedChatMedia(type, publicUrl, name, if (size >= 0) size else 0L)
+        UploadedChatMedia(type, publicUrl, name, if (size >= 0) size else sent)
     }
 }
