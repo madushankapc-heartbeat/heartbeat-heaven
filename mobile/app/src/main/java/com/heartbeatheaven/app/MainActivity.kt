@@ -1,3 +1,4 @@
+// CI build source is intentionally kept explicit.
 package com.heartbeatheaven.app
 
 import android.content.Context
