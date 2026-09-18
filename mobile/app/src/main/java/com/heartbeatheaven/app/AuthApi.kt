@@ -49,6 +49,19 @@ internal class AuthApi(context: Context) {
         catch (_: Exception) { if (refresh.isBlank()) { clear(); null } else runCatching { refreshSession(refresh) }.getOrElse { clear(); null } }
     }
 
+    @Synchronized
+    fun refreshCurrentProfile(): AuthSession? {
+        val access = prefs.getString("access_token", null) ?: return null
+        val refresh = prefs.getString("refresh_token", "").orEmpty()
+        val userId = prefs.getString("user_id", null) ?: return null
+        return runCatching {
+            val user = requestUser(access)
+            val profile = fetchProfile(access, userId, user)
+            saveProfile(profile)
+            AuthSession(access, refresh, profile)
+        }.getOrNull()
+    }
+
     fun signUp(email: String, password: String, username: String, gender: String, phone: String, age: Int): Result<String> = try {
         val body = JSONObject().apply {
             put("email", email.trim()); put("password", password)
