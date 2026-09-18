@@ -375,6 +375,14 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
         request("/rest/v1/rpc/delete_message_for_me", "POST", JSONObject().put("p_message_id", messageId).toString())
     }
 
+    suspend fun clearChatForMe(otherUserId: String) = withContext(Dispatchers.IO) {
+        request("/rest/v1/rpc/clear_chat_for_me", "POST", JSONObject().put("p_other_user_id", otherUserId).toString())
+    }
+
+    suspend fun clearChatForEveryone(otherUserId: String) = withContext(Dispatchers.IO) {
+        request("/rest/v1/rpc/clear_chat_for_everyone", "POST", JSONObject().put("p_other_user_id", otherUserId).toString())
+    }
+
     suspend fun deleteForEveryone(messageId: String): ChatMessage = withContext(Dispatchers.IO) {
         val response = request("/rest/v1/rpc/delete_message_for_everyone", "POST", JSONObject().put("p_message_id", messageId).toString())
         val o = JSONObject(response)
@@ -459,6 +467,7 @@ internal fun FriendsScreen() {
     var chatBlocked by remember { mutableStateOf(false) }
     var showReportDialog by remember { mutableStateOf(false) }
     var reportReason by remember { mutableStateOf("") }
+    var clearChatMode by remember { mutableStateOf<String?>(null) }
     var otherTyping by remember { mutableStateOf(false) }
     var hasOlderMessages by remember { mutableStateOf(false) }
     var loadingOlderMessages by remember { mutableStateOf(false) }
@@ -797,6 +806,43 @@ internal fun FriendsScreen() {
             )
         }
 
+        clearChatMode?.let { mode ->
+            val everyone = mode == "everyone"
+            AlertDialog(
+                onDismissRequest = { clearChatMode = null },
+                title = { Text(if (everyone) "Clear chat for everyone?" else "Clear chat?") },
+                text = {
+                    Text(
+                        if (everyone)
+                            "All messages in this chat will be removed for both people."
+                        else
+                            "All messages in this chat will be cleared from your view."
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        clearChatMode = null
+                        scope.launch {
+                            runCatching {
+                                if (everyone) api.clearChatForEveryone(chat.id)
+                                else api.clearChatForMe(chat.id)
+                                messages = emptyList()
+                                searchResults = null
+                                reactions = emptyList()
+                                hasOlderMessages = false
+                                initialMessagesLoaded = true
+                                showLatestButton = false
+                                chatSummaries = api.chatSummaries()
+                                statusMessage = if (everyone) "Chat cleared for everyone" else "Chat cleared"
+                            }.onFailure { statusMessage = it.message ?: "Chat could not be cleared." }
+                        }
+                    }) { Text("Clear") }
+                },
+                dismissButton = { TextButton(onClick = { clearChatMode = null }) { Text("Cancel") }
+                }
+            )
+        }
+
         Column(Modifier.fillMaxSize()) {
             Surface(shadowElevation = 2.dp) {
                 if (selectedForActions != null) {
@@ -918,6 +964,14 @@ internal fun FriendsScreen() {
                                         reportReason = ""
                                         showReportDialog = true
                                     }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("🗑️ Clear chat") },
+                                    onClick = { showChatMenu = false; clearChatMode = "me" }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("🗑️ Clear chat for everyone") },
+                                    onClick = { showChatMenu = false; clearChatMode = "everyone" }
                                 )
                             }
                         }                    }
@@ -1088,8 +1142,20 @@ internal fun FriendsScreen() {
             }
 
             if (showLatestButton && chatSearch.isBlank() && selectedForActions == null && messages.isNotEmpty()) {
-                Surface(tonalElevation = 4.dp, shape = RoundedCornerShape(20.dp), modifier = Modifier.align(Alignment.CenterHorizontally)) {
-                    TextButton(onClick = { scope.launch { listState.animateScrollToItem(messages.lastIndex) } }) { Text("↓ Latest messages") }
+                Surface(
+                    tonalElevation = 2.dp,
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                ) {
+                    TextButton(
+                        onClick = { scope.launch { listState.animateScrollToItem(messages.lastIndex) } },
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Latest", modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(2.dp))
+                        Text("Latest", style = MaterialTheme.typography.labelSmall)
+                    }
                 }
             }
 
