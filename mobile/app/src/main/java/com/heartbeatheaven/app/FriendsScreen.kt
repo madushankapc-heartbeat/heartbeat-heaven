@@ -34,7 +34,7 @@ private data class FriendUser(val id: String, val username: String, val gender: 
 private data class FriendProfile(val id: String, val username: String, val gender: String, val lastSeenAt: String)
 private data class FriendRequest(val id: String, val user: FriendUser, val incoming: Boolean)
 private data class ChatSummary(val user: FriendUser, val lastMessage: String, val lastMessageAt: String, val unreadCount: Int, val pinned: Boolean)
-private data class ChatMessage(val id: String, val senderId: String, val body: String, val createdAt: String, val deliveredAt: String = "", val readAt: String = "", val editedAt: String = "", val deletedAt: String = "", val replyToId: String = "")
+private data class ChatMessage(val id: String, val senderId: String, val body: String, val createdAt: String, val deliveredAt: String = "", val readAt: String = "", val editedAt: String = "", val deletedAt: String = "", val replyToId: String = "", val messageType: String = "text", val mediaUrl: String = "", val mediaName: String = "", val mediaSize: Long = 0L)
 private data class MessageReaction(val messageId: String, val userId: String, val reaction: String)
 
 private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession) {
@@ -420,6 +420,7 @@ internal fun FriendsScreen() {
     var editText by remember { mutableStateOf("") }
     var selectedMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var replyingTo by remember { mutableStateOf<ChatMessage?>(null) }
+    var highlightedMessageId by remember { mutableStateOf<String?>(null) }
     var deleteTarget by remember { mutableStateOf<ChatMessage?>(null) }
     var reactions by remember { mutableStateOf<List<MessageReaction>>(emptyList()) }
     var statusMessage by remember { mutableStateOf<String?>(null) }
@@ -874,6 +875,7 @@ internal fun FriendsScreen() {
                     val reacted = reactions.filter { it.messageId == m.id }
                     val myReaction = reacted.firstOrNull { it.userId == api.userId() }
                     val replyPreview = m.replyToId.takeIf { it.isNotBlank() }?.let { rid -> messages.firstOrNull { it.id == rid } }
+                    val isHighlighted = highlightedMessageId == m.id
 
                     Row(
                         Modifier.fillMaxWidth(),
@@ -883,7 +885,9 @@ internal fun FriendsScreen() {
                             Surface(
                                 color = if (mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                                 shape = RoundedCornerShape(18.dp),
-                                modifier = Modifier.combinedClickable(
+                                modifier = Modifier
+                                    .then(if (isHighlighted) Modifier.padding(2.dp) else Modifier)
+                                    .combinedClickable(
                                     onClick = { if (selectedForActions != null) selectedMessage = if (isSelected) null else m },
                                     onLongClick = { selectedMessage = m }
                                 )
