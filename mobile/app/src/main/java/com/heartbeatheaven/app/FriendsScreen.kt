@@ -18,6 +18,8 @@ import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.snapshotFlow
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -281,34 +283,46 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
         request("/rest/v1/chat_reports", "POST", JSONObject().put("reporter_id", userId()).put("reported_user_id", other).put("reason", reason.trim().take(500)).toString())
     }
 
-    suspend fun messages(other: String): List<ChatMessage> = withContext(Dispatchers.IO) {
+    private fun parseMessages(a: JSONArray, hidden: Set<String>): List<ChatMessage> = buildList {
+        for (i in 0 until a.length()) {
+            val o = a.getJSONObject(i)
+            val id = o.optString("id")
+            if (id !in hidden) add(ChatMessage(
+                id, o.optString("sender_id"), o.optString("body"), o.optString("created_at"),
+                o.optString("delivered_at").takeUnless { it == "null" }.orEmpty(),
+                o.optString("read_at").takeUnless { it == "null" }.orEmpty(),
+                o.optString("edited_at").takeUnless { it == "null" }.orEmpty(),
+                o.optString("deleted_at").takeUnless { it == "null" }.orEmpty(),
+                o.optString("reply_to_id").takeUnless { it == "null" }.orEmpty()
+            ))
+        }
+    }
+
+    suspend fun messagesPage(other: String, beforeCreatedAt: String? = null): Pair<List<ChatMessage>, Boolean> = withContext(Dispatchers.IO) {
         val mine = userId()
-        val a = JSONArray(request("/rest/v1/messages?or=(and(sender_id.eq.$mine,receiver_id.eq.$other),and(sender_id.eq.$other,receiver_id.eq.$mine))&select=id,sender_id,body,created_at,delivered_at,read_at,edited_at,deleted_at,reply_to_id&order=created_at.asc&limit=100", "GET"))
+        val cursor = beforeCreatedAt?.let { "&created_at=lt.${URLEncoder.encode(it, "UTF-8")}" }.orEmpty()
+        val a = JSONArray(request("/rest/v1/messages?or=(and(sender_id.eq.${mine},receiver_id.eq.${other}),and(sender_id.eq.${other},receiver_id.eq.${mine}))${cursor}&select=id,sender_id,body,created_at,delivered_at,read_at,edited_at,deleted_at,reply_to_id&order=created_at.desc&limit=101", "GET"))
         val hidden = runCatching {
-            val d = JSONArray(request("/rest/v1/message_deletions?user_id=eq.$mine&select=message_id&limit=200", "GET"))
+            val d = JSONArray(request("/rest/v1/message_deletions?user_id=eq.${mine}&select=message_id&limit=2000", "GET"))
             buildSet { for (i in 0 until d.length()) add(d.getJSONObject(i).optString("message_id")) }
         }.getOrDefault(emptySet())
-        buildList {
-            for (i in 0 until a.length()) {
-                val o = a.getJSONObject(i)
-                val id = o.optString("id")
-                if (id !in hidden) {
-                    add(
-                        ChatMessage(
-                            id,
-                            o.optString("sender_id"),
-                            o.optString("body"),
-                            o.optString("created_at"),
-                            o.optString("delivered_at").takeUnless { it == "null" }.orEmpty(),
-                            o.optString("read_at").takeUnless { it == "null" }.orEmpty(),
-                            o.optString("edited_at").takeUnless { it == "null" }.orEmpty(),
-                            o.optString("deleted_at").takeUnless { it == "null" }.orEmpty(),
-                            o.optString("reply_to_id").takeUnless { it == "null" }.orEmpty()
-                        )
-                    )
-                }
-            }
-        }
+        val hasMore = a.length() > 100
+        parseMessages(a, hidden).take(100).sortedBy { it.createdAt } to hasMore
+    }
+
+    suspend fun messages(other: String): List<ChatMessage> = messagesPage(other).first
+
+    suspend fun searchMessages(other: String, query: String): List<ChatMessage> = withContext(Dispatchers.IO) {
+        val q = query.trim()
+        if (q.isBlank()) return@withContext emptyList()
+        val mine = userId()
+        val encoded = URLEncoder.encode(q, "UTF-8")
+        val a = JSONArray(request("/rest/v1/messages?or=(and(sender_id.eq.${mine},receiver_id.eq.${other}),and(sender_id.eq.${other},receiver_id.eq.${mine}))&body=ilike.*${encoded}*&select=id,sender_id,body,created_at,delivered_at,read_at,edited_at,deleted_at,reply_to_id&order=created_at.asc&limit=1000", "GET"))
+        val hidden = runCatching {
+            val d = JSONArray(request("/rest/v1/message_deletions?user_id=eq.${mine}&select=message_id&limit=2000", "GET"))
+            buildSet { for (i in 0 until d.length()) add(d.getJSONObject(i).optString("message_id")) }
+        }.getOrDefault(emptySet())
+        parseMessages(a, hidden)
     }
 
     suspend fun markDelivered(messageId: String) = withContext(Dispatchers.IO) {
@@ -421,6 +435,9 @@ internal fun FriendsScreen() {
     var showReportDialog by remember { mutableStateOf(false) }
     var reportReason by remember { mutableStateOf("") }
     var otherTyping by remember { mutableStateOf(false) }
+    var hasOlderMessages by remember { mutableStateOf(false) }
+    var loadingOlderMessages by remember { mutableStateOf(false) }
+    var searchResults by remember { mutableStateOf<List<ChatMessage>?>(null) }
 
     LaunchedEffect(Unit) {
         session = withContext(Dispatchers.IO) { auth.currentSession() }
@@ -466,17 +483,37 @@ internal fun FriendsScreen() {
     LaunchedEffect(selected?.id, api) {
         val current = selected ?: return@LaunchedEffect
         val a = api ?: return@LaunchedEffect
+        messages = emptyList()
+        searchResults = null
+        hasOlderMessages = false
+        runCatching {
+            a.markSeen(current.id)
+            val page = a.messagesPage(current.id)
+            messages = page.first
+            hasOlderMessages = page.second
+            reactions = runCatching { a.reactions(current.id) }.getOrDefault(emptyList())
+        }.onFailure { statusMessage = it.message ?: "Could not load messages." }
         while (true) {
+            delay(1500)
             runCatching {
                 a.markSeen(current.id)
                 val fresh = a.messages(current.id)
-                val freshReactions = runCatching { a.reactions(current.id) }.getOrDefault(emptyList())
-                reactions = freshReactions
-                fresh.filter { it.senderId == current.id && it.deliveredAt.isBlank() }.forEach { a.markDelivered(it.id) }
-                val updated = if (fresh.any { it.senderId == current.id && it.deliveredAt.isBlank() }) a.messages(current.id) else fresh
-                if (updated != messages) messages = updated
+                val byId = LinkedHashMap<String, ChatMessage>()
+                (messages + fresh).forEach { byId[it.id] = it }
+                messages = byId.values.sortedBy { it.createdAt }
+                reactions = runCatching { a.reactions(current.id) }.getOrDefault(emptyList())
+                messages.filter { it.senderId == current.id && it.deliveredAt.isBlank() }.forEach { a.markDelivered(it.id) }
             }
-            delay(1500)
+        }
+    }
+
+    LaunchedEffect(chatSearch, selected?.id) {
+        val current = selected ?: return@LaunchedEffect
+        val a = api ?: return@LaunchedEffect
+        if (chatSearch.isBlank()) searchResults = null
+        else {
+            delay(300)
+            searchResults = runCatching { a.searchMessages(current.id, chatSearch) }.getOrDefault(emptyList())
         }
     }
 
@@ -546,13 +583,28 @@ internal fun FriendsScreen() {
         val listState = rememberLazyListState()
         val selectedForActions = selectedMessage
         val replyTarget = replyingTo
-        val visibleMessages = remember(messages, chatSearch) {
-            if (chatSearch.isBlank()) messages
-            else messages.filter { it.body.contains(chatSearch.trim(), ignoreCase = true) }
+        val visibleMessages = searchResults ?: messages
+
+        LaunchedEffect(chat.id) {
+            snapshotFlow { listState.firstVisibleItemIndex }.collectLatest { first ->
+                if (first <= 2 && chatSearch.isBlank() && !loadingOlderMessages && hasOlderMessages && messages.isNotEmpty()) {
+                    loadingOlderMessages = true
+                    val oldest = messages.first()
+                    runCatching { api.messagesPage(chat.id, oldest.createdAt) }
+                        .onSuccess { (older, more) ->
+                            messages = (older + messages).distinctBy { it.id }.sortedBy { it.createdAt }
+                            hasOlderMessages = more
+                        }
+                        .onFailure { statusMessage = it.message ?: "Could not load older messages." }
+                    loadingOlderMessages = false
+                }
+            }
         }
 
-        LaunchedEffect(messages.size, chatSearch) {
-            if (visibleMessages.isNotEmpty()) listState.animateScrollToItem(visibleMessages.lastIndex)
+        LaunchedEffect(chat.id) {
+            snapshotFlow { messages.size }.collectLatest {
+                if (messages.isNotEmpty() && chatSearch.isBlank() && !loadingOlderMessages) listState.scrollToItem(messages.lastIndex)
+            }
         }
 
         LaunchedEffect(chat.id) {
