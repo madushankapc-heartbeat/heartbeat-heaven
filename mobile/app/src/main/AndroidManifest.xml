@@ -7,7 +7,7 @@
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <application android:name=".HeartbeatHeavenApplication" android:allowBackup="true" android:icon="@drawable/heartbeat_heaven_logo" android:label="HEARTBEAT HEAVEN" android:roundIcon="@drawable/heartbeat_heaven_logo" android:supportsRtl="true" android:theme="@style/Theme.HeartbeatHeaven">
-        <activity android:name=".CallActivity" android:exported="false" />
+        <activity android:name=".CallActivity" android:exported="false" android:supportsPictureInPicture="true" android:configChanges="orientation|screenLayout|screenSize|smallestScreenSize" />
         <activity android:name=".StudioActivity" android:exported="false" />
         <activity android:name=".MusicStudioActivity" android:exported="false" />
         <activity android:name=".UsersAdminActivity" android:exported="false" />
