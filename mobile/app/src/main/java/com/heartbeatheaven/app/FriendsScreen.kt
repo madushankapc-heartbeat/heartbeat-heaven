@@ -173,7 +173,7 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
         }.getOrDefault(emptySet())
 
         val pinned = runCatching {
-            val p = JSONArray(request("/rest/v1/chat_pins?user_id=eq.\${mine}&select=other_user_id&limit=1000", "GET"))
+            val p = JSONArray(request("/rest/v1/chat_pins?user_id=eq.${mine}&select=other_user_id&limit=1000", "GET"))
             buildSet { for (i in 0 until p.length()) add(p.getJSONObject(i).optString("other_user_id")) }
         }.getOrDefault(emptySet())
 
@@ -235,46 +235,46 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
     }
 
     suspend fun profile(other: String): FriendProfile? = withContext(Dispatchers.IO) {
-        val a = JSONArray(request("/rest/v1/profiles?id=eq.\${other}&select=id,username,gender,last_seen_at&limit=1", "GET"))
+        val a = JSONArray(request("/rest/v1/profiles?id=eq.${other}&select=id,username,gender,last_seen_at&limit=1", "GET"))
         if (a.length() == 0) return@withContext null
         val o = a.getJSONObject(0)
         FriendProfile(o.optString("id"), o.optString("username"), o.optString("gender"), o.optString("last_seen_at").takeUnless { it == "null" }.orEmpty())
     }
 
     suspend fun isMuted(other: String): Boolean = withContext(Dispatchers.IO) {
-        JSONArray(request("/rest/v1/chat_mutes?user_id=eq.\${userId()}&other_user_id=eq.\${other}&select=other_user_id&limit=1", "GET")).length() > 0
+        JSONArray(request("/rest/v1/chat_mutes?user_id=eq.${userId()}&other_user_id=eq.${other}&select=other_user_id&limit=1", "GET")).length() > 0
     }
 
     suspend fun setMuted(other: String, muted: Boolean) = withContext(Dispatchers.IO) {
         val mine = userId()
         if (muted) {
-            val existing = JSONArray(request("/rest/v1/chat_mutes?user_id=eq.\${mine}&other_user_id=eq.\${other}&select=other_user_id&limit=1", "GET"))
+            val existing = JSONArray(request("/rest/v1/chat_mutes?user_id=eq.${mine}&other_user_id=eq.${other}&select=other_user_id&limit=1", "GET"))
             if (existing.length() == 0) request("/rest/v1/chat_mutes", "POST", JSONObject().put("user_id", mine).put("other_user_id", other).toString())
-        } else request("/rest/v1/chat_mutes?user_id=eq.\${mine}&other_user_id=eq.\${other}", "DELETE")
+        } else request("/rest/v1/chat_mutes?user_id=eq.${mine}&other_user_id=eq.${other}", "DELETE")
     }
 
     suspend fun isPinned(other: String): Boolean = withContext(Dispatchers.IO) {
-        JSONArray(request("/rest/v1/chat_pins?user_id=eq.\${userId()}&other_user_id=eq.\${other}&select=other_user_id&limit=1", "GET")).length() > 0
+        JSONArray(request("/rest/v1/chat_pins?user_id=eq.${userId()}&other_user_id=eq.${other}&select=other_user_id&limit=1", "GET")).length() > 0
     }
 
     suspend fun setPinned(other: String, pinned: Boolean) = withContext(Dispatchers.IO) {
         val mine = userId()
         if (pinned) {
-            val existing = JSONArray(request("/rest/v1/chat_pins?user_id=eq.\${mine}&other_user_id=eq.\${other}&select=other_user_id&limit=1", "GET"))
+            val existing = JSONArray(request("/rest/v1/chat_pins?user_id=eq.${mine}&other_user_id=eq.${other}&select=other_user_id&limit=1", "GET"))
             if (existing.length() == 0) request("/rest/v1/chat_pins", "POST", JSONObject().put("user_id", mine).put("other_user_id", other).toString())
-        } else request("/rest/v1/chat_pins?user_id=eq.\${mine}&other_user_id=eq.\${other}", "DELETE")
+        } else request("/rest/v1/chat_pins?user_id=eq.${mine}&other_user_id=eq.${other}", "DELETE")
     }
 
     suspend fun isBlocked(other: String): Boolean = withContext(Dispatchers.IO) {
-        JSONArray(request("/rest/v1/user_blocks?blocker_id=eq.\${userId()}&blocked_id=eq.\${other}&select=blocked_id&limit=1", "GET")).length() > 0
+        JSONArray(request("/rest/v1/user_blocks?blocker_id=eq.${userId()}&blocked_id=eq.${other}&select=blocked_id&limit=1", "GET")).length() > 0
     }
 
     suspend fun setBlocked(other: String, blocked: Boolean) = withContext(Dispatchers.IO) {
         val mine = userId()
         if (blocked) {
-            val existing = JSONArray(request("/rest/v1/user_blocks?blocker_id=eq.\${mine}&blocked_id=eq.\${other}&select=blocked_id&limit=1", "GET"))
+            val existing = JSONArray(request("/rest/v1/user_blocks?blocker_id=eq.${mine}&blocked_id=eq.${other}&select=blocked_id&limit=1", "GET"))
             if (existing.length() == 0) request("/rest/v1/user_blocks", "POST", JSONObject().put("blocker_id", mine).put("blocked_id", other).toString())
-        } else request("/rest/v1/user_blocks?blocker_id=eq.\${mine}&blocked_id=eq.\${other}", "DELETE")
+        } else request("/rest/v1/user_blocks?blocker_id=eq.${mine}&blocked_id=eq.${other}", "DELETE")
     }
 
     suspend fun report(other: String, reason: String) = withContext(Dispatchers.IO) {
@@ -546,10 +546,10 @@ internal fun FriendsScreen() {
                 title = { Text(chatProfile?.username ?: chat.username) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Username: \${chatProfile?.username ?: chat.username}")
-                        Text("Gender: \${chatProfile?.gender ?: "—"}")
+                        Text("Username: ${chatProfile?.username ?: chat.username}")
+                        Text("Gender: ${chatProfile?.gender ?: "—"}")
                         val seen = chatProfile?.lastSeenAt.orEmpty()
-                        Text(if (online.any { it.id == chat.id }) "Online now" else if (seen.isBlank()) "Last seen: unknown" else "Last seen: \${ChatTimeFormatter.time(seen)}")
+                        Text(if (online.any { it.id == chat.id }) "Online now" else if (seen.isBlank()) "Last seen: unknown" else "Last seen: ${ChatTimeFormatter.time(seen)}")
                         Text(if (chatBlocked) "Blocked" else "Not blocked", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
@@ -573,7 +573,7 @@ internal fun FriendsScreen() {
         if (showReportDialog) {
             AlertDialog(
                 onDismissRequest = { showReportDialog = false },
-                title = { Text("Report \${chat.username}") },
+                title = { Text("Report ${chat.username}") },
                 text = {
                     OutlinedTextField(
                         value = reportReason,
@@ -713,7 +713,7 @@ internal fun FriendsScreen() {
                                     chatBlocked -> "Blocked"
                                     isOnline -> "Online"
                                     seen.isBlank() -> "Offline"
-                                    else -> "Last seen \${ChatTimeFormatter.time(seen)}"
+                                    else -> "Last seen ${ChatTimeFormatter.time(seen)}"
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (isOnline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
