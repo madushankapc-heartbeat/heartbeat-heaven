@@ -112,7 +112,8 @@ jobs:
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
-        run: gradle clean :app:assembleRelease --stacktrace --no-build-cache
+        run: gradle --stop || true
+          gradle clean :app:assembleRelease --stacktrace --no-build-cache --no-daemon -Pkotlin.incremental=false -Dkotlin.caching.enabled=false
 
       - name: Validate APK package and signature
         shell: bash
