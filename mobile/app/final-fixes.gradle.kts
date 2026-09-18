@@ -24,6 +24,47 @@ val prepareFinalAppFixes = tasks.register("prepareFinalAppFixes") {
                 val end = "    }\n}"
                 if (t.endsWith(end)) t = t.removeSuffix(end) + "    }\n    }\n}"
             }
+            // Chat UI/state hardening.
+            if (!t.contains("widthIn(max = 320.dp)")) t = t.replace(
+                "modifier = Modifier\n                                    .then(if (isHighlighted) Modifier.padding(2.dp) else Modifier)",
+                "modifier = Modifier.widthIn(max = 320.dp)\n                                    .then(if (isHighlighted) Modifier.padding(2.dp) else Modifier)"
+            )
+            t = t.replace(
+                "modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp)\n                                        ) {\n                                            Column(Modifier.padding(8.dp)) {",
+                "modifier = Modifier.widthIn(max = 300.dp).padding(bottom = 5.dp)\n                                        ) {\n                                            Column(Modifier.padding(8.dp)) {"
+            )
+            t = t.replace(
+                "Modifier\n                                                            .widthIn(max = 280.dp)\n                                                            .heightIn(max = 180.dp)",
+                "Modifier\n                                                            .widthIn(max = 260.dp)\n                                                            .heightIn(max = 170.dp)"
+            )
+            t = t.replace(
+                "messages = messages.map { if (it.id == updated.id) updated else it }\n                                        searchResults = searchResults?.map { if (it.id == updated.id) updated else it }",
+                "messages = messages.filterNot { it.id == updated.id }\n                                        searchResults = searchResults?.filterNot { it.id == updated.id }"
+            )
+            t = t.replace(
+                "val deleted = o.optString(\"deleted_at\").takeUnless { it == \"null\" }.orEmpty().isNotBlank()\n            val body = if (deleted) \"This message was deleted\" else o.optString(\"body\")",
+                "val deleted = o.optString(\"deleted_at\").takeUnless { it == \"null\" }.orEmpty().isNotBlank()\n            if (deleted) continue\n            val body = o.optString(\"body\")"
+            )
+            t = t.replace(
+                "val id = o.optString(\"id\")\n            if (id !in hidden) add(ChatMessage(",
+                "val id = o.optString(\"id\")\n            val deletedAt = o.optString(\"deleted_at\").takeUnless { it == \"null\" }.orEmpty()\n            if (id !in hidden && deletedAt.isBlank()) add(ChatMessage("
+            )
+            t = t.replace(
+                "o.optString(\"deleted_at\").takeUnless { it == \"null\" }.orEmpty(),\n                o.optString(\"reply_to_id\")",
+                "deletedAt,\n                o.optString(\"reply_to_id\")"
+            )
+            t = t.replace(
+                "            ) { id, senderId, body, createdAt ->\n                scope.launch(Dispatchers.Main) {",
+                "            ) { id, senderId, body, createdAt ->\n                android.os.Handler(android.os.Looper.getMainLooper()).post {"
+            )
+            t = t.replace(
+                "                        scope.launch(Dispatchers.IO) {\n                            currentApi.markDelivered(id)\n                            currentApi.markSeen(selectedId)\n                        }\n",
+                ""
+            )
+            t = t.replace(
+                "                }\n            }\n        }\n        realtime?.start()",
+                "                }\n            }\n        }\n        realtime?.start()"
+            )
             t
         }
 
