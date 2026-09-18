@@ -28,6 +28,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.util.UUID
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
@@ -339,6 +340,10 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
         request("/rest/v1/messages?sender_id=eq.$other&receiver_id=eq.${userId()}&read_at=is.null", "PATCH", JSONObject().put("read_at", Instant.now().toString()).toString())
     }
 
+    suspend fun sendMediaMessage(other: String, media: UploadedChatMedia, caption: String = "") = withContext(Dispatchers.IO) {
+        val payload = JSONObject().put("sender_id", userId()).put("receiver_id", other).put("body", caption.trim()).put("message_type", media.type).put("media_url", media.url).put("media_name", media.name).put("media_size", media.size)
+        request("/rest/v1/messages", "POST", payload.toString())
+    }
     suspend fun sendMessage(other: String, body: String, replyToId: String? = null): ChatMessage? = withContext(Dispatchers.IO) {
         val clean = body.trim()
         if (clean.isBlank()) return@withContext null
@@ -446,6 +451,7 @@ internal fun FriendsScreen() {
     var loadingOlderMessages by remember { mutableStateOf(false) }
     var searchResults by remember { mutableStateOf<List<ChatMessage>?>(null) }
     var initialMessagesLoaded by remember { mutableStateOf(false) }
+    var mediaBusy by remember { mutableStateOf(false) }
     var showLatestButton by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -454,6 +460,21 @@ internal fun FriendsScreen() {
     }
 
     val api = session?.let { remember(it.accessToken) { FriendsApi(auth, it) } }
+    val mediaPicker = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetContent()) { uri ->
+        val current = selected
+        val a = api
+        if (uri != null && current != null && a != null && !chatBlocked) {
+            mediaBusy = true
+            scope.launch {
+                val result = withContext(Dispatchers.IO) { ChatMediaSupport.upload(context, uri, session!!, current.id) }
+                result.onSuccess { media ->
+                    runCatching { a.sendMediaMessage(current.id, media); messages = a.messages(current.id); reactions = a.reactions(current.id); statusMessage = "Attachment sent." }
+                        .onFailure { statusMessage = it.message ?: "Could not send attachment." }
+                }.onFailure { statusMessage = it.message ?: "Could not upload attachment." }
+                mediaBusy = false
+            }
+        }
+    }
 
     fun reload() {
         val a = api ?: return
@@ -947,9 +968,16 @@ internal fun FriendsScreen() {
                                         Surface(
                                             tonalElevation = 2.dp,
                                             shape = RoundedCornerShape(10.dp),
-                                            modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp)
+                                            modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp).clickable {
+                                                runCatching {
+                                                    context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(m.mediaUrl)))
+                                                }.onFailure { statusMessage = "No app is available to open this attachment." }
+                                            }
                                         ) {
                                             Column(Modifier.padding(8.dp)) {
+                                                if (m.messageType == "image") {
+                                                    AsyncImage(model = m.mediaUrl, contentDescription = m.mediaName.ifBlank { "Image" }, modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                                                }
                                                 Text(
                                                     when (m.messageType) {
                                                         "image" -> "🖼️ Image"
@@ -1026,6 +1054,7 @@ internal fun FriendsScreen() {
                         modifier = Modifier.fillMaxWidth().padding(14.dp)
                     )
                 } else Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom) {
+                    IconButton(enabled = !mediaBusy, onClick = { mediaPicker.launch("*/*") }) { Icon(Icons.Default.AttachFile, if (mediaBusy) "Uploading attachment" else "Attach file") }
                     OutlinedTextField(
                         value = text,
                         onValueChange = { text = it; statusMessage = null },
