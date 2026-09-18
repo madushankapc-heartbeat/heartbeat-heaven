@@ -505,6 +505,12 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
     }
 
     val api = session?.let { remember(it.accessToken) { FriendsApi(auth, it) } }
+    fun isBlockedSendError(error: Throwable?): Boolean {
+        val message = error?.message.orEmpty().lowercase()
+        return message.contains("messages_blocked_users_denied") ||
+            (message.contains("row-level security policy") && message.contains("messages"))
+    }
+
     val mediaPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         val current = selected
         if (uri != null && current != null && !chatBlocked) {
@@ -1332,8 +1338,12 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                         chatSummaries = api.chatSummaries()
                                         text = ""; replyingTo = null; pendingMediaUri = null; pendingMediaName = ""; pendingMediaMime = ""
                                         statusMessage = "Attachment sent."
-                                    }.onFailure { statusMessage = it.message ?: "Could not send attachment." }
-                                }.onFailure { statusMessage = it.message ?: "Could not upload attachment." }
+                                    }.onFailure { error ->
+                                    statusMessage = if (isBlockedSendError(error)) null else (error.message ?: "Could not send attachment.")
+                                }
+                                }.onFailure { error ->
+                                    statusMessage = if (isBlockedSendError(error)) null else (error.message ?: "Could not upload attachment.")
+                                }
                                 mediaBusy = false
                             } else {
                                 text = ""; replyingTo = null
@@ -1344,9 +1354,9 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                     messages = api.messages(chat.id)
                                     reactions = api.reactions(chat.id)
                                     chatSummaries = api.chatSummaries()
-                                }.onFailure {
+                                }.onFailure { error ->
                                     messages = messages.filterNot { it.id == optimistic.id }
-                                    statusMessage = it.message ?: "Message could not be sent."
+                                    statusMessage = if (isBlockedSendError(error)) null else (error.message ?: "Message could not be sent.")
                                 }
                             }
                         }
