@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.app.PictureInPictureParams
+import android.content.Intent
 import android.content.res.Configuration
 import android.util.Rational
 import android.view.Gravity
@@ -34,6 +35,7 @@ class CallActivity : Activity() {
     private var isCaller = false
     private var remoteIceCount = 0
     private var running = true
+    private var cleanedUp = false
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val auth by lazy { AuthApi(applicationContext) }
     private val callApi by lazy { CallApi(applicationContext, auth) }
@@ -308,27 +310,49 @@ class CallActivity : Activity() {
     }
 
     private fun finishCall(statusValue: String) {
-        if (!running) { finish(); return }
+        if (!running) {
+            if (!isFinishing) finish()
+            return
+        }
         running = false
         val id = call?.id
         scope.launch {
-            if (!id.isNullOrBlank()) runCatching { withContext(Dispatchers.IO) { callApi.updateStatus(id, statusValue) } }
+            if (!id.isNullOrBlank()) {
+                runCatching { withContext(Dispatchers.IO) { callApi.updateStatus(id, statusValue) } }
+            }
+            // The call Activity is only a child screen. Always bring the existing
+            // MainActivity back to the foreground before finishing this Activity.
+            returnToMainActivity()
             cleanup()
-            finish()
+            if (!isFinishing) finish()
         }
     }
 
+    private fun returnToMainActivity() {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+        }
+        startActivity(intent)
+    }
+
     private fun cleanup() {
+        if (cleanedUp) return
+        cleanedUp = true
         runCatching { capturer?.stopCapture() }
         capturer?.dispose()
+        capturer = null
         videoSource?.dispose()
+        videoSource = null
         localStream?.dispose()
+        localStream = null
         peer?.close()
         peer?.dispose()
+        peer = null
         factory?.dispose()
-        localView.release()
-        remoteView.release()
-        egl.release()
+        factory = null
+        if (::localView.isInitialized) runCatching { localView.release() }
+        if (::remoteView.isInitialized) runCatching { remoteView.release() }
+        runCatching { egl.release() }
         scope.cancel()
     }
 
