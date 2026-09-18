@@ -145,6 +145,7 @@ class CallActivity : Activity() {
                         }
                     }
                 }
+                override fun onIceCandidateError(event: IceCandidateErrorEvent) {}
                 override fun onIceCandidatesRemoved(c: Array<out IceCandidate>) {}
                 override fun onSignalingChange(s: PeerConnection.SignalingState) {}
                 override fun onIceConnectionChange(s: PeerConnection.IceConnectionState) {
@@ -156,6 +157,7 @@ class CallActivity : Activity() {
                         else -> status.text
                     }}
                 }
+                override fun onStandardizedIceConnectionChange(s: PeerConnection.IceConnectionState) {}
                 override fun onConnectionChange(s: PeerConnection.PeerConnectionState) {
                     if (s == PeerConnection.PeerConnectionState.CONNECTED) runOnUiThread { status.text = "Connected" }
                 }
@@ -165,6 +167,8 @@ class CallActivity : Activity() {
                     runOnUiThread { stream.videoTracks.firstOrNull()?.addSink(remoteView) }
                 }
                 override fun onRemoveStream(stream: MediaStream) {}
+                override fun onRemoveTrack(receiver: RtpReceiver) {}
+                override fun onTrack(transceiver: RtpTransceiver) {}
                 override fun onDataChannel(c: DataChannel) {}
                 override fun onRenegotiationNeeded() {}
                 override fun onAddTrack(receiver: RtpReceiver, streams: Array<out MediaStream>) {
