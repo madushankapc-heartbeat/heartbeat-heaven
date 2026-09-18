@@ -292,7 +292,11 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
                 o.optString("read_at").takeUnless { it == "null" }.orEmpty(),
                 o.optString("edited_at").takeUnless { it == "null" }.orEmpty(),
                 o.optString("deleted_at").takeUnless { it == "null" }.orEmpty(),
-                o.optString("reply_to_id").takeUnless { it == "null" }.orEmpty()
+                o.optString("reply_to_id").takeUnless { it == "null" }.orEmpty(),
+                o.optString("message_type").ifBlank { "text" },
+                o.optString("media_url").takeUnless { it == "null" }.orEmpty(),
+                o.optString("media_name").takeUnless { it == "null" }.orEmpty(),
+                o.optLong("media_size", 0L)
             ))
         }
     }
@@ -300,7 +304,7 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
     suspend fun messagesPage(other: String, beforeCreatedAt: String? = null): Pair<List<ChatMessage>, Boolean> = withContext(Dispatchers.IO) {
         val mine = userId()
         val cursor = beforeCreatedAt?.let { "&created_at=lt.${URLEncoder.encode(it, "UTF-8")}" }.orEmpty()
-        val a = JSONArray(request("/rest/v1/messages?or=(and(sender_id.eq.${mine},receiver_id.eq.${other}),and(sender_id.eq.${other},receiver_id.eq.${mine}))${cursor}&select=id,sender_id,body,created_at,delivered_at,read_at,edited_at,deleted_at,reply_to_id&order=created_at.desc&limit=101", "GET"))
+        val a = JSONArray(request("/rest/v1/messages?or=(and(sender_id.eq.${mine},receiver_id.eq.${other}),and(sender_id.eq.${other},receiver_id.eq.${mine}))${cursor}&select=id,sender_id,body,created_at,delivered_at,read_at,edited_at,deleted_at,reply_to_id,message_type,media_url,media_name,media_size&order=created_at.desc&limit=101", "GET"))
         val hidden = runCatching {
             val d = JSONArray(request("/rest/v1/message_deletions?user_id=eq.${mine}&select=message_id&limit=2000", "GET"))
             buildSet { for (i in 0 until d.length()) add(d.getJSONObject(i).optString("message_id")) }
@@ -316,7 +320,7 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
         if (q.isBlank()) return@withContext emptyList()
         val mine = userId()
         val encoded = URLEncoder.encode(q, "UTF-8")
-        val a = JSONArray(request("/rest/v1/messages?or=(and(sender_id.eq.${mine},receiver_id.eq.${other}),and(sender_id.eq.${other},receiver_id.eq.${mine}))&body=ilike.*${encoded}*&select=id,sender_id,body,created_at,delivered_at,read_at,edited_at,deleted_at,reply_to_id&order=created_at.asc&limit=1000", "GET"))
+        val a = JSONArray(request("/rest/v1/messages?or=(and(sender_id.eq.${mine},receiver_id.eq.${other}),and(sender_id.eq.${other},receiver_id.eq.${mine}))&body=ilike.*${encoded}*&select=id,sender_id,body,created_at,delivered_at,read_at,edited_at,deleted_at,reply_to_id,message_type,media_url,media_name,media_size&order=created_at.asc&limit=1000", "GET"))
         val hidden = runCatching {
             val d = JSONArray(request("/rest/v1/message_deletions?user_id=eq.${mine}&select=message_id&limit=2000", "GET"))
             buildSet { for (i in 0 until d.length()) add(d.getJSONObject(i).optString("message_id")) }
