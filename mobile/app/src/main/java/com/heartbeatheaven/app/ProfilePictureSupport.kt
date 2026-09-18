@@ -10,7 +10,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 internal object ProfilePictureSupport {
-    private const val SUPABASE_URL = "https://fafvhyeesenpimxncuup.supabase.co"
+    private const val SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.co"
     private const val KEY = "sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
     private const val BUCKET = "profile-pictures"
 
