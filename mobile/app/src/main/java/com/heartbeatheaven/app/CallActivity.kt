@@ -4,6 +4,9 @@ import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.app.PictureInPictureParams
+import android.content.res.Configuration
+import android.util.Rational
 import android.view.Gravity
 import android.view.ViewGroup
 import android.widget.Button
@@ -90,6 +93,11 @@ class CallActivity : Activity() {
         }
         status = TextView(this).apply { text = "Connecting…"; textSize = 18f; setTextColor(-1); gravity = Gravity.CENTER }
         panel.addView(status, LinearLayout.LayoutParams(-1, -2))
+        val chatButton = Button(this).apply {
+            text = "Chat"
+            setOnClickListener { minimizeToChat() }
+        }
+        panel.addView(chatButton, LinearLayout.LayoutParams(-1, -2))
         endButton = Button(this).apply { text = "End call"; setOnClickListener { finishCall("ended") } }
         panel.addView(endButton, LinearLayout.LayoutParams(-1, -2))
         root.addView(panel, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply {
@@ -324,7 +332,30 @@ class CallActivity : Activity() {
         scope.cancel()
     }
 
-    override fun onBackPressed() { finishCall("ended") }
+    private fun minimizeToChat() {
+        if (android.os.Build.VERSION.SDK_INT >= 26 &&
+            packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)
+        ) {
+            val video = intent.getStringExtra("call_type") == "video"
+            val ratio = if (video) Rational(9, 16) else Rational(16, 9)
+            val builder = PictureInPictureParams.Builder().setAspectRatio(ratio)
+            if (android.os.Build.VERSION.SDK_INT >= 31) builder.setAutoEnterEnabled(false)
+            enterPictureInPictureMode(builder.build())
+        }
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        if (::status.isInitialized) status.visibility = if (isInPictureInPictureMode) android.view.View.GONE else android.view.View.VISIBLE
+        if (::endButton.isInitialized) endButton.visibility = if (isInPictureInPictureMode) android.view.View.GONE else android.view.View.VISIBLE
+        if (::localView.isInitialized) {
+            localView.visibility = if (!isInPictureInPictureMode && intent.getStringExtra("call_type") == "video") android.view.View.VISIBLE else android.view.View.GONE
+        }
+    }
+
+    override fun onBackPressed() {
+        if (isInPictureInPictureMode) finishCall("ended") else minimizeToChat()
+    }
     override fun onDestroy() {
         if (running) {
             running = false
