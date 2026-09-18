@@ -114,7 +114,7 @@ jobs:
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
           gradle --stop || true
-          gradle clean :app:assembleRelease --stacktrace --no-build-cache --no-daemon -Pkotlin.incremental=false -Dkotlin.caching.enabled=false
+          gradle clean :app:assembleRelease --stacktrace --no-build-cache --no-daemon -Pkotlin.incremental=false -Dkotlin.caching.enabled=false -Pkotlin.compiler.execution.strategy=in-process --no-configuration-cache
 
       - name: Validate APK package and signature
         shell: bash
