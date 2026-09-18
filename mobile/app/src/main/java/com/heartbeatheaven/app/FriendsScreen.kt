@@ -233,8 +233,10 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
     }
 
     suspend fun reactions(other: String): List<MessageReaction> = withContext(Dispatchers.IO) {
-        val mine = userId()
-        val a = JSONArray(request("/rest/v1/message_reactions?select=message_id,user_id,reaction&message_id=in.(select=id%20from%20messages%20where%20or%3D(and(sender_id.eq.$mine,receiver_id.eq.$other),and(sender_id.eq.$other,receiver_id.eq.$mine)))&limit=500", "GET"))
+        val ids = messages(other).map { it.id }
+        if (ids.isEmpty()) return@withContext emptyList()
+        val idFilter = ids.joinToString(",")
+        val a = JSONArray(request("/rest/v1/message_reactions?select=message_id,user_id,reaction&message_id=in.($idFilter)&limit=500", "GET"))
         buildList {
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
