@@ -40,10 +40,10 @@ import java.time.temporal.ChronoUnit
 
 private const val FRIENDS_SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.co"
 private const val FRIENDS_KEY = "sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
-private data class FriendUser(val id: String, val username: String, val gender: String, val avatarUrl: String = "")
-private data class FriendProfile(val id: String, val username: String, val gender: String, val lastSeenAt: String, val avatarUrl: String = "")
+private data class FriendUser(val id: String, val username: String, val gender: String, val avatarUrl: String = "", val lastSeenAt: String = "", val lastSeenVisibility: String = "everyone")
+private data class FriendProfile(val id: String, val username: String, val gender: String, val lastSeenAt: String, val avatarUrl: String = "", val lastSeenVisibility: String = "everyone")
 private data class FriendRequest(val id: String, val user: FriendUser, val incoming: Boolean)
-private data class ChatSummary(val user: FriendUser, val lastMessage: String, val lastMessageAt: String, val unreadCount: Int, val pinned: Boolean)
+private data class ChatSummary(val user: FriendUser, val lastMessage: String, val lastMessageAt: String, val unreadCount: Int, val pinned: Boolean, val muted: Boolean)
 private data class ChatMessage(val id: String, val senderId: String, val body: String, val createdAt: String, val deliveredAt: String = "", val readAt: String = "", val editedAt: String = "", val deletedAt: String = "", val replyToId: String = "", val messageType: String = "text", val mediaUrl: String = "", val mediaName: String = "", val mediaSize: Long = 0L)
 private data class MessageReaction(val messageId: String, val userId: String, val reaction: String)
 private data class PendingChatAttachment(val uri: Uri, val name: String, val mime: String, val size: Long)
@@ -98,11 +98,24 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
     suspend fun onlineUsers(): List<FriendUser> = withContext(Dispatchers.IO) {
         val since = Instant.now().minus(2, ChronoUnit.MINUTES).toString()
         val encoded = URLEncoder.encode(since, "UTF-8")
-        val a = runCatching { JSONArray(request("/rest/v1/profiles?last_seen_at=gte.$encoded&select=id,username,gender,avatar_url&limit=50", "GET")) }.getOrElse { JSONArray(request("/rest/v1/profiles?last_seen_at=gte.$encoded&select=id,username,gender&limit=50", "GET")) }
+        val mine = userId()
+        val friendIds = runCatching {
+            val f = JSONArray(request("/rest/v1/friendships?or=(requester_id.eq." + mine + ",addressee_id.eq." + mine + ")&status=eq.accepted&select=requester_id,addressee_id&limit=500", "GET"))
+            buildSet {
+                for (i in 0 until f.length()) {
+                    val o = f.getJSONObject(i)
+                    add(if (o.optString("requester_id") == mine) o.optString("addressee_id") else o.optString("requester_id"))
+                }
+            }
+        }.getOrDefault(emptySet())
+        val a = JSONArray(request("/rest/v1/profiles?last_seen_at=gte." + encoded + "&select=id,username,gender,avatar_url,last_seen_at,last_seen_visibility&limit=100", "GET"))
         buildList {
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
-                if (o.optString("id") != userId()) add(FriendUser(o.optString("id"), o.optString("username"), o.optString("gender"), o.optString("avatar_url").takeUnless { it == "null" }.orEmpty()))
+                val id = o.optString("id")
+                val visibility = o.optString("last_seen_visibility").ifBlank { "everyone" }
+                val allowed = id != mine && (visibility == "everyone" || (visibility == "friends" && id in friendIds))
+                if (allowed) add(FriendUser(id, o.optString("username"), o.optString("gender"), o.optString("avatar_url").takeUnless { it == "null" }.orEmpty(), o.optString("last_seen_at").takeUnless { it == "null" }.orEmpty(), visibility))
             }
         }
     }
@@ -167,15 +180,15 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
 
     suspend fun friends(): List<FriendUser> = withContext(Dispatchers.IO) {
         val mine = userId()
-        val a = JSONArray(request("/rest/v1/friendships?or=(requester_id.eq.$mine,addressee_id.eq.$mine)&status=eq.accepted&select=requester_id,addressee_id", "GET"))
+        val a = JSONArray(request("/rest/v1/friendships?or=(requester_id.eq." + mine + ",addressee_id.eq." + mine + ")&status=eq.accepted&select=requester_id,addressee_id", "GET"))
         buildList {
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
                 val uid = if (o.optString("requester_id") == mine) o.optString("addressee_id") else o.optString("requester_id")
-                val p = runCatching { JSONArray(request("/rest/v1/profiles?id=eq.$uid&select=id,username,gender,avatar_url", "GET")) }.getOrElse { JSONArray(request("/rest/v1/profiles?id=eq.$uid&select=id,username,gender", "GET")) }
+                val p = runCatching { JSONArray(request("/rest/v1/profiles?id=eq." + uid + "&select=id,username,gender,avatar_url,last_seen_at,last_seen_visibility", "GET")) }.getOrElse { JSONArray(request("/rest/v1/profiles?id=eq." + uid + "&select=id,username,gender,avatar_url", "GET")) }
                 if (p.length() > 0) {
                     val u = p.getJSONObject(0)
-                    add(FriendUser(uid, u.optString("username"), u.optString("gender"), u.optString("avatar_url").takeUnless { it == "null" }.orEmpty()))
+                    add(FriendUser(uid, u.optString("username"), u.optString("gender"), u.optString("avatar_url").takeUnless { it == "null" }.orEmpty(), u.optString("last_seen_at").takeUnless { it == "null" }.orEmpty(), u.optString("last_seen_visibility").ifBlank { "everyone" }))
                 }
             }
         }
@@ -194,6 +207,11 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
         val pinned = runCatching {
             val p = JSONArray(request("/rest/v1/chat_pins?user_id=eq.${mine}&select=other_user_id&limit=1000", "GET"))
             buildSet { for (i in 0 until p.length()) add(p.getJSONObject(i).optString("other_user_id")) }
+        }.getOrDefault(emptySet())
+
+        val muted = runCatching {
+            val m = JSONArray(request("/rest/v1/chat_mutes?user_id=eq." + mine + "&select=other_user_id&limit=1000", "GET"))
+            buildSet { for (i in 0 until m.length()) add(m.getJSONObject(i).optString("other_user_id")) }
         }.getOrDefault(emptySet())
 
         val a = JSONArray(
@@ -243,7 +261,8 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
                 lastMessage = row?.body.orEmpty(),
                 lastMessageAt = row?.createdAt.orEmpty(),
                 unreadCount = unreadCounts[friend.id] ?: 0,
-                pinned = friend.id in pinned
+                pinned = friend.id in pinned,
+                muted = friend.id in muted
             )
         }.sortedWith(
             compareByDescending<ChatSummary> { it.pinned }
@@ -255,13 +274,20 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
 
     suspend fun profile(other: String): FriendProfile? = withContext(Dispatchers.IO) {
         val a = runCatching {
-            JSONArray(request("/rest/v1/profiles?id=eq.${other}&select=id,username,gender,last_seen_at,avatar_url&limit=1", "GET"))
+            JSONArray(request("/rest/v1/profiles?id=eq." + other + "&select=id,username,gender,last_seen_at,last_seen_visibility,avatar_url&limit=1", "GET"))
         }.getOrElse {
-            JSONArray(request("/rest/v1/profiles?id=eq.${other}&select=id,username,gender,last_seen_at&limit=1", "GET"))
+            JSONArray(request("/rest/v1/profiles?id=eq." + other + "&select=id,username,gender,last_seen_at,avatar_url&limit=1", "GET"))
         }
         if (a.length() == 0) return@withContext null
         val o = a.getJSONObject(0)
-        FriendProfile(o.optString("id"), o.optString("username"), o.optString("gender"), o.optString("last_seen_at").takeUnless { it == "null" }.orEmpty(), o.optString("avatar_url").takeUnless { it == "null" }.orEmpty())
+        FriendProfile(
+            o.optString("id"),
+            o.optString("username"),
+            o.optString("gender"),
+            o.optString("last_seen_at").takeUnless { it == "null" }.orEmpty(),
+            o.optString("avatar_url").takeUnless { it == "null" }.orEmpty(),
+            o.optString("last_seen_visibility").ifBlank { "everyone" }
+        )
     }
 
     suspend fun isMuted(other: String): Boolean = withContext(Dispatchers.IO) {
@@ -1466,7 +1492,11 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                             Icon(Icons.Default.PushPin, "Pinned", Modifier.size(16.dp))
                             Spacer(Modifier.width(4.dp))
                         }
-                        Text(chatItem.user.username)
+                        Text(chatItem.user.username, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        if (chatItem.muted) {
+                            Spacer(Modifier.width(6.dp))
+                            Icon(Icons.Default.NotificationsOff, "Muted", Modifier.size(16.dp))
+                        }
                         if (chatItem.unreadCount > 0) {
                             Spacer(Modifier.width(8.dp))
                             Badge { Text(chatItem.unreadCount.toString()) }
@@ -1477,7 +1507,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             when {
-                                chatItem.lastMessage.isBlank() -> if (isOnline) "Online" else "No messages yet"
+                                chatItem.lastMessage.isBlank() -> if (isOnline) "Online now" else "No messages yet"
                                 else -> chatItem.lastMessage
                             },
                             modifier = Modifier.weight(1f),
@@ -1486,7 +1516,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                         )
                         if (chatItem.lastMessageAt.isNotBlank()) {
                             Text(
-                                ChatTimeFormatter.time(chatItem.lastMessageAt),
+                                ChatTimeFormatter.listTimestamp(chatItem.lastMessageAt),
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -1494,12 +1524,18 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                     }
                 },
                 leadingContent = {
-                    if (chatItem.user.avatarUrl.isNotBlank()) AsyncImage(model = chatItem.user.avatarUrl, contentDescription = "Profile picture", modifier = Modifier.size(48.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
-                    else Icon(
-                        if (isOnline) Icons.Default.Circle else Icons.Default.Person,
-                        if (isOnline) "Online" else "Friend",
-                        tint = if (isOnline) MaterialTheme.colorScheme.primary else LocalContentColor.current
-                    )
+                    Box {
+                        if (chatItem.user.avatarUrl.isNotBlank()) AsyncImage(model = chatItem.user.avatarUrl, contentDescription = "Profile picture", modifier = Modifier.size(48.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                        else Icon(Icons.Default.Person, "Friend", modifier = Modifier.size(48.dp))
+                        if (isOnline) {
+                            Surface(
+                                modifier = Modifier.size(13.dp).align(Alignment.BottomEnd),
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primary,
+                                border = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.surface)
+                            ) {}
+                        }
+                    }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
