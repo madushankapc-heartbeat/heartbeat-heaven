@@ -1007,6 +1007,18 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                 color = if (isOnline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                        IconButton(enabled = !chatBlocked, onClick = {
+                            context.startActivity(Intent(context, CallActivity::class.java).apply {
+                                putExtra("callee_id", chat.id)
+                                putExtra("call_type", "voice")
+                            })
+                        }) { Icon(Icons.Default.Call, "Voice call") }
+                        IconButton(enabled = !chatBlocked, onClick = {
+                            context.startActivity(Intent(context, CallActivity::class.java).apply {
+                                putExtra("callee_id", chat.id)
+                                putExtra("call_type", "video")
+                            })
+                        }) { Icon(Icons.Default.Videocam, "Video call") }
                         Box {
                             IconButton(onClick = { showChatMenu = true }) {
                                 Icon(Icons.Default.MoreVert, "Chat actions")
