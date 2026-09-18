@@ -1,6 +1,7 @@
 package com.heartbeatheaven.app
 
 import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
@@ -19,6 +20,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.draw.clip
 import coil.compose.AsyncImage
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -432,8 +435,21 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
 
 private fun targetIsMine(message: ChatMessage?, userId: String): Boolean = message?.senderId == userId
 
+private fun saveRemoteAttachment(context: android.content.Context, sourceUrl: String, destination: Uri): Result<Unit> = runCatching {
+    val connection = URL(sourceUrl).openConnection() as HttpURLConnection
+    try {
+        connection.connectTimeout = 15000
+        connection.readTimeout = 60000
+        if (connection.responseCode !in 200..299) error("Download failed (${connection.responseCode}).")
+        val output = context.contentResolver.openOutputStream(destination) ?: error("Could not open the selected save location.")
+        connection.inputStream.use { input -> output.use { input.copyTo(it) } }
+    } finally {
+        connection.disconnect()
+    }
+}
+
 @Composable
-internal fun FriendsScreen() {
+internal fun FriendsScreen(refreshTrigger: Int = 0) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val auth = remember { AuthApi(context) }
@@ -475,6 +491,11 @@ internal fun FriendsScreen() {
     var initialMessagesLoaded by remember { mutableStateOf(false) }
     var mediaBusy by remember { mutableStateOf(false) }
     var showLatestButton by remember { mutableStateOf(false) }
+    var pendingMediaUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingMediaName by remember { mutableStateOf("") }
+    var pendingMediaMime by remember { mutableStateOf("") }
+    var fullScreenImage by remember { mutableStateOf<ChatMessage?>(null) }
+    var saveTarget by remember { mutableStateOf<ChatMessage?>(null) }
 
     LaunchedEffect(Unit) {
         session = withContext(Dispatchers.IO) { auth.currentSession() }
@@ -482,18 +503,26 @@ internal fun FriendsScreen() {
     }
 
     val api = session?.let { remember(it.accessToken) { FriendsApi(auth, it) } }
-    val mediaPicker = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetContent()) { uri ->
+    val mediaPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         val current = selected
-        val a = api
-        if (uri != null && current != null && a != null && !chatBlocked) {
-            mediaBusy = true
+        if (uri != null && current != null && !chatBlocked) {
+            pendingMediaUri = uri
+            pendingMediaName = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) cursor.getString(cursor.getColumnIndexOrThrow(android.provider.OpenableColumns.DISPLAY_NAME)) else null
+            } ?: "attachment"
+            pendingMediaMime = context.contentResolver.getType(uri).orEmpty()
+            statusMessage = null
+        }
+    }
+
+    val saveAttachmentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { destination ->
+        val target = saveTarget
+        saveTarget = null
+        if (destination != null && target != null) {
             scope.launch {
-                val result = withContext(Dispatchers.IO) { ChatMediaSupport.upload(context, uri, session!!, current.id) }
-                result.onSuccess { media ->
-                    runCatching { a.sendMediaMessage(current.id, media); messages = a.messages(current.id); reactions = a.reactions(current.id); statusMessage = "Attachment sent." }
-                        .onFailure { statusMessage = it.message ?: "Could not send attachment." }
-                }.onFailure { statusMessage = it.message ?: "Could not upload attachment." }
-                mediaBusy = false
+                runCatching { withContext(Dispatchers.IO) { saveRemoteAttachment(context, target.mediaUrl, destination) }.getOrThrow() }
+                    .onSuccess { statusMessage = "Saved to the selected location." }
+                    .onFailure { statusMessage = it.message ?: "Could not save attachment." }
             }
         }
     }
@@ -518,7 +547,7 @@ internal fun FriendsScreen() {
         }
     }
 
-    LaunchedEffect(session?.accessToken) { if (session != null) reload() }
+    LaunchedEffect(session?.accessToken, refreshTrigger) { if (session != null) reload() }
 
     LaunchedEffect(api) {
         if (api != null) while (true) {
@@ -537,6 +566,10 @@ internal fun FriendsScreen() {
         val a = api ?: return@LaunchedEffect
         messages = emptyList()
         searchResults = null
+        pendingMediaUri = null
+        pendingMediaName = ""
+        pendingMediaMime = ""
+        fullScreenImage = null
         hasOlderMessages = false
         initialMessagesLoaded = false
         runCatching {
@@ -783,7 +816,10 @@ internal fun FriendsScreen() {
                             scope.launch {
                                 runCatching {
                                     api.deleteForMe(target.id)
-                                    messages = api.messages(chat.id)
+                                    messages = messages.filterNot { it.id == target.id }
+                                    searchResults = searchResults?.filterNot { it.id == target.id }
+                                    reactions = reactions.filterNot { it.messageId == target.id }
+                                    chatSummaries = api.chatSummaries()
                                 }.onFailure { statusMessage = it.message ?: "Message could not be deleted." }
                             }
                         }) { Text("Delete for me") }
@@ -796,6 +832,9 @@ internal fun FriendsScreen() {
                                     runCatching {
                                         val updated = api.deleteForEveryone(target.id)
                                         messages = messages.map { if (it.id == updated.id) updated else it }
+                                        searchResults = searchResults?.map { if (it.id == updated.id) updated else it }
+                                        reactions = reactions.filterNot { it.messageId == updated.id }
+                                        chatSummaries = api.chatSummaries()
                                     }.onFailure { statusMessage = it.message ?: "Message could not be deleted for everyone." }
                                 }
                             }) { Text("Delete for everyone") }
@@ -843,6 +882,34 @@ internal fun FriendsScreen() {
             )
         }
 
+        fullScreenImage?.let { image ->
+            Dialog(
+                onDismissRequest = { fullScreenImage = null },
+                properties = DialogProperties(usePlatformDefaultWidth = false)
+            ) {
+                Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    Column(Modifier.fillMaxSize().padding(8.dp)) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { fullScreenImage = null }) { Icon(Icons.Default.Close, "Close image") }
+                            Text(image.mediaName.ifBlank { "Image" }, modifier = Modifier.weight(1f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            IconButton(onClick = {
+                                saveTarget = image
+                                saveAttachmentLauncher.launch(image.mediaName.ifBlank { "image.jpg" })
+                            }) { Icon(Icons.Default.Download, "Save image") }
+                        }
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            AsyncImage(
+                                model = image.mediaUrl,
+                                contentDescription = image.mediaName.ifBlank { "Image" },
+                                modifier = Modifier.fillMaxWidth().fillMaxHeight(),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         Column(Modifier.fillMaxSize()) {
             Surface(shadowElevation = 2.dp) {
                 if (selectedForActions != null) {
@@ -875,7 +942,7 @@ internal fun FriendsScreen() {
                     }
                 } else {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { selected = null; messages = emptyList(); text = ""; replyingTo = null; chatSearch = ""; showChatSearch = false }) { Icon(Icons.Default.ArrowBack, "Back") }
+                        IconButton(onClick = { selected = null; messages = emptyList(); text = ""; replyingTo = null; pendingMediaUri = null; pendingMediaName = ""; pendingMediaMime = ""; fullScreenImage = null; chatSearch = ""; showChatSearch = false }) { Icon(Icons.Default.ArrowBack, "Back") }
                         if (chat.avatarUrl.isNotBlank()) AsyncImage(model = chat.avatarUrl, contentDescription = "Profile picture", modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
                         else Surface(modifier = Modifier.size(44.dp).clip(CircleShape), tonalElevation = 2.dp) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Person, "Profile picture") } }
                         Column(Modifier.weight(1f).padding(start = 8.dp)) {
@@ -1083,31 +1150,77 @@ internal fun FriendsScreen() {
                                         Surface(
                                             tonalElevation = 2.dp,
                                             shape = RoundedCornerShape(10.dp),
-                                            modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp).clickable {
-                                                runCatching {
-                                                    context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(m.mediaUrl)))
-                                                }.onFailure { statusMessage = "No app is available to open this attachment." }
-                                            }
+                                            modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp)
                                         ) {
                                             Column(Modifier.padding(8.dp)) {
                                                 if (m.messageType == "image") {
-                                                    AsyncImage(model = m.mediaUrl, contentDescription = m.mediaName.ifBlank { "Image" }, modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                                                    AsyncImage(
+                                                        model = m.mediaUrl,
+                                                        contentDescription = m.mediaName.ifBlank { "Image" },
+                                                        modifier = Modifier
+                                                            .widthIn(max = 280.dp)
+                                                            .heightIn(max = 180.dp)
+                                                            .clip(RoundedCornerShape(8.dp))
+                                                            .clickable { fullScreenImage = m },
+                                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                                    )
+                                                } else {
+                                                    Row(
+                                                        Modifier.fillMaxWidth().clickable {
+                                                            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(m.mediaUrl))) }
+                                                                .onFailure { statusMessage = "No app is available to open this attachment." }
+                                                        },
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Icon(
+                                                            when (m.messageType) {
+                                                                "video" -> Icons.Default.VideoFile
+                                                                "audio" -> Icons.Default.AudioFile
+                                                                else -> Icons.Default.InsertDriveFile
+                                                            },
+                                                            contentDescription = null,
+                                                            modifier = Modifier.size(34.dp)
+                                                        )
+                                                        Spacer(Modifier.width(8.dp))
+                                                        Column(Modifier.weight(1f)) {
+                                                            Text(
+                                                                when (m.messageType) {
+                                                                    "video" -> "Video"
+                                                                    "audio" -> "Audio"
+                                                                    else -> "File"
+                                                                },
+                                                                style = MaterialTheme.typography.labelMedium
+                                                            )
+                                                            if (m.mediaName.isNotBlank()) Text(m.mediaName, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                                        }
+                                                    }
                                                 }
-                                                Text(
-                                                    when (m.messageType) {
-                                                        "image" -> "🖼️ Image"
-                                                        "video" -> "🎬 Video"
-                                                        "audio" -> "🎵 Audio"
-                                                        else -> "📎 File"
-                                                    },
-                                                    style = MaterialTheme.typography.labelMedium
-                                                )
-                                                if (m.mediaName.isNotBlank()) Text(m.mediaName, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                                                if (m.mediaSize > 0) Text("${m.mediaSize / 1024} KB", style = MaterialTheme.typography.labelSmall)
-                                                Text(m.mediaUrl, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
+                                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                                    Column(Modifier.weight(1f)) {
+                                                        if (m.mediaName.isNotBlank() && m.messageType == "image") Text(m.mediaName, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                                        if (m.mediaSize > 0) Text("${m.mediaSize / 1024} KB", style = MaterialTheme.typography.labelSmall)
+                                                    }
+                                                    IconButton(onClick = {
+                                                        saveTarget = m
+                                                        saveAttachmentLauncher.launch(m.mediaName.ifBlank { "attachment" })
+                                                    }) { Icon(Icons.Default.Download, "Save attachment") }
+                                                    IconButton(onClick = {
+                                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                            type = when (m.messageType) {
+                                                                "image" -> "image/*"
+                                                                "video" -> "video/*"
+                                                                "audio" -> "audio/*"
+                                                                else -> "*/*"
+                                                            }
+                                                            putExtra(Intent.EXTRA_TEXT, m.mediaUrl)
+                                                        }
+                                                        context.startActivity(Intent.createChooser(shareIntent, "Share attachment"))
+                                                    }) { Icon(Icons.Default.Share, "Share attachment") }
+                                                }
                                             }
                                         }
                                     }
+
                                     Text(
                                         if (m.deletedAt.isNotBlank()) "This message was deleted" else m.body,
                                         Modifier.padding(top = if (replyPreview != null) 1.dp else 0.dp),
@@ -1173,46 +1286,71 @@ internal fun FriendsScreen() {
 
             statusMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) }
             if (otherTyping) Text("Typing…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp))
+            pendingMediaUri?.let { uri ->
+                Surface(tonalElevation = 3.dp, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)) {
+                    Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (pendingMediaMime.startsWith("image/")) {
+                            AsyncImage(model = uri, contentDescription = "Selected image", modifier = Modifier.size(64.dp).clip(RoundedCornerShape(8.dp)), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                        } else {
+                            Icon(Icons.Default.AttachFile, "Attachment", Modifier.size(40.dp))
+                        }
+                        Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
+                            Text("Ready to send", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            Text(pendingMediaName, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        }
+                        IconButton(enabled = !mediaBusy, onClick = {
+                            pendingMediaUri = null; pendingMediaName = ""; pendingMediaMime = ""
+                        }) { Icon(Icons.Default.Close, "Remove attachment") }
+                    }
+                }
+            }
             Surface(tonalElevation = 2.dp) {
                 if (chatBlocked) {
-                    Text(
-                        "You blocked this user. Unblock from the profile to send messages.",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.fillMaxWidth().padding(14.dp)
-                    )
+                    Text("You blocked this user. Unblock from the profile to send messages.", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth().padding(14.dp))
                 } else Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom) {
-                    OutlinedTextField(
-                        value = text,
-                        onValueChange = { text = it; statusMessage = null },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("Message") },
-                        maxLines = 4
-                    )
+                    OutlinedTextField(value = text, onValueChange = { text = it; statusMessage = null }, modifier = Modifier.weight(1f), placeholder = { Text(if (pendingMediaUri != null) "Add a caption (optional)" else "Message") }, maxLines = 4)
                     Spacer(Modifier.width(2.dp))
                     IconButton(enabled = !mediaBusy, onClick = { mediaPicker.launch("*/*") }) {
-                        Icon(Icons.Default.AttachFile, if (mediaBusy) "Uploading attachment" else "Attach file")
+                        Icon(Icons.Default.AttachFile, if (mediaBusy) "Choose attachment" else "Attach file")
                     }
-                    IconButton(enabled = text.isNotBlank(), onClick = {
+                    IconButton(enabled = !mediaBusy && (text.isNotBlank() || pendingMediaUri != null), onClick = {
+                        val pendingUri = pendingMediaUri
                         val outgoing = text.trim()
                         val replyId = replyingTo?.id
-                        text = ""
-                        replyingTo = null
                         statusMessage = null
-                        val optimistic = ChatMessage("local-${System.nanoTime()}", api.userId(), outgoing, "")
-                        messages = messages + optimistic
                         scope.launch {
-                            runCatching {
-                                api.sendMessage(chat.id, outgoing, replyId)
-                                messages = api.messages(chat.id)
-                                reactions = api.reactions(chat.id)
-                            }.onFailure {
-                                messages = messages.filterNot { it.id == optimistic.id }
-                                statusMessage = it.message ?: "Message could not be sent."
+                            if (pendingUri != null) {
+                                mediaBusy = true
+                                val result = withContext(Dispatchers.IO) { ChatMediaSupport.upload(context, pendingUri, session!!, chat.id) }
+                                result.onSuccess { media ->
+                                    runCatching {
+                                        api.sendMediaMessage(chat.id, media, outgoing)
+                                        messages = api.messages(chat.id)
+                                        reactions = api.reactions(chat.id)
+                                        chatSummaries = api.chatSummaries()
+                                        text = ""; replyingTo = null; pendingMediaUri = null; pendingMediaName = ""; pendingMediaMime = ""
+                                        statusMessage = "Attachment sent."
+                                    }.onFailure { statusMessage = it.message ?: "Could not send attachment." }
+                                }.onFailure { statusMessage = it.message ?: "Could not upload attachment." }
+                                mediaBusy = false
+                            } else {
+                                text = ""; replyingTo = null
+                                val optimistic = ChatMessage("local-${System.nanoTime()}", api.userId(), outgoing, "")
+                                messages = messages + optimistic
+                                runCatching {
+                                    api.sendMessage(chat.id, outgoing, replyId)
+                                    messages = api.messages(chat.id)
+                                    reactions = api.reactions(chat.id)
+                                    chatSummaries = api.chatSummaries()
+                                }.onFailure {
+                                    messages = messages.filterNot { it.id == optimistic.id }
+                                    statusMessage = it.message ?: "Message could not be sent."
+                                }
                             }
                         }
                     }) { Icon(Icons.Default.Send, "Send") }
                 }
-            }
+            }            }
         }
         return
     }
