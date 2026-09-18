@@ -63,6 +63,8 @@ internal class CallApi(private val context: Context, private val auth: AuthApi) 
     suspend fun updateStatus(id: String, status: String): CallSession = withContext(Dispatchers.IO) {
         parse(JSONObject(request("/rest/v1/rpc/update_call_status", "POST", JSONObject().put("p_call_id", id).put("p_status", status).toString())))
     }
+    fun updateStatusBlocking(id: String, status: String): CallSession =
+        parse(JSONObject(request("/rest/v1/rpc/update_call_status", "POST", JSONObject().put("p_call_id", id).put("p_status", status).toString())))
     suspend fun publishOffer(id: String, sdp: String) = patch(id, JSONObject().put("offer_sdp", sdp))
     suspend fun publishAnswer(id: String, sdp: String) = patch(id, JSONObject().put("answer_sdp", sdp))
     suspend fun addCallerIce(id: String, candidate: JSONObject) = appendIce(id, true, candidate)
