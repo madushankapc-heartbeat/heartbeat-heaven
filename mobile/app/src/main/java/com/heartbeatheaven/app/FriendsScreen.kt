@@ -92,7 +92,7 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
     }
 
     suspend fun touchPresence() = withContext(Dispatchers.IO) {
-        request("/rest/v1/public_profiles?id=eq.${userId()}&select=id", "PATCH", JSONObject().put("last_seen_at", Instant.now().toString()).toString())
+        auth.touchLastSeen(session.accessToken).getOrThrow()
     }
 
     suspend fun onlineUsers(): List<FriendUser> = withContext(Dispatchers.IO) {
