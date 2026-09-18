@@ -32,7 +32,6 @@ import coil.request.ImageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -157,7 +156,6 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
     var tab by remember { mutableStateOf(0) }; var search by remember { mutableStateOf("") }; var selected by remember { mutableStateOf<Song?>(null) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
     var refreshing by remember { mutableStateOf(false) }
-    val refreshScope = rememberCoroutineScope()
     val favorites = remember { FavoriteStore(context) }; var favoriteIds by remember { mutableStateOf(favorites.ids()) }
     val authSession = remember { AuthApi(context).currentSession() }
 
@@ -192,13 +190,6 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
                 enabled = !refreshing,
                 onClick = {
                     refreshTrigger += 1
-                    if (tab != 1 && tab != 4) {
-                        refreshScope.launch {
-                            refreshing = true
-                            refreshSongs()
-                            refreshing = false
-                        }
-                    }
                 }
             ) {
                 if (refreshing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
