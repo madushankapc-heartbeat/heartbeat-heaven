@@ -952,7 +952,13 @@ internal fun FriendsScreen() {
             statusMessage?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) }
             if (otherTyping) Text("Typing…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp))
             Surface(tonalElevation = 2.dp) {
-                Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom) {
+                if (chatBlocked) {
+                    Text(
+                        "You blocked this user. Unblock from the profile to send messages.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth().padding(14.dp)
+                    )
+                } else Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom) {
                     OutlinedTextField(
                         value = text,
                         onValueChange = { text = it; statusMessage = null },
