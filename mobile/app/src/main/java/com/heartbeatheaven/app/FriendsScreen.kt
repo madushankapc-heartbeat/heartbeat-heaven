@@ -662,6 +662,11 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                             currentApi.markSeen(selectedId)
                         }
                     }
+                    scope.launch(Dispatchers.IO) {
+                        runCatching { currentApi.chatSummaries() }.onSuccess { summaries ->
+                            scope.launch(Dispatchers.Main) { chatSummaries = summaries }
+                        }
+                    }
                 }
             }
         }
@@ -759,7 +764,15 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                         Text("Username: ${chatProfile?.username ?: chat.username}")
                         Text("Gender: ${chatProfile?.gender ?: "—"}")
                         val seen = chatProfile?.lastSeenAt.orEmpty()
-                        Text(if (online.any { it.id == chat.id }) "Online now" else if (seen.isBlank()) "Last seen: unknown" else "Last seen: ${ChatTimeFormatter.time(seen)}")
+                        val visibility = chatProfile?.lastSeenVisibility ?: "everyone"
+                        Text(
+                            when {
+                                visibility == "nobody" -> "Last seen hidden"
+                                online.any { it.id == chat.id } -> "Online now"
+                                seen.isBlank() -> "Last seen: unknown"
+                                else -> "Last seen: ${ChatTimeFormatter.time(seen)}"
+                            }
+                        )
                         Text(if (chatBlocked) "Blocked" else "Not blocked", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
@@ -996,9 +1009,11 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                             )
                             val isOnline = online.any { it.id == chat.id }
                             val seen = chatProfile?.lastSeenAt.orEmpty()
+                            val visibility = chatProfile?.lastSeenVisibility ?: "everyone"
                             Text(
                                 when {
                                     chatBlocked -> "Blocked"
+                                    visibility == "nobody" -> "Last seen hidden"
                                     isOnline -> "Online"
                                     seen.isBlank() -> "Offline"
                                     else -> "Last seen ${ChatTimeFormatter.time(seen)}"
@@ -1504,55 +1519,31 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                     }
                 },
                 supportingContent = {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            when {
-                                chatItem.lastMessage.isBlank() -> if (isOnline) "Online now" else "No messages yet"
-                                else -> chatItem.lastMessage
-                            },
-                            modifier = Modifier.weight(1f),
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                        )
-                        if (chatItem.lastMessageAt.isNotBlank()) {
+                    Column(Modifier.fillMaxWidth()) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                ChatTimeFormatter.listTimestamp(chatItem.lastMessageAt),
+                                when {
+                                    chatItem.lastMessage.isBlank() -> if (isOnline) "Online now" else "No messages yet"
+                                    else -> chatItem.lastMessage
+                                },
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                            if (chatItem.lastMessageAt.isNotBlank()) {
+                                Text(
+                                    ChatTimeFormatter.listTimestamp(chatItem.lastMessageAt),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        if (!isOnline && chatItem.user.lastSeenVisibility != "nobody" && chatItem.user.lastSeenAt.isNotBlank()) {
+                            Text(
+                                "Last seen ${ChatTimeFormatter.time(chatItem.user.lastSeenAt)}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
                 },
-                leadingContent = {
-                    Box {
-                        if (chatItem.user.avatarUrl.isNotBlank()) AsyncImage(model = chatItem.user.avatarUrl, contentDescription = "Profile picture", modifier = Modifier.size(48.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
-                        else Icon(Icons.Default.Person, "Friend", modifier = Modifier.size(48.dp))
-                        if (isOnline) {
-                            Surface(
-                                modifier = Modifier.size(13.dp).align(Alignment.BottomEnd),
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.primary,
-                                border = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.surface)
-                            ) {}
-                        }
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        selected = chatItem.user
-                        selectedMessage = null
-                        replyingTo = null
-                        deleteTarget = null
-                        editingMessage = null
-                        editText = ""
-                        text = ""
-                        statusMessage = null
-                    }
-            )
-            Divider()
-        }
-        statusMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
-        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
-    }
-}
