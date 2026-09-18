@@ -82,7 +82,7 @@ create trigger call_sessions_security_guard before insert or update on public.ca
 for each row execute function private.call_sessions_security_guard();
 
 create or replace function public.create_call(p_callee_id uuid, p_call_type text)
-returns public.call_sessions language plpgsql security definer set search_path = public, private
+returns public.call_sessions language plpgsql
 as $$
 declare r public.call_sessions;
 begin
@@ -94,8 +94,12 @@ begin
   return r;
 end $$;
 
+drop policy if exists call_sessions_update_participant on public.call_sessions;
+create policy call_sessions_update_participant on public.call_sessions
+for update to authenticated using (auth.uid() = caller_id or auth.uid() = callee_id) with check (auth.uid() = caller_id or auth.uid() = callee_id);
+
 create or replace function public.update_call_status(p_call_id uuid, p_status text)
-returns public.call_sessions language plpgsql security definer set search_path = public, private
+returns public.call_sessions language plpgsql
 as $$
 declare r public.call_sessions;
 begin
