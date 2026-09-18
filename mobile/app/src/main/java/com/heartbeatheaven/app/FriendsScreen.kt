@@ -1,5 +1,6 @@
 package com.heartbeatheaven.app
 
+import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
