@@ -525,6 +525,8 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
     var showLatestButton by remember { mutableStateOf(false) }
     var fullScreenImage by remember { mutableStateOf<ChatMessage?>(null) }
     var saveTarget by remember { mutableStateOf<ChatMessage?>(null) }
+    var latestCall by remember { mutableStateOf<CallSession?>(null) }
+    var launchedIncomingCallId by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(Unit) {
         session = withContext(Dispatchers.IO) { auth.currentSession() }
@@ -598,8 +600,16 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                 online = api.onlineUsers()
                 friends = api.friends()
                 chatSummaries = api.chatSummaries()
+                val incoming = api.incomingRinging().firstOrNull()
+                if (incoming != null && incoming.id != launchedIncomingCallId) {
+                    launchedIncomingCallId = incoming.id
+                    context.startActivity(Intent(context, CallActivity::class.java).apply {
+                        putExtra("call_id", incoming.id)
+                        putExtra("call_type", incoming.callType)
+                    })
+                }
             }
-            delay(30000)
+            delay(5000)
         }
     }
 
@@ -607,6 +617,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
         val current = selected ?: return@LaunchedEffect
         val a = api ?: return@LaunchedEffect
         messages = emptyList()
+        latestCall = runCatching { CallApi(context, auth).latestWithUser(current.id) }.getOrNull()
         searchResults = null
         pendingMediaItems = emptyList()
         mediaProgress = 0
@@ -1132,6 +1143,38 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                     }.onFailure { statusMessage = it.message ?: "Reaction failed." }
                                 }
                             }) { Text(emoji, style = MaterialTheme.typography.titleLarge) }
+                        }
+                    }
+                }
+            }
+
+            latestCall?.let { callSession ->
+                val me = api.userId()
+                val missed = callSession.calleeId == me &&
+                    callSession.startedAt.isNullOrBlank() &&
+                    callSession.status in listOf("ended", "failed", "cancelled", "missed")
+                if (missed) {
+                    Surface(
+                        tonalElevation = 3.dp,
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(if (callSession.callType == "video") Icons.Default.Videocam else Icons.Default.Call, "Missed call")
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("Missed " + if (callSession.callType == "video") "video" else "voice" + " call", fontWeight = FontWeight.SemiBold)
+                                Text("Tap to call back", style = MaterialTheme.typography.bodySmall)
+                            }
+                            IconButton(onClick = {
+                                context.startActivity(Intent(context, CallActivity::class.java).apply {
+                                    putExtra("callee_id", current.id)
+                                    putExtra("call_type", callSession.callType)
+                                })
+                            }) { Icon(Icons.Default.Call, "Call back") }
                         }
                     }
                 }
