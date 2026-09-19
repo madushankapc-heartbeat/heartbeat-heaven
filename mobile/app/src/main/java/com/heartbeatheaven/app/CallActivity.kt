@@ -344,6 +344,7 @@ class CallActivity : Activity() {
                     call = withContext(Dispatchers.IO) { callApi.create(outgoingUser, type) }
                     isCaller = true
                 } else error("Missing call information")
+                CallKeepAliveService.start(this@CallActivity)
                 setupPeer(type == "video")
                 if (isCaller) {
                     setOutgoingControls()
@@ -809,6 +810,7 @@ class CallActivity : Activity() {
     private fun cleanup() {
         if (cleanedUp) return
         cleanedUp = true
+        CallKeepAliveService.stop(this)
         stopCallTone()
         runCatching { capturer?.stopCapture() }
         capturer?.dispose()
