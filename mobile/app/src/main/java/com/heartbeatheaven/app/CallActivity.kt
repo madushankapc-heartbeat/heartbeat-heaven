@@ -7,6 +7,8 @@ import android.os.Bundle
 import android.app.PictureInPictureParams
 import android.content.Intent
 import android.content.res.Configuration
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.util.Rational
 import android.view.Gravity
 import android.view.ViewGroup
@@ -36,6 +38,9 @@ class CallActivity : Activity() {
     private var remoteIceCount = 0
     private var running = true
     private var cleanedUp = false
+    private var toneGenerator: ToneGenerator? = null
+    private var toneJob: Job? = null
+    private var ringStartedAt = 0L
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val auth by lazy { AuthApi(applicationContext) }
     private val callApi by lazy { CallApi(applicationContext, auth) }
@@ -172,7 +177,7 @@ class CallActivity : Activity() {
                 }
                 override fun onStandardizedIceConnectionChange(s: PeerConnection.IceConnectionState) {}
                 override fun onConnectionChange(s: PeerConnection.PeerConnectionState) {
-                    if (s == PeerConnection.PeerConnectionState.CONNECTED) runOnUiThread { status.text = "Connected" }
+                    if (s == PeerConnection.PeerConnectionState.CONNECTED) runOnUiThread { stopCallTone(); status.text = "Connected" }
                 }
                 override fun onIceConnectionReceivingChange(receiving: Boolean) {}
                 override fun onIceGatheringChange(s: PeerConnection.IceGatheringState) {}
@@ -234,6 +239,7 @@ class CallActivity : Activity() {
             }, MediaConstraints())
         }
         status.text = "Ringing…"
+        startCallTone(ToneGenerator.TONE_SUP_RINGTONE)
     }
 
     private suspend fun acceptIncoming() {
@@ -282,16 +288,50 @@ class CallActivity : Activity() {
         error("Caller did not send an offer")
     }
 
+
+    private fun startCallTone(tone: Int) {
+        stopCallTone()
+        toneGenerator = runCatching { ToneGenerator(AudioManager.STREAM_VOICE_CALL, 80) }.getOrNull()
+        ringStartedAt = System.currentTimeMillis()
+        toneJob = scope.launch(Dispatchers.Main.immediate) {
+            while (isActive && running) {
+                toneGenerator?.startTone(tone, 1200)
+                delay(1800)
+            }
+        }
+    }
+
+    private fun stopCallTone() {
+        toneJob?.cancel()
+        toneJob = null
+        runCatching { toneGenerator?.stopTone() }
+        toneGenerator?.release()
+        toneGenerator = null
+    }
+
+    private fun playBusyTone() {
+        stopCallTone()
+        toneGenerator = runCatching { ToneGenerator(AudioManager.STREAM_VOICE_CALL, 85) }.getOrNull()
+        toneGenerator?.startTone(ToneGenerator.TONE_SUP_BUSY, 2200)
+    }
+
     private fun startSignalLoop() {
         scope.launch(Dispatchers.IO) {
             while (isActive && running) {
                 val c = callApi.get(call!!.id) ?: break
                 call = c
+                if (isCaller && c.status == "ringing" && c.answerSdp == null &&
+                    System.currentTimeMillis() - ringStartedAt >= 20000L) {
+                    playBusyTone()
+                    runOnUiThread { status.text = "User unavailable" }
+                    runCatching { callApi.updateStatus(call!!.id, "failed") }
+                    break
+                }
                 if (isCaller && c.answerSdp != null && peer!!.remoteDescription == null) {
                     withContext(Dispatchers.Main) {
                         peer!!.setRemoteDescription(object : SdpObserver {
                             override fun onCreateSuccess(p0: SessionDescription?) {}
-                            override fun onSetSuccess() { status.text = "Connecting…" }
+                            override fun onSetSuccess() { stopCallTone(); status.text = "Connecting…" }
                             override fun onCreateFailure(e: String?) {}
                             override fun onSetFailure(e: String?) {}
                         }, SessionDescription(SessionDescription.Type.ANSWER, c.answerSdp))
@@ -315,6 +355,7 @@ class CallActivity : Activity() {
             return
         }
         running = false
+        stopCallTone()
         val id = call?.id
         scope.launch {
             if (!id.isNullOrBlank()) {
@@ -338,6 +379,7 @@ class CallActivity : Activity() {
     private fun cleanup() {
         if (cleanedUp) return
         cleanedUp = true
+        stopCallTone()
         runCatching { capturer?.stopCapture() }
         capturer?.dispose()
         capturer = null
