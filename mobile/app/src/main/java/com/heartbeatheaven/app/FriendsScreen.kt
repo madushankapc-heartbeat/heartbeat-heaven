@@ -935,7 +935,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                 text = {
                     Text(
                         if (everyone)
-                            "Your sent messages in this chat will be removed for both people."
+                            "All messages in this chat will be removed for both people."
                         else
                             "All messages in this chat will be cleared from your view."
                     )
