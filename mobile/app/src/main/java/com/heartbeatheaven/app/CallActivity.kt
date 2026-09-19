@@ -37,6 +37,7 @@ class CallActivity : Activity() {
     private var factory: PeerConnectionFactory? = null
     private var capturer: VideoCapturer? = null
     private var videoSource: VideoSource? = null
+    private var audioTrack: AudioTrack? = null
     private var localStream: MediaStream? = null
     private var call: CallSession? = null
     private var isCaller = false
@@ -290,7 +291,7 @@ class CallActivity : Activity() {
 
         val audioConstraints = MediaConstraints()
         val audioSource = factory!!.createAudioSource(audioConstraints)
-        val audioTrack = factory!!.createAudioTrack("audio_" + call!!.id, audioSource)
+        audioTrack = factory!!.createAudioTrack("audio_" + call!!.id, audioSource)
 
         val mediaConstraints = MediaConstraints()
         val fallbackIceServers = listOf(
@@ -360,7 +361,7 @@ class CallActivity : Activity() {
             }
         ) ?: error("Could not create WebRTC connection")
 
-        peer!!.addTrack(audioTrack, listOf("stream_" + call!!.id))
+        peer!!.addTrack(audioTrack!!, listOf("stream_" + call!!.id))
         if (video) {
             capturer = createCameraCapturer()
             videoSource = factory!!.createVideoSource(capturer!!.isScreencast)
