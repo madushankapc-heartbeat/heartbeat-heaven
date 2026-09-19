@@ -71,6 +71,7 @@ class CallActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CallNotificationManager.cancelIncoming(this)
         if (!hasPermissions()) {
             ActivityCompat.requestPermissions(this, neededPermissions(), 7002)
             return
@@ -352,6 +353,9 @@ class CallActivity : Activity() {
                     setIncomingControls()
                     startCallTone(ToneGenerator.TONE_SUP_RINGTONE)
                     statusPanel.text = "Incoming call"
+                    if (intent.getBooleanExtra("answer_now", false)) {
+                        answerIncoming()
+                    }
                 }
                 startSignalLoop()
             }.onFailure {
@@ -575,6 +579,7 @@ class CallActivity : Activity() {
                 call = withContext(Dispatchers.IO) { callApi.updateStatus(id, "accepted") }
                 setActiveControls()
                 val offer = call?.offerSdp ?: waitForOffer()
+                lastRemoteOfferSdp = offer
                 val remote = SessionDescription(SessionDescription.Type.OFFER, offer)
                 withContext(Dispatchers.Main) {
                     peer?.setRemoteDescription(object : SdpObserver {
@@ -713,6 +718,7 @@ class CallActivity : Activity() {
                 }
 
                 if (c.status in listOf("declined", "missed", "ended", "failed", "cancelled")) {
+                    CallNotificationManager.cancelIncoming(this@CallActivity)
                     runOnUiThread { statusPanel.text = when (c.status) {
                         "ended" -> "Call ended"
                         "cancelled" -> "Call cancelled"
