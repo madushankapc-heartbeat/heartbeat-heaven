@@ -28,6 +28,11 @@ class CallActivity : Activity() {
     private lateinit var localView: SurfaceViewRenderer
     private lateinit var remoteView: SurfaceViewRenderer
     private lateinit var endButton: Button
+    private lateinit var controlsPanel: LinearLayout
+    private lateinit var statusPanel: TextView
+    private var controlsHideJob: Job? = null
+    private var controlsVisible = true
+    private var callAnswered = false
     private var peer: PeerConnection? = null
     private var factory: PeerConnectionFactory? = null
     private var capturer: VideoCapturer? = null
@@ -88,30 +93,163 @@ class CallActivity : Activity() {
             setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FILL)
             setEnableHardwareScaler(true)
         }
-        root.addView(localView, FrameLayout.LayoutParams(320, 420, Gravity.TOP or Gravity.END).apply {
-            topMargin = 32
+        root.addView(localView, FrameLayout.LayoutParams(300, 400, Gravity.TOP or Gravity.END).apply {
+            topMargin = 28
             rightMargin = 16
         })
 
-        val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(20, 24, 20, 24)
+        statusPanel = TextView(this).apply {
+            text = "Connecting…"
+            textSize = 17f
+            setTextColor(-1)
+            gravity = Gravity.CENTER
+            setPadding(20, 10, 20, 10)
         }
-        status = TextView(this).apply { text = "Connecting…"; textSize = 18f; setTextColor(-1); gravity = Gravity.CENTER }
-        panel.addView(status, LinearLayout.LayoutParams(-1, -2))
-        val chatButton = Button(this).apply {
-            text = "Chat"
-            setOnClickListener { minimizeToChat() }
-        }
-        panel.addView(chatButton, LinearLayout.LayoutParams(-1, -2))
-        endButton = Button(this).apply { text = "End call"; setOnClickListener { finishCall("ended") } }
-        panel.addView(endButton, LinearLayout.LayoutParams(-1, -2))
-        root.addView(panel, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply {
-            // Keep call controls above Android gesture/navigation area.
-            bottomMargin = (88 * resources.displayMetrics.density).toInt()
+        root.addView(statusPanel, FrameLayout.LayoutParams(-1, -2, Gravity.TOP).apply {
+            topMargin = 12
         })
+
+        controlsPanel = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(10, 12, 10, 12)
+            setBackgroundColor(0xDD15171A.toInt())
+        }
+
+        fun control(text: String, description: String, onClick: () -> Unit): Button =
+            Button(this).apply {
+                this.text = text
+                contentDescription = description
+                textSize = 12f
+                isAllCaps = false
+                setOnClickListener { onClick() }
+                minWidth = 0
+                minimumWidth = 0
+                setPadding(8, 4, 8, 4)
+                layoutParams = LinearLayout.LayoutParams(0, 70).apply { weight = 1f }
+            }
+
+        val addPeopleButton = control("👥\nAdd", "Add people to group call") {
+            showAddPeopleMessage()
+        }
+        val videoButton = control("🎥\nVideo", "Toggle video") {
+            toggleVideoTrack()
+        }
+        val speakerButton = control("🔊\nSpeaker", "Toggle speaker") {
+            toggleSpeaker()
+        }
+        val muteButton = control("🎙\nMute", "Toggle microphone") {
+            toggleMute()
+        }
+        val chatButton = control("💬\nChat", "Open chat") {
+            minimizeToChat()
+        }
+
+        controlsPanel.addView(addPeopleButton)
+        controlsPanel.addView(videoButton)
+        controlsPanel.addView(speakerButton)
+        controlsPanel.addView(muteButton)
+        controlsPanel.addView(chatButton)
+
+        endButton = control("🔴\nEnd", "Answer or end call") {
+            if (!callAnswered && !isCaller) answerIncoming() else finishCall(if (isCaller && !callAnswered) "cancelled" else "ended")
+        }
+        controlsPanel.addView(endButton)
+        root.addView(controlsPanel, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply {
+            bottomMargin = (48 * resources.displayMetrics.density).toInt()
+            leftMargin = 8
+            rightMargin = 8
+        })
+
+        val video = intent.getStringExtra("call_type") == "video"
+        if (video) {
+            remoteView.setOnClickListener { toggleControls() }
+        }
+
         setContentView(root)
+    }
+
+    private fun setIncomingControls() {
+        callAnswered = false
+        endButton.text = "📞\nAnswer"
+        endButton.setTextColor(0xFFFFFFFF.toInt())
+        endButton.setBackgroundColor(0xFF2E7D32.toInt())
+        showControls(false)
+    }
+
+    private fun setActiveControls() {
+        callAnswered = true
+        endButton.text = "🔴\nEnd"
+        endButton.setTextColor(0xFFFFFFFF.toInt())
+        endButton.setBackgroundColor(0xFFE91E3B.toInt())
+        showControls(true)
+        if (intent.getStringExtra("call_type") == "video") scheduleHideControls()
+    }
+
+    private fun setOutgoingControls() {
+        callAnswered = false
+        endButton.text = "🔴\nEnd"
+        endButton.setTextColor(0xFFFFFFFF.toInt())
+        endButton.setBackgroundColor(0xFFE91E3B.toInt())
+        showControls(true)
+    }
+
+    private fun showControls(scheduleHide: Boolean) {
+        controlsVisible = true
+        controlsPanel.visibility = android.view.View.VISIBLE
+        if (scheduleHide) scheduleHideControls()
+    }
+
+    private fun toggleControls() {
+        if (controlsVisible) {
+            controlsHideJob?.cancel()
+            controlsVisible = false
+            controlsPanel.visibility = android.view.View.GONE
+        } else {
+            showControls(true)
+        }
+    }
+
+    private fun scheduleHideControls() {
+        controlsHideJob?.cancel()
+        controlsHideJob = scope.launch {
+            delay(4000)
+            if (running && intent.getStringExtra("call_type") == "video") {
+                controlsVisible = false
+                controlsPanel.visibility = android.view.View.GONE
+            }
+        }
+    }
+
+    private fun toggleMute() {
+        val senders = peer?.senders ?: emptyList()
+        senders.filter { it.track() is AudioTrack }.forEach {
+            val track = it.track() as AudioTrack
+            track.setEnabled(!track.enabled())
+        }
+    }
+
+    private fun toggleSpeaker() {
+        val audio = getSystemService(AUDIO_SERVICE) as AudioManager
+        audio.isSpeakerphoneOn = !audio.isSpeakerphoneOn
+    }
+
+    private fun toggleVideoTrack() {
+        val videoSender = peer?.senders?.firstOrNull { it.track() is VideoTrack }
+        if (videoSender?.track() is VideoTrack) {
+            val track = videoSender.track() as VideoTrack
+            track.setEnabled(!track.enabled())
+            return
+        }
+        runOnUiThread { statusPanel.text = "Video is not available on this voice call yet" }
+    }
+
+    private fun showAddPeopleMessage() {
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Add people")
+            .setMessage("Group-call participant selection is ready for the call controls. The multi-party WebRTC session layer will be added before this button starts a real group call.")
+            .setPositiveButton("OK", null)
+            .show()
     }
 
     private fun initializeCall() {
@@ -128,11 +266,15 @@ class CallActivity : Activity() {
                     isCaller = true
                 } else error("Missing call information")
                 setupPeer(type == "video")
-                if (isCaller) createAndPublishOffer()
-                else acceptIncoming()
+                if (isCaller) {
+                    setOutgoingControls()
+                    createAndPublishOffer()
+                } else {
+                    setIncomingControls()
+                }
                 startSignalLoop()
             }.onFailure {
-                status.text = it.message ?: "Could not start call"
+                statusPanel.text = it.message ?: "Could not start call"
                 endButton.text = "Close"
             }
         }
@@ -167,17 +309,17 @@ class CallActivity : Activity() {
                 override fun onIceCandidatesRemoved(c: Array<out IceCandidate>) {}
                 override fun onSignalingChange(s: PeerConnection.SignalingState) {}
                 override fun onIceConnectionChange(s: PeerConnection.IceConnectionState) {
-                    runOnUiThread { status.text = when (s) {
+                    runOnUiThread { statusPanel.text = when (s) {
                         PeerConnection.IceConnectionState.CONNECTED, PeerConnection.IceConnectionState.COMPLETED -> "Connected"
                         PeerConnection.IceConnectionState.CHECKING -> "Connecting…"
                         PeerConnection.IceConnectionState.DISCONNECTED -> "Network reconnecting…"
                         PeerConnection.IceConnectionState.FAILED -> "Connection failed"
-                        else -> status.text
+                        else -> statusPanel.text
                     }}
                 }
                 override fun onStandardizedIceConnectionChange(s: PeerConnection.IceConnectionState) {}
                 override fun onConnectionChange(s: PeerConnection.PeerConnectionState) {
-                    if (s == PeerConnection.PeerConnectionState.CONNECTED) runOnUiThread { stopCallTone(); status.text = "Connected" }
+                    if (s == PeerConnection.PeerConnectionState.CONNECTED) runOnUiThread { stopCallTone(); statusPanel.text = "Connected" }
                 }
                 override fun onIceConnectionReceivingChange(receiving: Boolean) {}
                 override fun onIceGatheringChange(s: PeerConnection.IceGatheringState) {}
@@ -234,47 +376,51 @@ class CallActivity : Activity() {
                     }, sdp)
                 }
                 override fun onSetSuccess() {}
-                override fun onCreateFailure(e: String?) { runOnUiThread { status.text = e ?: "Offer failed" } }
+                override fun onCreateFailure(e: String?) { runOnUiThread { statusPanel.text = e ?: "Offer failed" } }
                 override fun onSetFailure(e: String?) {}
             }, MediaConstraints())
         }
-        status.text = "Ringing…"
+        statusPanel.text = "Ringing…"
         startCallTone(ToneGenerator.TONE_SUP_RINGTONE)
     }
 
-    private suspend fun acceptIncoming() {
-        status.text = "Incoming call…"
-        var current: CallSession? = null
-        repeat(30) {
-            current = callApi.get(call!!.id)
-            if (current?.status == "accepted" || current?.answerSdp != null) return@repeat
-            delay(500)
-        }
-        if (current?.status != "accepted") {
-            call = callApi.updateStatus(call!!.id, "accepted")
-            val offer = call!!.offerSdp ?: waitForOffer()
-            val remote = SessionDescription(SessionDescription.Type.OFFER, offer)
-            withContext(Dispatchers.Main) {
-                peer!!.setRemoteDescription(object : SdpObserver {
-                    override fun onCreateSuccess(p0: SessionDescription?) {}
-                    override fun onSetSuccess() {
-                        peer!!.createAnswer(object : SdpObserver {
-                            override fun onCreateSuccess(answer: SessionDescription) {
-                                peer!!.setLocalDescription(object : SdpObserver {
-                                    override fun onCreateSuccess(p0: SessionDescription?) {}
-                                    override fun onSetSuccess() { scope.launch(Dispatchers.IO) { callApi.publishAnswer(call!!.id, answer.description) } }
-                                    override fun onCreateFailure(e: String?) {}
-                                    override fun onSetFailure(e: String?) {}
-                                }, answer)
-                            }
-                            override fun onSetSuccess() {}
-                            override fun onCreateFailure(e: String?) {}
-                            override fun onSetFailure(e: String?) {}
-                        }, MediaConstraints())
-                    }
-                    override fun onCreateFailure(e: String?) {}
-                    override fun onSetFailure(e: String?) {}
-                }, remote)
+    private fun answerIncoming() {
+        if (callAnswered || isCaller || !running) return
+        scope.launch {
+            runCatching {
+                val id = call?.id ?: error("Call not found")
+                call = withContext(Dispatchers.IO) { callApi.updateStatus(id, "accepted") }
+                setActiveControls()
+                val offer = call?.offerSdp ?: waitForOffer()
+                val remote = SessionDescription(SessionDescription.Type.OFFER, offer)
+                withContext(Dispatchers.Main) {
+                    peer?.setRemoteDescription(object : SdpObserver {
+                        override fun onCreateSuccess(p0: SessionDescription?) {}
+                        override fun onSetSuccess() {
+                            peer?.createAnswer(object : SdpObserver {
+                                override fun onCreateSuccess(answer: SessionDescription) {
+                                    peer?.setLocalDescription(object : SdpObserver {
+                                        override fun onCreateSuccess(p0: SessionDescription?) {}
+                                        override fun onSetSuccess() {
+                                            scope.launch(Dispatchers.IO) {
+                                                runCatching { callApi.publishAnswer(call!!.id, answer.description) }
+                                            }
+                                        }
+                                        override fun onCreateFailure(e: String?) {}
+                                        override fun onSetFailure(e: String?) {}
+                                    }, answer)
+                                }
+                                override fun onSetSuccess() {}
+                                override fun onCreateFailure(e: String?) {}
+                                override fun onSetFailure(e: String?) {}
+                            }, MediaConstraints())
+                        }
+                        override fun onCreateFailure(e: String?) { runOnUiThread { statusPanel.text = e ?: "Call answer failed" } }
+                        override fun onSetFailure(e: String?) { runOnUiThread { statusPanel.text = e ?: "Call answer failed" } }
+                    }, remote)
+                }
+            }.onFailure {
+                runOnUiThread { statusPanel.text = it.message ?: "Could not answer call" }
             }
         }
     }
@@ -320,53 +466,80 @@ class CallActivity : Activity() {
             while (isActive && running) {
                 val c = callApi.get(call!!.id) ?: break
                 call = c
+
                 if (isCaller && c.status == "ringing" && c.answerSdp == null &&
                     System.currentTimeMillis() - ringStartedAt >= 20000L) {
                     playBusyTone()
-                    runOnUiThread { status.text = "User unavailable" }
+                    runOnUiThread { statusPanel.text = "User unavailable" }
                     runCatching { callApi.updateStatus(call!!.id, "failed") }
+                    delay(1200)
+                    finishWithoutRemoteUpdate()
                     break
                 }
-                if (isCaller && c.answerSdp != null && peer!!.remoteDescription == null) {
+
+                if (isCaller && c.answerSdp != null && peer?.remoteDescription == null) {
                     withContext(Dispatchers.Main) {
-                        peer!!.setRemoteDescription(object : SdpObserver {
+                        peer?.setRemoteDescription(object : SdpObserver {
                             override fun onCreateSuccess(p0: SessionDescription?) {}
-                            override fun onSetSuccess() { stopCallTone(); status.text = "Connecting…" }
-                            override fun onCreateFailure(e: String?) {}
-                            override fun onSetFailure(e: String?) {}
+                            override fun onSetSuccess() {
+                                stopCallTone()
+                                setActiveControls()
+                                statusPanel.text = "Connected"
+                            }
+                            override fun onCreateFailure(e: String?) { statusPanel.text = e ?: "Answer failed" }
+                            override fun onSetFailure(e: String?) { statusPanel.text = e ?: "Answer failed" }
                         }, SessionDescription(SessionDescription.Type.ANSWER, c.answerSdp))
                     }
                 }
+
                 val ice = if (isCaller) c.calleeIce else c.callerIce
                 while (remoteIceCount < ice.length()) {
                     val j = ice.getJSONObject(remoteIceCount++)
                     val candidate = IceCandidate(j.optString("sdpMid"), j.optInt("sdpMLineIndex"), j.optString("candidate"))
                     withContext(Dispatchers.Main) { peer?.addIceCandidate(candidate) }
                 }
-                if (c.status in listOf("declined","missed","ended","failed","cancelled")) break
+
+                if (c.status in listOf("declined", "missed", "ended", "failed", "cancelled")) {
+                    runOnUiThread { statusPanel.text = when (c.status) {
+                        "ended" -> "Call ended"
+                        "cancelled" -> "Call cancelled"
+                        "failed" -> "Call failed"
+                        "missed" -> "Missed call"
+                        else -> "Call declined"
+                    }}
+                    delay(500)
+                    finishWithoutRemoteUpdate()
+                    break
+                }
                 delay(1000)
             }
         }
     }
 
     private fun finishCall(statusValue: String) {
-        if (!running) {
-            if (!isFinishing) finish()
-            return
-        }
+        if (!running) return
         running = false
         stopCallTone()
+        controlsHideJob?.cancel()
         val id = call?.id
         scope.launch {
             if (!id.isNullOrBlank()) {
                 runCatching { withContext(Dispatchers.IO) { callApi.updateStatus(id, statusValue) } }
             }
-            // The call Activity is only a child screen. Always bring the existing
-            // MainActivity back to the foreground before finishing this Activity.
             returnToMainActivity()
             cleanup()
             if (!isFinishing) finish()
         }
+    }
+
+    private fun finishWithoutRemoteUpdate() {
+        if (!running) return
+        running = false
+        stopCallTone()
+        controlsHideJob?.cancel()
+        returnToMainActivity()
+        cleanup()
+        if (!isFinishing) finish()
     }
 
     private fun returnToMainActivity() {
@@ -403,7 +576,7 @@ class CallActivity : Activity() {
             packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)
         ) {
             val video = intent.getStringExtra("call_type") == "video"
-            val ratio = if (video) Rational(9, 16) else Rational(16, 9)
+            val ratio = Rational(16, 9)
             val builder = PictureInPictureParams.Builder().setAspectRatio(ratio)
             if (android.os.Build.VERSION.SDK_INT >= 31) builder.setAutoEnterEnabled(false)
             enterPictureInPictureMode(builder.build())
@@ -412,8 +585,8 @@ class CallActivity : Activity() {
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
-        if (::status.isInitialized) status.visibility = if (isInPictureInPictureMode) android.view.View.GONE else android.view.View.VISIBLE
-        if (::endButton.isInitialized) endButton.visibility = if (isInPictureInPictureMode) android.view.View.GONE else android.view.View.VISIBLE
+        if (::statusPanel.isInitialized) statusPanel.visibility = if (isInPictureInPictureMode) android.view.View.GONE else android.view.View.VISIBLE
+        if (::controlsPanel.isInitialized) controlsPanel.visibility = if (isInPictureInPictureMode) android.view.View.GONE else android.view.View.VISIBLE
         if (::localView.isInitialized) {
             localView.visibility = if (!isInPictureInPictureMode && intent.getStringExtra("call_type") == "video") android.view.View.VISIBLE else android.view.View.GONE
         }
@@ -422,12 +595,14 @@ class CallActivity : Activity() {
     override fun onBackPressed() {
         if (isInPictureInPictureMode) finishCall("ended") else minimizeToChat()
     }
+
     override fun onDestroy() {
+        controlsHideJob?.cancel()
         if (running) {
             running = false
             val id = call?.id
             if (!id.isNullOrBlank()) {
-                val statusValue = if (isCaller) "cancelled" else "ended"
+                val statusValue = if (isCaller && !callAnswered) "cancelled" else "ended"
                 Thread {
                     runCatching { callApi.updateStatusBlocking(id, statusValue) }
                 }.start()
