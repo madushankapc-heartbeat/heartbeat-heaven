@@ -282,7 +282,7 @@ class CallActivity : Activity() {
         }
     }
 
-    private fun setupPeer(video: Boolean) {
+    private suspend fun setupPeer(video: Boolean) {
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(applicationContext).setEnableInternalTracer(false).createInitializationOptions()
         )
@@ -297,14 +297,12 @@ class CallActivity : Activity() {
             PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
             PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer()
         )
-        scope.launch {
-            val (relayServers, relayOnly) = runCatching { withContext(Dispatchers.IO) { callApi.fetchIceServers() } }
-                .getOrElse { Pair(emptyList(), false) }
-            if (relayOnly && relayServers.isNotEmpty()) {
-                createPeerConnectionWithServers(relayServers, true, video)
-            } else {
-                createPeerConnectionWithServers(fallbackIceServers, false, video)
-            }
+        val (relayServers, relayOnly) = runCatching { withContext(Dispatchers.IO) { callApi.fetchIceServers() } }
+            .getOrElse { Pair(emptyList(), false) }
+        if (relayOnly && relayServers.isNotEmpty()) {
+            createPeerConnectionWithServers(relayServers, true, video)
+        } else {
+            createPeerConnectionWithServers(fallbackIceServers, false, video)
         }
     }
 
