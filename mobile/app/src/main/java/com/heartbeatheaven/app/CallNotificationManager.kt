@@ -16,24 +16,20 @@ import androidx.core.app.Person
 import androidx.core.app.NotificationManagerCompat
 
 internal object CallNotificationManager {
-    private const val CHANNEL_ID = "incoming_calls_v3"
+    private const val CHANNEL_ID = "incoming_calls_v4"
     private const val NOTIFICATION_ID = 7401
     const val ACTION_DECLINE = "com.heartbeatheaven.app.ACTION_DECLINE_CALL"
     const val EXTRA_CALL_ID = "call_id"
-
-    @Volatile
-    private var incomingRingtone: Ringtone? = null
-    private val ringtoneHandler = Handler(Looper.getMainLooper())
-    private var ringtoneRunnable: Runnable? = null
 
     fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT < 26) return
         val manager = context.getSystemService(NotificationManager::class.java)
         if (manager.getNotificationChannel(CHANNEL_ID) != null) return
 
-        // The notification channel is intentionally silent for audio. The call ringtone
-        // is controlled explicitly below so it can continue until the call is answered,
-        // declined, missed, or ended instead of playing only one notification sound.
+        // Incoming calls use the system ringtone channel so Android routes the sound
+        // through the phone's normal ringtone output (the loudspeaker), rather than
+        // the in-call/earpiece stream.
+        val ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
         val audio = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -44,7 +40,7 @@ internal object CallNotificationManager {
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
             description = "Incoming HeartBeat Heaven voice and video calls"
-            setSound(null, audio)
+            setSound(ringtoneUri, audio)
             enableVibration(true)
             vibrationPattern = longArrayOf(0, 500, 300, 500)
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
@@ -52,53 +48,8 @@ internal object CallNotificationManager {
         manager.createNotificationChannel(channel)
     }
 
-    private fun startIncomingRingtone(context: Context) {
-        stopIncomingRingtone()
-
-        val ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE) ?: return
-        val audio = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .build()
-
-        incomingRingtone = runCatching {
-            RingtoneManager.getRingtone(context.applicationContext, ringtoneUri)?.apply {
-                setAudioAttributes(audio)
-                if (Build.VERSION.SDK_INT >= 28) {
-                    isLooping = true
-                }
-            }
-        }.getOrNull()
-
-        val ringtone = incomingRingtone ?: return
-        runCatching { ringtone.play() }
-
-        if (Build.VERSION.SDK_INT < 28) {
-            val runnable = object : Runnable {
-                override fun run() {
-                    val active = incomingRingtone
-                    if (active == null) return
-                    runCatching {
-                        if (!active.isPlaying) active.play()
-                    }
-                    ringtoneHandler.postDelayed(this, 2500L)
-                }
-            }
-            ringtoneRunnable = runnable
-            ringtoneHandler.postDelayed(runnable, 2500L)
-        }
-    }
-
-    private fun stopIncomingRingtone() {
-        ringtoneRunnable?.let(ringtoneHandler::removeCallbacks)
-        ringtoneRunnable = null
-        runCatching { incomingRingtone?.stop() }
-        incomingRingtone = null
-    }
-
     fun showIncoming(context: Context, callId: String, callType: String) {
         ensureChannel(context)
-        startIncomingRingtone(context)
 
         val openIntent = Intent(context, CallActivity::class.java).apply {
             putExtra(EXTRA_CALL_ID, callId)
@@ -140,12 +91,16 @@ internal object CallNotificationManager {
         }
 
         if (Build.VERSION.SDK_INT < 33 || NotificationManagerCompat.from(context).areNotificationsEnabled()) {
-            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, builder.build())
+            val notification = builder.build().apply {
+                // Android's documented incoming-call pattern: keep the ringtone
+                // repeating until the notification is cancelled.
+                flags = flags or android.app.Notification.FLAG_INSISTENT
+            }
+            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
         }
     }
 
     fun cancelIncoming(context: Context) {
-        stopIncomingRingtone()
         NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
     }
 }
