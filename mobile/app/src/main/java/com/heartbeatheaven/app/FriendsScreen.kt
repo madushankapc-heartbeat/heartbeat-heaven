@@ -572,6 +572,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
     var activeCallId by remember { mutableStateOf("") }
     var activeCallUserId by remember { mutableStateOf("") }
     var activeCallType by remember { mutableStateOf("voice") }
+    var friendTab by remember { mutableStateOf(0) }
 
     LaunchedEffect(Unit) {
         session = withContext(Dispatchers.IO) { auth.currentSession() }
@@ -1750,35 +1751,34 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
         item {
             Text("Online people and accepted friends are shown here.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        if (online.isNotEmpty()) {
-            item { Text("Online now", style = MaterialTheme.typography.titleMedium) }
-            items(online, key = { "online-${it.id}" }) { u ->
-                ListItem(
-                    headlineContent = { Text(u.username) },
-                    supportingContent = { Text("Online") },
-                    leadingContent = {
-                        if (u.avatarUrl.isNotBlank()) AsyncImage(model = u.avatarUrl, contentDescription = "Profile picture", modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
-                        else Icon(Icons.Default.Circle, "Online", tint = MaterialTheme.colorScheme.primary)
-                    },
-                    trailingContent = {
-                        Button(onClick = {
-                            scope.launch {
-                                runCatching { statusMessage = api.send(u.id); reload() }
-                                    .onFailure { statusMessage = it.message }
-                            }
-                        }) { Text("Add") }
-                    }
-                )
-            }
-        }
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(query, { query = it }, Modifier.weight(1f), label = { Text("Search username") }, singleLine = true)
+                OutlinedTextField(
+                    query,
+                    { query = it },
+                    Modifier.weight(1f),
+                    label = { Text("Search username") },
+                    singleLine = true
+                )
                 Button(enabled = query.isNotBlank(), onClick = {
                     scope.launch {
                         results = runCatching { api.search(query) }.getOrElse { statusMessage = it.message; emptyList() }
                     }
                 }) { Text("Search") }
+            }
+        }
+        item {
+            TabRow(selectedTabIndex = friendTab) {
+                Tab(
+                    selected = friendTab == 0,
+                    onClick = { friendTab = 0 },
+                    text = { Text("Online Users") }
+                )
+                Tab(
+                    selected = friendTab == 1,
+                    onClick = { friendTab = 1 },
+                    text = { Text("Friend List") }
+                )
             }
         }
         if (results.isNotEmpty()) {
@@ -1801,30 +1801,88 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                 )
             }
         }
-        if (requests.isNotEmpty()) {
-            item { Text("Friend requests", style = MaterialTheme.typography.titleMedium) }
-            items(requests, key = { "request-${it.id}" }) { r ->
-                ListItem(
-                    headlineContent = { Text(r.user.username) },
-                    supportingContent = { Text(if (r.incoming) "Wants to be your friend" else "Pending") },
-                    leadingContent = {
-                        if (r.user.avatarUrl.isNotBlank()) AsyncImage(model = r.user.avatarUrl, contentDescription = "Profile picture", modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
-                        else Icon(Icons.Default.Person, "Friend request")
-                    },
-                    trailingContent = {
-                        if (r.incoming) {
-                            Button(onClick = {
-                                scope.launch {
-                                    runCatching { api.accept(r.id); reload() }
-                                        .onFailure { statusMessage = it.message }
+        if (friendTab == 0) {
+            item {
+                Text("Online Users", style = MaterialTheme.typography.titleMedium)
+            }
+            if (online.isEmpty()) {
+                item {
+                    Text("No users are online right now.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                items(online, key = { "online-${it.id}" }) { u ->
+                    val isFriend = friends.any { it.id == u.id }
+                    ListItem(
+                        headlineContent = { Text(u.username) },
+                        supportingContent = { Text("Online") },
+                        leadingContent = {
+                            Box {
+                                if (u.avatarUrl.isNotBlank()) {
+                                    AsyncImage(
+                                        model = u.avatarUrl,
+                                        contentDescription = "Profile picture",
+                                        modifier = Modifier.size(44.dp).clip(CircleShape),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                    )
+                                } else {
+                                    Surface(modifier = Modifier.size(44.dp).clip(CircleShape), tonalElevation = 2.dp) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(Icons.Default.Person, "Profile picture")
+                                        }
+                                    }
                                 }
-                            }) { Text("Accept") }
-                        } else Text("Pending", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                )
+                                Surface(
+                                    modifier = Modifier.size(11.dp).align(Alignment.BottomEnd),
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    border = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.surface)
+                                ) {}
+                            }
+                        },
+                        trailingContent = {
+                            Button(
+                                enabled = !isFriend,
+                                onClick = {
+                                    scope.launch {
+                                        runCatching { statusMessage = api.send(u.id); reload() }
+                                            .onFailure { statusMessage = it.message }
+                                    }
+                                }
+                            ) { Text(if (isFriend) "Friend" else "Add") }
+                        }
+                    )
+                    HorizontalDivider()
+                }
+            }
+        } else {
+            if (requests.isNotEmpty()) {
+                item { Text("Friend requests", style = MaterialTheme.typography.titleMedium) }
+                items(requests, key = { "request-${it.id}" }) { r ->
+                    ListItem(
+                        headlineContent = { Text(r.user.username) },
+                        supportingContent = { Text(if (r.incoming) "Wants to be your friend" else "Pending") },
+                        leadingContent = {
+                            if (r.user.avatarUrl.isNotBlank()) AsyncImage(model = r.user.avatarUrl, contentDescription = "Profile picture", modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                            else Icon(Icons.Default.Person, "Friend request")
+                        },
+                        trailingContent = {
+                            if (r.incoming) {
+                                Button(onClick = {
+                                    scope.launch {
+                                        runCatching { api.accept(r.id); reload() }
+                                            .onFailure { statusMessage = it.message }
+                                    }
+                                }) { Text("Accept") }
+                            } else {
+                                Text("Pending", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    )
+                }
             }
         }
-        item { Text("Chats", style = MaterialTheme.typography.titleMedium) }
+        if (friendTab == 1) {
+            item { Text("Friend List", style = MaterialTheme.typography.titleMedium) }
         if (chatSummaries.isEmpty()) {
             item {
                 Text(if (friends.isEmpty()) "No friends yet." else "No chats yet. Open a friend to start chatting.", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1906,6 +1964,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                 )
                 HorizontalDivider()
             }
+        }
         }
         item {
             statusMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
