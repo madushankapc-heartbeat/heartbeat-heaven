@@ -1038,7 +1038,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                 putExtra("call_type", "voice")
                             })
                         }) { Icon(Icons.Default.Call, "Voice call") }
-                        IconButton(enabled = !chatBlocked, onClick = {
+                        IconButton(enabled = !chatBlocked && !callsBlocked, onClick = {
                             context.startActivity(Intent(context, CallActivity::class.java).apply {
                                 putExtra("callee_id", chat.id)
                                 putExtra("call_type", "video")
