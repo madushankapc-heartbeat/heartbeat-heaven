@@ -190,6 +190,14 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
         request("/rest/v1/friendships?id=eq.$id", "PATCH", JSONObject().put("status", "accepted").toString())
     }
 
+    suspend fun unfriend(other: String) = withContext(Dispatchers.IO) {
+        val mine = userId()
+        request(
+            "/rest/v1/friendships?status=eq.accepted&or=(and(requester_id.eq.$mine,addressee_id.eq.$other),and(requester_id.eq.$other,addressee_id.eq.$mine))",
+            "DELETE"
+        )
+    }
+
     suspend fun friends(): List<FriendUser> = withContext(Dispatchers.IO) {
         val mine = userId()
         val a = JSONArray(request("/rest/v1/friendships?or=(requester_id.eq." + mine + ",addressee_id.eq." + mine + ")&status=eq.accepted&select=requester_id,addressee_id", "GET"))
@@ -346,9 +354,14 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
         } else request("/rest/v1/call_blocks?blocker_id=eq." + mine + "&blocked_id=eq." + other, "DELETE")
     }
 
-    suspend fun isCallBlocked(other: String): Boolean = withContext(Dispatchers.IO) {
+    suspend fun isCallBlockedByMe(other: String): Boolean = withContext(Dispatchers.IO) {
         val mine = userId()
-        JSONArray(request("/rest/v1/call_blocks?or=(and(blocker_id.eq." + mine + ",blocked_id.eq." + other + "),and(blocker_id.eq." + other + ",blocked_id.eq." + mine + "))&select=blocked_id&limit=1", "GET")).length() > 0
+        JSONArray(request("/rest/v1/call_blocks?blocker_id.eq=" + mine + "&blocked_id.eq=" + other + "&select=blocked_id&limit=1", "GET")).length() > 0
+    }
+
+    suspend fun isCallBlockedByOther(other: String): Boolean = withContext(Dispatchers.IO) {
+        val mine = userId()
+        JSONArray(request("/rest/v1/call_blocks?blocker_id.eq=" + other + "&blocked_id.eq=" + mine + "&select=blocked_id&limit=1", "GET")).length() > 0
     }
     suspend fun report(other: String, reason: String) = withContext(Dispatchers.IO) {
         request("/rest/v1/chat_reports", "POST", JSONObject().put("reporter_id", userId()).put("reported_user_id", other).put("reason", reason.trim().take(500)).toString())
@@ -534,7 +547,10 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
     var chatMuted by remember { mutableStateOf(false) }
     var chatPinned by remember { mutableStateOf(false) }
     var chatBlocked by remember { mutableStateOf(false) }
-    var callsBlocked by remember { mutableStateOf(false) }
+    var callBlockedByMe by remember { mutableStateOf(false) }
+    var callBlockedByOther by remember { mutableStateOf(false) }
+    var showUnfriendDialog by remember { mutableStateOf(false) }
+    var unfriendBusy by remember { mutableStateOf(false) }
     var showReportDialog by remember { mutableStateOf(false) }
     var reportReason by remember { mutableStateOf("") }
     var clearChatMode by remember { mutableStateOf<String?>(null) }
@@ -788,11 +804,14 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
         }
 
         LaunchedEffect(chat.id) {
+            callBlockedByMe = false
+            callBlockedByOther = false
             chatProfile = runCatching { api.profile(chat.id) }.getOrNull()
             chatMuted = runCatching { api.isMuted(chat.id) }.getOrDefault(false)
             chatPinned = runCatching { api.isPinned(chat.id) }.getOrDefault(false)
             chatBlocked = runCatching { api.isBlocked(chat.id) }.getOrDefault(false)
-            callsBlocked = runCatching { api.isCallBlocked(chat.id) }.getOrDefault(false)
+            callBlockedByMe = runCatching { api.isCallBlockedByMe(chat.id) }.getOrDefault(false)
+            callBlockedByOther = runCatching { api.isCallBlockedByOther(chat.id) }.getOrDefault(false)
             chatSearch = ""
             showChatSearch = false
             showChatMenu = false
@@ -829,6 +848,45 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                 },
                 dismissButton = {
                     TextButton(onClick = { showReportDialog = true; showChatProfile = false }) { Text("Report") }
+                }
+            )
+        }
+
+        if (showUnfriendDialog) {
+            AlertDialog(
+                onDismissRequest = { if (!unfriendBusy) showUnfriendDialog = false },
+                title = { Text("Unfriend ${chat.username}?") },
+                text = {
+                    Text("You can send a new friend request later. Your existing chat messages will not be deleted.")
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = !unfriendBusy,
+                        onClick = {
+                            unfriendBusy = true
+                            scope.launch {
+                                runCatching {
+                                    api.unfriend(chat.id)
+                                    selected = null
+                                    messages = emptyList()
+                                    reactions = emptyList()
+                                    pendingMediaItems = emptyList()
+                                    chatSummaries = api.chatSummaries()
+                                    friends = api.friends()
+                                    statusMessage = "Friend removed"
+                                    showUnfriendDialog = false
+                                }.onFailure {
+                                    statusMessage = it.message ?: "Could not unfriend this user."
+                                }
+                                unfriendBusy = false
+                            }
+                        }
+                    ) { Text("Unfriend") }
+                },
+                dismissButton = {
+                    TextButton(enabled = !unfriendBusy, onClick = { showUnfriendDialog = false }) {
+                        Text("Cancel")
+                    }
                 }
             )
         }
@@ -1069,7 +1127,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                     }
                 } else {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { selected = null; messages = emptyList(); text = ""; replyingTo = null; pendingMediaItems = emptyList(); mediaProgress = 0; mediaProgressLabel = ""; fullScreenImage = null; chatSearch = ""; showChatSearch = false }) { Icon(Icons.Default.ArrowBack, "Back") }
+                        IconButton(onClick = { selected = null; messages = emptyList(); text = ""; replyingTo = null; pendingMediaItems = emptyList(); mediaProgress = 0; mediaProgressLabel = ""; fullScreenImage = null; chatSearch = ""; showChatSearch = false; showUnfriendDialog = false }) { Icon(Icons.Default.ArrowBack, "Back") }
                         val headerAvatar = chatProfile?.avatarUrl.orEmpty().ifBlank { chat.avatarUrl }
                         if (headerAvatar.isNotBlank()) AsyncImage(model = headerAvatar, contentDescription = "Profile picture", modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
                         else Surface(modifier = Modifier.size(44.dp).clip(CircleShape), tonalElevation = 2.dp) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Person, "Profile picture") } }
@@ -1093,13 +1151,13 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                 color = if (isOnline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        IconButton(enabled = !chatBlocked && !callsBlocked, onClick = {
+                        IconButton(enabled = !chatBlocked && !callBlockedByMe && !callBlockedByOther, onClick = {
                             context.startActivity(Intent(context, CallActivity::class.java).apply {
                                 putExtra("callee_id", chat.id)
                                 putExtra("call_type", "voice")
                             })
                         }) { Icon(Icons.Default.Call, "Voice call") }
-                        IconButton(enabled = !chatBlocked && !callsBlocked, onClick = {
+                        IconButton(enabled = !chatBlocked && !callBlockedByMe && !callBlockedByOther, onClick = {
                             context.startActivity(Intent(context, CallActivity::class.java).apply {
                                 putExtra("callee_id", chat.id)
                                 putExtra("call_type", "video")
@@ -1152,16 +1210,32 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                     }
                                 )
                                 DropdownMenuItem(
-                                    text = { Text(if (callsBlocked) "📵 Allow voice & video calls" else "📵 Block voice & video calls") },
+                                    text = {
+                                        Text(
+                                            when {
+                                                callBlockedByMe -> "📵 Allow voice & video calls"
+                                                callBlockedByOther -> "📵 Calls blocked by this user"
+                                                else -> "📵 Block voice & video calls"
+                                            }
+                                        )
+                                    },
+                                    enabled = !callBlockedByOther,
                                     onClick = {
                                         showChatMenu = false
                                         scope.launch {
                                             runCatching {
-                                                api.setCallBlocked(chat.id, !callsBlocked)
-                                                callsBlocked = !callsBlocked
-                                                statusMessage = if (callsBlocked) "Voice and video calls blocked" else "Voice and video calls allowed"
+                                                api.setCallBlocked(chat.id, !callBlockedByMe)
+                                                callBlockedByMe = !callBlockedByMe
+                                                statusMessage = if (callBlockedByMe) "Voice and video calls blocked" else "Voice and video calls allowed"
                                             }.onFailure { statusMessage = it.message ?: "Could not update call blocking." }
                                         }
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("👥 Unfriend") },
+                                    onClick = {
+                                        showChatMenu = false
+                                        showUnfriendDialog = true
                                     }
                                 )
                                 DropdownMenuItem(
@@ -1627,109 +1701,188 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
         return
     }
 
-    Column(Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("Friends", style = MaterialTheme.typography.headlineMedium)
-            IconButton(onClick = { reload() }, enabled = !busy) {
-                Icon(Icons.Default.Refresh, contentDescription = "Refresh Friends")
+    val onlineIds = remember(online) { online.mapTo(hashSetOf()) { it.id } }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 96.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        item {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Friends", style = MaterialTheme.typography.headlineMedium)
+                IconButton(onClick = { reload() }, enabled = !busy) {
+                    Icon(Icons.Default.Refresh, contentDescription = "Refresh Friends")
+                }
             }
         }
-        Text("Online people and accepted friends are shown here.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (online.isNotEmpty()) {
-            Text("Online now", style = MaterialTheme.typography.titleMedium)
-            online.forEach { u -> ListItem(headlineContent = { Text(u.username) }, supportingContent = { Text("Online") }, leadingContent = { if (u.avatarUrl.isNotBlank()) AsyncImage(model = u.avatarUrl, contentDescription = "Profile picture", modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop) else Icon(Icons.Default.Circle, "Online", tint = MaterialTheme.colorScheme.primary) }, trailingContent = { Button(onClick = { scope.launch { runCatching { statusMessage = api.send(u.id); reload() }.onFailure { statusMessage = it.message } } }) { Text("Add") } }) }
+        item {
+            Text("Online people and accepted friends are shown here.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(query, { query = it }, Modifier.weight(1f), label = { Text("Search username") }, singleLine = true)
-            Button(enabled = query.isNotBlank(), onClick = { scope.launch { results = runCatching { api.search(query) }.getOrElse { statusMessage = it.message; emptyList() } } }) { Text("Search") }
+        if (online.isNotEmpty()) {
+            item { Text("Online now", style = MaterialTheme.typography.titleMedium) }
+            items(online, key = { "online-${it.id}" }) { u ->
+                ListItem(
+                    headlineContent = { Text(u.username) },
+                    supportingContent = { Text("Online") },
+                    leadingContent = {
+                        if (u.avatarUrl.isNotBlank()) AsyncImage(model = u.avatarUrl, contentDescription = "Profile picture", modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                        else Icon(Icons.Default.Circle, "Online", tint = MaterialTheme.colorScheme.primary)
+                    },
+                    trailingContent = {
+                        Button(onClick = {
+                            scope.launch {
+                                runCatching { statusMessage = api.send(u.id); reload() }
+                                    .onFailure { statusMessage = it.message }
+                            }
+                        }) { Text("Add") }
+                    }
+                )
+            }
+        }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(query, { query = it }, Modifier.weight(1f), label = { Text("Search username") }, singleLine = true)
+                Button(enabled = query.isNotBlank(), onClick = {
+                    scope.launch {
+                        results = runCatching { api.search(query) }.getOrElse { statusMessage = it.message; emptyList() }
+                    }
+                }) { Text("Search") }
+            }
         }
         if (results.isNotEmpty()) {
-            Text("Search results", style = MaterialTheme.typography.titleMedium)
-            results.forEach { u -> ListItem(headlineContent = { Text(u.username) }, leadingContent = { if (u.avatarUrl.isNotBlank()) AsyncImage(model = u.avatarUrl, contentDescription = "Profile picture", modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop) else Icon(Icons.Default.PersonAdd, "Add friend") }, trailingContent = { Button(onClick = { scope.launch { runCatching { statusMessage = api.send(u.id); reload() }.onFailure { statusMessage = it.message } } }) { Text("Add") } }) }
+            item { Text("Search results", style = MaterialTheme.typography.titleMedium) }
+            items(results, key = { "result-${it.id}" }) { u ->
+                ListItem(
+                    headlineContent = { Text(u.username) },
+                    leadingContent = {
+                        if (u.avatarUrl.isNotBlank()) AsyncImage(model = u.avatarUrl, contentDescription = "Profile picture", modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                        else Icon(Icons.Default.PersonAdd, "Add friend")
+                    },
+                    trailingContent = {
+                        Button(onClick = {
+                            scope.launch {
+                                runCatching { statusMessage = api.send(u.id); reload() }
+                                    .onFailure { statusMessage = it.message }
+                            }
+                        }) { Text("Add") }
+                    }
+                )
+            }
         }
         if (requests.isNotEmpty()) {
-            Text("Friend requests", style = MaterialTheme.typography.titleMedium)
-            requests.forEach { r -> ListItem(headlineContent = { Text(r.user.username) }, supportingContent = { Text(if (r.incoming) "Wants to be your friend" else "Pending") }, trailingContent = { if (r.incoming) Button(onClick = { scope.launch { runCatching { api.accept(r.id); reload() }.onFailure { statusMessage = it.message } } }) { Text("Accept") } else Text("Pending") }) }
+            item { Text("Friend requests", style = MaterialTheme.typography.titleMedium) }
+            items(requests, key = { "request-${it.id}" }) { r ->
+                ListItem(
+                    headlineContent = { Text(r.user.username) },
+                    supportingContent = { Text(if (r.incoming) "Wants to be your friend" else "Pending") },
+                    leadingContent = {
+                        if (r.user.avatarUrl.isNotBlank()) AsyncImage(model = r.user.avatarUrl, contentDescription = "Profile picture", modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                        else Icon(Icons.Default.Person, "Friend request")
+                    },
+                    trailingContent = {
+                        if (r.incoming) {
+                            Button(onClick = {
+                                scope.launch {
+                                    runCatching { api.accept(r.id); reload() }
+                                        .onFailure { statusMessage = it.message }
+                                }
+                            }) { Text("Accept") }
+                        } else Text("Pending", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                )
+            }
         }
-        Text("Chats", style = MaterialTheme.typography.titleMedium)
+        item { Text("Chats", style = MaterialTheme.typography.titleMedium) }
         if (chatSummaries.isEmpty()) {
-            if (friends.isEmpty()) Text("No friends yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            else Text("No chats yet. Open a friend to start chatting.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        chatSummaries.forEach { chatItem ->
-            val isOnline = online.any { it.id == chatItem.user.id }
-            ListItem(
-                headlineContent = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (chatItem.pinned) {
-                            Icon(Icons.Default.PushPin, "Pinned", Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
+            item {
+                Text(if (friends.isEmpty()) "No friends yet." else "No chats yet. Open a friend to start chatting.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else {
+            items(chatSummaries, key = { "chat-${it.user.id}" }) { chatItem ->
+                val isOnline = chatItem.user.id in onlineIds
+                ListItem(
+                    headlineContent = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (chatItem.pinned) {
+                                Icon(Icons.Default.PushPin, "Pinned", Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                            }
+                            Text(chatItem.user.username, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            if (chatItem.muted) {
+                                Spacer(Modifier.width(6.dp))
+                                Icon(Icons.Default.NotificationsOff, "Muted", Modifier.size(16.dp))
+                            }
+                            if (chatItem.unreadCount > 0) {
+                                Spacer(Modifier.width(8.dp))
+                                Badge { Text(chatItem.unreadCount.toString()) }
+                            }
                         }
-                        Text(chatItem.user.username, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                        if (chatItem.muted) {
-                            Spacer(Modifier.width(6.dp))
-                            Icon(Icons.Default.NotificationsOff, "Muted", Modifier.size(16.dp))
-                        }
-                        if (chatItem.unreadCount > 0) {
-                            Spacer(Modifier.width(8.dp))
-                            Badge { Text(chatItem.unreadCount.toString()) }
-                        }
-                    }
-                },
-                supportingContent = {
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            when {
-                                chatItem.lastMessage.isBlank() -> if (isOnline) "Online now" else "No messages yet"
-                                else -> chatItem.lastMessage
-                            },
-                            modifier = Modifier.weight(1f),
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                        )
-                        if (chatItem.lastMessageAt.isNotBlank()) {
+                    },
+                    supportingContent = {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                ChatTimeFormatter.listTimestamp(chatItem.lastMessageAt),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                when {
+                                    chatItem.lastMessage.isBlank() -> if (isOnline) "Online now" else "No messages yet"
+                                    else -> chatItem.lastMessage
+                                },
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                             )
+                            if (chatItem.lastMessageAt.isNotBlank()) {
+                                Text(ChatTimeFormatter.listTimestamp(chatItem.lastMessageAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
                         }
-                    }
-                },
-                leadingContent = {
-                    Box {
-                        if (chatItem.user.avatarUrl.isNotBlank()) AsyncImage(model = chatItem.user.avatarUrl, contentDescription = "Profile picture", modifier = Modifier.size(48.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
-                        else Icon(Icons.Default.Person, "Friend", modifier = Modifier.size(48.dp))
-                        if (isOnline) {
-                            Surface(
-                                modifier = Modifier.size(13.dp).align(Alignment.BottomEnd),
-                                shape = CircleShape,
-                                color = MaterialTheme.colorScheme.primary,
-                                border = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.surface)
-                            ) {}
+                    },
+                    leadingContent = {
+                        Box {
+                            if (chatItem.user.avatarUrl.isNotBlank()) AsyncImage(model = chatItem.user.avatarUrl, contentDescription = "Profile picture", modifier = Modifier.size(48.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                            else Icon(Icons.Default.Person, "Friend", modifier = Modifier.size(48.dp))
+                            if (isOnline) {
+                                Surface(
+                                    modifier = Modifier.size(13.dp).align(Alignment.BottomEnd),
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    border = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.surface)
+                                ) {}
+                            }
                         }
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        selected = chatItem.user
-                        selectedMessage = null
-                        replyingTo = null
-                        deleteTarget = null
-                        editingMessage = null
-                        editText = ""
-                        text = ""
-                        statusMessage = null
-                    }
-            )
-            Divider()
+                    },
+                    trailingContent = {
+                        IconButton(onClick = {
+                            selected = chatItem.user
+                            showUnfriendDialog = true
+                        }) { Icon(Icons.Default.PersonRemove, "Unfriend") }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .combinedClickable(
+                            onClick = {
+                                selected = chatItem.user
+                                selectedMessage = null
+                                replyingTo = null
+                                deleteTarget = null
+                                editingMessage = null
+                                editText = ""
+                                text = ""
+                                statusMessage = null
+                            },
+                            onLongClick = {
+                                selected = chatItem.user
+                                showUnfriendDialog = true
+                            }
+                        )
+                )
+                HorizontalDivider()
+            }
         }
-        statusMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
-        if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        item {
+            statusMessage?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
+            if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+        }
     }
-}
