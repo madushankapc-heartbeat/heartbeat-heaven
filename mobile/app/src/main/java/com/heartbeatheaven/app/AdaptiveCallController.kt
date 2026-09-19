@@ -3,7 +3,7 @@ package com.heartbeatheaven.app
 /** Adaptive call policy used by the WebRTC layer.
  * Keeps audio alive under congestion by progressively reducing video demand.
  */
-data class CallNetworkSample(val rttMs: Long, val packetsLost: Long, val packetsSent: Long, val availableBitrateBps: Long)
+data class CallNetworkSample(val rttMs: Long, val packetLossPercent: Double, val availableBitrateBps: Long)
 data class CallMediaProfile(val videoEnabled: Boolean, val maxWidth: Int, val maxHeight: Int, val maxFps: Int, val maxBitrateBps: Int)
 
 class AdaptiveCallController {
@@ -13,7 +13,7 @@ class AdaptiveCallController {
         private set
 
     fun update(sample: CallNetworkSample): CallMediaProfile {
-        val loss = if (sample.packetsSent <= 0) 0.0 else sample.packetsLost.toDouble() / sample.packetsSent.toDouble()
+        val loss = sample.packetLossPercent / 100.0
         val poor = sample.rttMs > 350 || loss > 0.08 || (sample.availableBitrateBps in 1 until 450_000)
         val good = sample.rttMs < 180 && loss < 0.02 && sample.availableBitrateBps > 1_200_000
         if (poor) { poorSamples++; goodSamples = 0 } else if (good) { goodSamples++; poorSamples = 0 } else { poorSamples = 0; goodSamples = 0 }
