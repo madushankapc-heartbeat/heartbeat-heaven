@@ -71,7 +71,6 @@ class CallActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        CallNotificationManager.cancelIncoming(this)
         if (!hasPermissions()) {
             ActivityCompat.requestPermissions(this, neededPermissions(), 7002)
             return
@@ -351,7 +350,6 @@ class CallActivity : Activity() {
                     createAndPublishOffer()
                 } else {
                     setIncomingControls()
-                    startCallTone(ToneGenerator.TONE_SUP_RINGTONE)
                     statusPanel.text = "Incoming call"
                     if (intent.getBooleanExtra("answer_now", false)) {
                         answerIncoming()
@@ -603,6 +601,7 @@ class CallActivity : Activity() {
 
     private fun answerIncoming() {
         if (callAnswered || isCaller || !running) return
+        CallNotificationManager.cancelIncoming(this)
         scope.launch {
             runCatching {
                 val id = call?.id ?: error("Call not found")
