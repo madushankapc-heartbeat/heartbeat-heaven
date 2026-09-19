@@ -1287,7 +1287,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                         Surface(
                                             tonalElevation = 2.dp,
                                             shape = RoundedCornerShape(10.dp),
-                                            modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp).clickable {
+                                            modifier = Modifier.widthIn(max = 300.dp).wrapContentWidth().padding(bottom = 5.dp).clickable {
                                                     scope.launch {
                                                         var index = messages.indexOfFirst { it.id == quoted.id }
                                                         while (index < 0 && hasOlderMessages && messages.isNotEmpty()) {
