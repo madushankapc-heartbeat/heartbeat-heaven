@@ -28,10 +28,8 @@ internal object CallNotificationManager {
         val manager = context.getSystemService(NotificationManager::class.java)
         if (manager.getNotificationChannel(CHANNEL_ID) != null) return
 
-        // Incoming calls use the system ringtone channel so Android routes the sound
-        // through the phone's normal ringtone output (the loudspeaker), rather than
-        // the in-call/earpiece stream.
-        val ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+        // The notification channel is intentionally silent because the call has
+        // its own explicit ringtone. This prevents duplicate sounds.
         val audio = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -50,21 +48,23 @@ internal object CallNotificationManager {
         manager.createNotificationChannel(channel)
     }
 
-
     private fun startIncomingRingtone(context: Context) {
         stopIncomingRingtone()
         val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE) ?: return
         val ringtone = RingtoneManager.getRingtone(context.applicationContext, uri) ?: return
+
         val audio = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
+
         ringtone.audioAttributes = audio
         @Suppress("DEPRECATION")
         ringtone.streamType = AudioManager.STREAM_RING
         if (Build.VERSION.SDK_INT >= 28) ringtone.isLooping = true
+
         incomingRingtone = ringtone
-        ringtone.play()
+        runCatching { ringtone.play() }
     }
 
     private fun stopIncomingRingtone() {
@@ -74,6 +74,11 @@ internal object CallNotificationManager {
 
     fun showIncoming(context: Context, callId: String, callType: String) {
         ensureChannel(context)
+
+        // Start the actual phone ringtone immediately when the incoming call
+        // is detected. The notification remains responsible for vibration,
+        // full-screen presentation, and Answer/Decline actions.
+        startIncomingRingtone(context)
 
         val openIntent = Intent(context, CallActivity::class.java).apply {
             putExtra(EXTRA_CALL_ID, callId)
