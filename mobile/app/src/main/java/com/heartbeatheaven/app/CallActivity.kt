@@ -456,17 +456,37 @@ class CallActivity : Activity() {
 
         peer!!.addTrack(audioTrack!!, listOf("stream_" + call!!.id))
         if (video) {
-            capturer = createCameraCapturer()
-            videoSource = factory!!.createVideoSource(capturer!!.isScreencast)
-            capturer!!.initialize(SurfaceTextureHelper.create("CallCamera", egl.eglBaseContext), this, videoSource!!.capturerObserver)
-            capturer!!.startCapture(640, 360, 24)
-            val videoTrack = factory!!.createVideoTrack("video_" + call!!.id, videoSource)
-            videoTrack.addSink(localView)
-            videoSender = peer!!.addTrack(videoTrack, listOf("stream_" + call!!.id))
-            isVideoEnabled = true
-            updateControlLabels()
+            // Camera initialization must never be allowed to take down the call Activity.
+            // Some devices/ROMs can reject a Camera2 capturer at runtime. Fall back to
+            // Camera1 and keep the call alive so signaling can still complete.
+            runCatching {
+                capturer = createCameraCapturer()
+                videoSource = factory!!.createVideoSource(capturer!!.isScreencast)
+                capturer!!.initialize(
+                    SurfaceTextureHelper.create("CallCamera", egl.eglBaseContext),
+                    this,
+                    videoSource!!.capturerObserver
+                )
+                capturer!!.startCapture(640, 360, 24)
+                val videoTrack = factory!!.createVideoTrack("video_" + call!!.id, videoSource)
+                videoTrack.addSink(localView)
+                videoSender = peer!!.addTrack(videoTrack, listOf("stream_" + call!!.id))
+                isVideoEnabled = true
+                localView.visibility = View.VISIBLE
+                updateControlLabels()
+            }.onFailure {
+                runCatching { capturer?.stopCapture() }
+                capturer?.dispose()
+                capturer = null
+                videoSource?.dispose()
+                videoSource = null
+                videoSender = null
+                isVideoEnabled = false
+                localView.visibility = View.GONE
+                statusPanel.text = "Camera unavailable — continuing call"
+            }
         } else {
-            localView.visibility = android.view.View.GONE
+            localView.visibility = View.GONE
         }
         if (video) startAdaptiveStats()
     }
@@ -542,7 +562,17 @@ class CallActivity : Activity() {
     }
 
     private fun createCameraCapturer(): VideoCapturer {
-        val enumerator = Camera2Enumerator(this)
+        // Prefer Camera2, but fall back to Camera1 on devices where Camera2/WebRTC
+        // cannot open the selected camera. This is deliberately defensive for calls.
+        runCatching {
+            val enumerator = Camera2Enumerator(this)
+            val name = enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) }
+                ?: enumerator.deviceNames.firstOrNull()
+                ?: error("No camera available")
+            enumerator.createCapturer(name, null)
+        }.getOrNull()?.let { return it }
+
+        val enumerator = Camera1Enumerator(true)
         val name = enumerator.deviceNames.firstOrNull { enumerator.isFrontFacing(it) }
             ?: enumerator.deviceNames.firstOrNull()
             ?: error("No camera available")
