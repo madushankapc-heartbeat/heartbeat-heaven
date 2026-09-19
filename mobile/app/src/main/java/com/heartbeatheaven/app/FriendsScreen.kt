@@ -25,8 +25,10 @@ import coil.compose.AsyncImage
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.withContext
@@ -48,6 +50,15 @@ private data class ChatSummary(val user: FriendUser, val lastMessage: String, va
 private data class ChatMessage(val id: String, val senderId: String, val body: String, val createdAt: String, val deliveredAt: String = "", val readAt: String = "", val editedAt: String = "", val deletedAt: String = "", val replyToId: String = "", val messageType: String = "text", val mediaUrl: String = "", val mediaName: String = "", val mediaSize: Long = 0L)
 private data class MessageReaction(val messageId: String, val userId: String, val reaction: String)
 private data class PendingChatAttachment(val uri: Uri, val name: String, val mime: String, val size: Long)
+private fun formatAttachmentSize(bytes: Long): String {
+    if (bytes < 1024L) return "$bytes B"
+    val kb = bytes / 1024.0
+    if (kb < 1024.0) return String.format(java.util.Locale.US, "%.0f KB", kb)
+    val mb = kb / 1024.0
+    if (mb < 1024.0) return String.format(java.util.Locale.US, "%.1f MB", mb)
+    return String.format(java.util.Locale.US, "%.1f GB", mb / 1024.0)
+}
+
 
 private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession) {
     private var session = initialSession
@@ -536,6 +547,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
     var mediaProgress by remember { mutableStateOf(0) }
     var mediaProgressLabel by remember { mutableStateOf("") }
     var pendingMediaItems by remember { mutableStateOf<List<PendingChatAttachment>>(emptyList()) }
+    var mediaUploadJob by remember { mutableStateOf<Job?>(null) }
     var showLatestButton by remember { mutableStateOf(false) }
     var fullScreenImage by remember { mutableStateOf<ChatMessage?>(null) }
     var saveTarget by remember { mutableStateOf<ChatMessage?>(null) }
@@ -1320,61 +1332,84 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                     if (m.messageType != "text" && m.mediaUrl.isNotBlank()) {
                                         Surface(
                                             tonalElevation = 2.dp,
-                                            shape = RoundedCornerShape(10.dp),
-                                            modifier = Modifier.fillMaxWidth().padding(bottom = 5.dp)
+                                            shape = RoundedCornerShape(12.dp),
+                                            modifier = Modifier.widthIn(max = 300.dp).wrapContentWidth(Alignment.Start).padding(bottom = 5.dp)
                                         ) {
-                                            Column(Modifier.padding(8.dp)) {
+                                            Column(Modifier.widthIn(max = 300.dp).wrapContentWidth(Alignment.Start).padding(8.dp)) {
                                                 if (m.messageType == "image") {
                                                     AsyncImage(
                                                         model = m.mediaUrl,
                                                         contentDescription = m.mediaName.ifBlank { "Image" },
-                                                        modifier = Modifier
-                                                            .widthIn(max = 280.dp)
-                                                            .heightIn(max = 180.dp)
-                                                            .clip(RoundedCornerShape(8.dp))
-                                                            .clickable { fullScreenImage = m },
+                                                        modifier = Modifier.widthIn(max = 280.dp).heightIn(max = 180.dp).clip(RoundedCornerShape(8.dp)).clickable { fullScreenImage = m },
                                                         contentScale = androidx.compose.ui.layout.ContentScale.Crop
                                                     )
+                                                    if (m.mediaName.isNotBlank()) {
+                                                        Text(m.mediaName, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium, modifier = Modifier.widthIn(max = 280.dp).padding(top = 6.dp))
+                                                    }
                                                 } else {
                                                     Row(
-                                                        Modifier.fillMaxWidth().clickable {
+                                                        Modifier.widthIn(max = 280.dp).wrapContentWidth(Alignment.Start).clickable {
                                                             runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(m.mediaUrl))) }
                                                                 .onFailure { statusMessage = "No app is available to open this attachment." }
                                                         },
                                                         verticalAlignment = Alignment.CenterVertically
                                                     ) {
-                                                        Icon(
-                                                            when (m.messageType) {
-                                                                "video" -> Icons.Default.VideoFile
-                                                                "audio" -> Icons.Default.AudioFile
-                                                                else -> Icons.Default.InsertDriveFile
-                                                            },
-                                                            contentDescription = null,
-                                                            modifier = Modifier.size(34.dp)
-                                                        )
-                                                        Spacer(Modifier.width(8.dp))
-                                                        Column(Modifier.weight(1f)) {
+                                                        Surface(modifier = Modifier.size(42.dp), shape = RoundedCornerShape(10.dp), tonalElevation = 1.dp) {
+                                                            Box(contentAlignment = Alignment.Center) {
+                                                                Icon(
+                                                                    when (m.messageType) {
+                                                                        "video" -> Icons.Default.VideoFile
+                                                                        "audio" -> Icons.Default.AudioFile
+                                                                        else -> Icons.Default.InsertDriveFile
+                                                                    },
+                                                                    contentDescription = null,
+                                                                    modifier = Modifier.size(25.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                        Spacer(Modifier.width(9.dp))
+                                                        Column(Modifier.widthIn(max = 220.dp).wrapContentWidth(Alignment.Start)) {
+                                                            Text(
+                                                                m.mediaName.ifBlank {
+                                                                    when (m.messageType) {
+                                                                        "video" -> "Video"
+                                                                        "audio" -> "Audio"
+                                                                        else -> "File"
+                                                                    }
+                                                                },
+                                                                maxLines = 1,
+                                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                                                fontWeight = FontWeight.Medium
+                                                            )
                                                             Text(
                                                                 when (m.messageType) {
-                                                                    "video" -> "Video"
-                                                                    "audio" -> "Audio"
-                                                                    else -> "File"
-                                                                },
-                                                                style = MaterialTheme.typography.labelMedium
+                                                                    "video" -> "VIDEO"
+                                                                    "audio" -> "AUDIO"
+                                                                    else -> "FILE"
+                                                                } + if (m.mediaSize > 0) " • ${formatAttachmentSize(m.mediaSize)}" else "",
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant
                                                             )
-                                                            if (m.mediaName.isNotBlank()) Text(m.mediaName, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                                                         }
                                                     }
                                                 }
-                                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                                    Column(Modifier.weight(1f)) {
-                                                        if (m.mediaName.isNotBlank() && m.messageType == "image") Text(m.mediaName, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                                                        if (m.mediaSize > 0) Text("${m.mediaSize / 1024} KB", style = MaterialTheme.typography.labelSmall)
-                                                    }
+                                                Row(Modifier.widthIn(max = 280.dp).wrapContentWidth(Alignment.Start), verticalAlignment = Alignment.CenterVertically) {
+                                                    Text(
+                                                        if (m.messageType == "image") "IMAGE" else when (m.messageType) {
+                                                            "video" -> "VIDEO"
+                                                            "audio" -> "AUDIO"
+                                                            else -> "FILE"
+                                                        } + if (m.mediaSize > 0) " • ${formatAttachmentSize(m.mediaSize)}" else "",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        modifier = Modifier.weight(1f, fill = false)
+                                                    )
                                                     IconButton(onClick = {
                                                         saveTarget = m
                                                         saveAttachmentLauncher.launch(m.mediaName.ifBlank { "attachment" })
-                                                    }) { Icon(Icons.Default.Download, "Save attachment") }
+                                                    }, modifier = Modifier.size(36.dp)) {
+                                                        Icon(Icons.Default.Download, "Save attachment", modifier = Modifier.size(20.dp))
+                                                    }
                                                     IconButton(onClick = {
                                                         val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                                             type = when (m.messageType) {
@@ -1386,7 +1421,9 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                                             putExtra(Intent.EXTRA_TEXT, m.mediaUrl)
                                                         }
                                                         context.startActivity(Intent.createChooser(shareIntent, "Share attachment"))
-                                                    }) { Icon(Icons.Default.Share, "Share attachment") }
+                                                    }, modifier = Modifier.size(36.dp)) {
+                                                        Icon(Icons.Default.Share, "Share attachment", modifier = Modifier.size(20.dp))
+                                                    }
                                                 }
                                             }
                                         }
@@ -1484,8 +1521,9 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                         if (mediaBusy) {
                             Spacer(Modifier.height(6.dp))
                             LinearProgressIndicator(progress = mediaProgress / 100f, modifier = Modifier.fillMaxWidth())
-                            if (mediaProgressLabel.isNotBlank()) {
-                                Text(mediaProgressLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(mediaProgressLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                                TextButton(onClick = { mediaUploadJob?.cancel() }) { Text("Cancel") }
                             }
                         }
                     }
@@ -1511,7 +1549,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                         val outgoing = text.trim()
                         val replyId = replyingTo?.id
                         statusMessage = null
-                        scope.launch {
+                        mediaUploadJob = scope.launch {
                             if (pendingItems.isNotEmpty()) {
                                 mediaBusy = true
                                 mediaProgress = 0
@@ -1548,13 +1586,21 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                     mediaProgressLabel = "${sentCount} file(s) sent"
                                     statusMessage = "Attachment(s) sent."
                                 } catch (error: Throwable) {
-                                    statusMessage = if (isBlockedSendError(error)) null else (error.message ?: "Could not send attachment(s).")
+                                    if (error is CancellationException) {
+                                        mediaProgressLabel = "Upload cancelled"
+                                        statusMessage = null
+                                    } else {
+                                        statusMessage = if (isBlockedSendError(error)) null else (error.message ?: "Could not send attachment(s).")
+                                    }
                                 } finally {
                                     mediaBusy = false
                                     if (pendingMediaItems.isEmpty()) {
                                         mediaProgress = 0
                                         mediaProgressLabel = ""
+                                    } else if (!mediaBusy) {
+                                        mediaProgress = 0
                                     }
+                                    mediaUploadJob = null
                                 }
                             } else {
                                 text = ""; replyingTo = null
