@@ -1748,6 +1748,12 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                 }
             }
         }
+        if (session != null) {
+            item {
+                StoriesSection(session = session!!, onStatus = { statusMessage = it })
+            }
+            item { Spacer(Modifier.height(4.dp)) }
+        }
         item {
             Text("Online people and accepted friends are shown here.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
