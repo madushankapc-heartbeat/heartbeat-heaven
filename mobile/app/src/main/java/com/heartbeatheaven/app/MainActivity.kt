@@ -174,6 +174,30 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
         loading = false
     }
 
+    LaunchedEffect(authSession?.accessToken) {
+        if (authSession != null) {
+            val auth = AuthApi(context)
+            val callApi = CallApi(context, auth)
+            while (true) {
+                runCatching {
+                    val incoming = withContext(Dispatchers.IO) { callApi.incomingRinging().firstOrNull() }
+                    if (incoming != null) {
+                        val prefs = context.getSharedPreferences("heartbeat_call_state", Context.MODE_PRIVATE)
+                        val already = prefs.getString("incoming_call_launched_id", "").orEmpty()
+                        if (already != incoming.id) {
+                            prefs.edit().putString("incoming_call_launched_id", incoming.id).apply()
+                            context.startActivity(Intent(context, CallActivity::class.java).apply {
+                                putExtra("call_id", incoming.id)
+                                putExtra("call_type", incoming.callType)
+                            })
+                        }
+                    }
+                }
+                delay(2000)
+            }
+        }
+    }
+
     LaunchedEffect(refreshTrigger) {
         if (refreshTrigger > 0) {
             refreshing = true
