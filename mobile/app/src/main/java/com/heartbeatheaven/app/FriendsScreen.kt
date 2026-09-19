@@ -107,11 +107,11 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
         auth.touchLastSeen(session.accessToken).getOrThrow()
     }
 
-    suspend fun onlineUsers(): List<FriendUser> = withContext(Dispatchers.IO) {
+    suspend fun onlineUsers(friendIdsOverride: Set<String>? = null): List<FriendUser> = withContext(Dispatchers.IO) {
         val since = Instant.now().minus(2, ChronoUnit.MINUTES).toString()
         val encoded = URLEncoder.encode(since, "UTF-8")
         val mine = userId()
-        val friendIds = runCatching {
+        val friendIds = friendIdsOverride ?: runCatching {
             val f = JSONArray(request("/rest/v1/friendships?or=(requester_id.eq." + mine + ",addressee_id.eq." + mine + ")&status=eq.accepted&select=requester_id,addressee_id&limit=500", "GET"))
             buildSet {
                 for (i in 0 until f.length()) {
@@ -214,9 +214,9 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
         }
     }
 
-    suspend fun chatSummaries(): List<ChatSummary> = withContext(Dispatchers.IO) {
+    suspend fun chatSummaries(friendListOverride: List<FriendUser>? = null): List<ChatSummary> = withContext(Dispatchers.IO) {
         val mine = userId()
-        val friendList = friends()
+        val friendList = friendListOverride ?: friends()
         if (friendList.isEmpty()) return@withContext emptyList()
 
         val hidden = runCatching {
@@ -624,13 +624,14 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                 withContext(Dispatchers.IO) {
                     a.touchPresence()
                     val friendList = a.friends()
-                    Triple(friendList, a.requests(), a.onlineUsers())
+                    val friendIds = friendList.mapTo(hashSetOf()) { it.id }
+                    Triple(friendList, a.requests(), a.onlineUsers(friendIds))
                 }
             }.onSuccess { (f, r, o) ->
                 friends = f
                 requests = r
                 online = o
-                chatSummaries = runCatching { a.chatSummaries() }.getOrDefault(emptyList())
+                chatSummaries = runCatching { a.chatSummaries(f) }.getOrDefault(emptyList())
             }.onFailure { statusMessage = it.message ?: "Could not load Friends." }
             busy = false
         }
@@ -642,9 +643,10 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
         if (api != null) while (true) {
             runCatching {
                 api.touchPresence()
-                online = api.onlineUsers()
-                friends = api.friends()
-                chatSummaries = api.chatSummaries()
+                val friendList = api.friends()
+                friends = friendList
+                online = api.onlineUsers(friendList.mapTo(hashSetOf()) { it.id })
+                chatSummaries = api.chatSummaries(friendList)
                 val callApi = CallApi(context, auth)
                 val prefs = context.getSharedPreferences("heartbeat_call_state", android.content.Context.MODE_PRIVATE)
                 val storedId = prefs.getString("active_call_id", "").orEmpty()
@@ -720,18 +722,26 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             RealtimeMessagesClient(
                 { currentApi.token() },
                 currentApi.userId(),
-                FRIENDS_KEY
-            ) { id, senderId, body, createdAt ->
-                scope.launch(Dispatchers.Main) {
-                    if (selectedId != null && selected?.id == selectedId && senderId == selectedId && messages.none { it.id == id }) {
-                        messages = messages + ChatMessage(id, senderId, body, createdAt, Instant.now().toString(), "", "", "", "")
-                        scope.launch(Dispatchers.IO) {
-                            currentApi.markDelivered(id)
-                            currentApi.markSeen(selectedId)
+                FRIENDS_KEY,
+                onMessage = { id, senderId, body, createdAt ->
+                    scope.launch(Dispatchers.Main) {
+                        if (selectedId != null && selected?.id == selectedId && senderId == selectedId && messages.none { it.id == id }) {
+                            messages = messages + ChatMessage(id, senderId, body, createdAt, Instant.now().toString(), "", "", "", "")
+                            scope.launch(Dispatchers.IO) {
+                                currentApi.markDelivered(id)
+                                currentApi.markSeen(selectedId)
+                            }
+                        }
+                    }
+                },
+                onMessageChange = { change ->
+                    if (selectedId == null && change.eventType.equals("INSERT", true)) {
+                        scope.launch(Dispatchers.Main) {
+                            chatSummaries = currentApi.chatSummaries()
                         }
                     }
                 }
-            }
+            )
         }
         realtime?.start()
         onDispose { realtime?.stop() }
