@@ -12,6 +12,7 @@ import android.media.AudioManager
 import android.media.ToneGenerator
 import android.util.Rational
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.graphics.drawable.GradientDrawable
 import android.widget.FrameLayout
