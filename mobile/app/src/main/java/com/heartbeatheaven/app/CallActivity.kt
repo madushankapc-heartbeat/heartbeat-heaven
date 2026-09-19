@@ -778,6 +778,8 @@ class CallActivity : Activity() {
         peer = null
         factory?.dispose()
         factory = null
+        runCatching { audioDeviceModule?.release() }
+        audioDeviceModule = null
         if (::localView.isInitialized) runCatching { localView.release() }
         if (::remoteView.isInitialized) runCatching { remoteView.release() }
         val audio = getSystemService(AUDIO_SERVICE) as AudioManager
