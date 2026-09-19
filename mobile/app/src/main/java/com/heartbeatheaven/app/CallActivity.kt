@@ -382,7 +382,16 @@ class CallActivity : Activity() {
             .setAudioDeviceModule(audioDeviceModule!!)
             .createPeerConnectionFactory()
 
-        val audioConstraints = MediaConstraints()
+        // Explicitly enable WebRTC voice processing for call audio.
+        // Hardware AEC/NS are disabled above because device-specific effects can
+        // attenuate speech. These constraints keep WebRTC's own APM responsible
+        // for echo cancellation, noise suppression and automatic mic gain.
+        val audioConstraints = MediaConstraints().apply {
+            mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "true"))
+            mandatory.add(MediaConstraints.KeyValuePair("googAutoGainControl", "true"))
+            mandatory.add(MediaConstraints.KeyValuePair("googNoiseSuppression", "true"))
+            mandatory.add(MediaConstraints.KeyValuePair("googHighpassFilter", "true"))
+        }
         val audioSource = factory!!.createAudioSource(audioConstraints)
         audioTrack = factory!!.createAudioTrack("audio_" + call!!.id, audioSource)
 
