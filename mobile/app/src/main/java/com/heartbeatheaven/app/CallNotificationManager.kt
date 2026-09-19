@@ -6,6 +6,8 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.media.AudioAttributes
+import android.media.AudioManager
+import android.media.Ringtone
 import android.media.RingtoneManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -43,6 +45,28 @@ internal object CallNotificationManager {
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
         }
         manager.createNotificationChannel(channel)
+    }
+
+
+    private fun startIncomingRingtone(context: Context) {
+        stopIncomingRingtone()
+        val uri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE) ?: return
+        val ringtone = RingtoneManager.getRingtone(context.applicationContext, uri) ?: return
+        val audio = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+        ringtone.audioAttributes = audio
+        @Suppress("DEPRECATION")
+        ringtone.streamType = AudioManager.STREAM_RING
+        if (Build.VERSION.SDK_INT >= 28) ringtone.isLooping = true
+        incomingRingtone = ringtone
+        ringtone.play()
+    }
+
+    private fun stopIncomingRingtone() {
+        incomingRingtone?.let { runCatching { it.stop() } }
+        incomingRingtone = null
     }
 
     fun showIncoming(context: Context, callId: String, callType: String) {
@@ -88,16 +112,12 @@ internal object CallNotificationManager {
         }
 
         if (Build.VERSION.SDK_INT < 33 || NotificationManagerCompat.from(context).areNotificationsEnabled()) {
-            val notification = builder.build().apply {
-                // Android's documented incoming-call pattern: keep the ringtone
-                // repeating until the notification is cancelled.
-                flags = flags or android.app.Notification.FLAG_INSISTENT
-            }
-            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, builder.build())
         }
     }
 
     fun cancelIncoming(context: Context) {
+        stopIncomingRingtone()
         NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
     }
 }
