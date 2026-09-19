@@ -7,7 +7,9 @@ import android.os.Bundle
 import android.app.PictureInPictureParams
 import android.content.Intent
 import android.content.res.Configuration
+import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
+import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.util.Rational
@@ -42,6 +44,8 @@ class CallActivity : Activity() {
     private var callAnswered = false
     private var isMuted = false
     private var isSpeakerOn = false
+    private var audioFocusRequest: AudioFocusRequest? = null
+    private var audioFocusHeld = false
     private var isVideoEnabled = false
     private var videoSender: RtpSender? = null
     private var lastRemoteOfferSdp: String? = null
@@ -570,11 +574,37 @@ class CallActivity : Activity() {
     private fun configureCallAudio() {
         val audio = getSystemService(AUDIO_SERVICE) as AudioManager
         audio.mode = AudioManager.MODE_IN_COMMUNICATION
-        isSpeakerOn = false
-        if (android.os.Build.VERSION.SDK_INT >= 31) audio.clearCommunicationDevice()
-        audio.isSpeakerphoneOn = false
-        // Keep the default earpiece route while Android treats this as a
-        // two-way communication stream.
+        if (!audioFocusHeld) {
+            val granted = if (android.os.Build.VERSION.SDK_INT >= 26) {
+                val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE)
+                    .setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build()
+                    )
+                    .setAcceptsDelayedFocusGain(false)
+                    .setOnAudioFocusChangeListener { }
+                    .build()
+                audioFocusRequest = request
+                audio.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            } else {
+                @Suppress("DEPRECATION")
+                audio.requestAudioFocus(null, AudioManager.STREAM_VOICE_CALL, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_EXCLUSIVE) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+            }
+            audioFocusHeld = granted
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            if (audio.communicationDevice == null) {
+                val target = audio.availableCommunicationDevices.firstOrNull {
+                    if (isSpeakerOn) it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                    else it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+                }
+                if (target != null) audio.setCommunicationDevice(target)
+            }
+        } else {
+            audio.isSpeakerphoneOn = isSpeakerOn
+        }
         updateControlLabels()
     }
 
@@ -826,6 +856,17 @@ class CallActivity : Activity() {
         factory = null
         runCatching { audioDeviceModule?.release() }
         audioDeviceModule = null
+        val focusAudio = getSystemService(AUDIO_SERVICE) as AudioManager
+        if (audioFocusHeld) {
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                audioFocusRequest?.let { focusAudio.abandonAudioFocusRequest(it) }
+            } else {
+                @Suppress("DEPRECATION")
+                focusAudio.abandonAudioFocus(null)
+            }
+            audioFocusHeld = false
+            audioFocusRequest = null
+        }
         if (::localView.isInitialized) runCatching { localView.release() }
         if (::remoteView.isInitialized) runCatching { remoteView.release() }
         val audio = getSystemService(AUDIO_SERVICE) as AudioManager
