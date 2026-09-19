@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Send
@@ -154,6 +155,10 @@ private class StoriesApi(private val auth: AuthApi, initial: AuthSession) {
         request("/rest/v1/stories", "POST", p.toString())
     }
 
+    suspend fun updateCaption(story: StoryItem, caption: String) = withContext(Dispatchers.IO) {
+        request("/rest/v1/stories?id=eq." + story.id + "&user_id=eq." + userId(), "PATCH", JSONObject().put("caption", caption.trim().take(1000)).toString())
+    }
+
     suspend fun delete(story: StoryItem) = withContext(Dispatchers.IO) {
         request("/rest/v1/stories?id=eq." + story.id + "&user_id=eq." + userId(), "DELETE")
         if (story.storagePath.isNotBlank()) {
@@ -194,6 +199,9 @@ internal fun StoriesSection(session: AuthSession, onStatus: (String) -> Unit = {
     var viewerIndex by remember { mutableIntStateOf(0) }
     var pickedUri by remember { mutableStateOf<Uri?>(null) }
     var pickedMime by remember { mutableStateOf("") }
+    var newCaption by remember { mutableStateOf("") }
+    var editingStory by remember { mutableStateOf<StoryItem?>(null) }
+    var editCaption by remember { mutableStateOf("") }
 
     fun reload() { scope.launch { runCatching { stories = api.load() }.onFailure { onStatus(it.message ?: "Could not load stories.") } } }
 
@@ -203,7 +211,7 @@ internal fun StoriesSection(session: AuthSession, onStatus: (String) -> Unit = {
         if (uri == null) return@rememberLauncherForActivityResult
         val mime = context.contentResolver.getType(uri).orEmpty().lowercase()
         if (!mime.startsWith("image/") && !mime.startsWith("video/")) onStatus("Please choose an image or video.")
-        else { pickedUri = uri; pickedMime = mime; createOpen = true }
+        else { pickedUri = uri; pickedMime = mime; newCaption = ""; createOpen = true }
     }
 
     val mine = stories.filter { it.userId == api.userId() }
@@ -240,43 +248,91 @@ internal fun StoriesSection(session: AuthSession, onStatus: (String) -> Unit = {
                 }
             }
         }
-        TextButton(onClick = { pickedUri = null; pickedMime = ""; createOpen = true }) { Text("Add Story") }
+        TextButton(onClick = { pickedUri = null; pickedMime = ""; newCaption = ""; createOpen = true }) { Text("Add Story") }
     }
 
     if (createOpen) {
+        val mediaUri = pickedUri
+        val canPost = mediaUri != null || newCaption.isNotBlank()
         AlertDialog(
             onDismissRequest = { createOpen = false },
             title = { Text("Add Story") },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(if (pickedUri == null) "Add a photo/video or create a text story." else "Media selected: " + pickedMime.substringAfter('/').uppercase())
-                    OutlinedButton(onClick = { picker.launch("*/*") }) { Text(if (pickedUri == null) "Choose photo / video" else "Change media") }
-                    var caption by remember { mutableStateOf("") }
-                    // Caption state is retained while this dialog remains composed.
-                    CompositionLocalProvider(LocalTextStyle provides MaterialTheme.typography.bodyMedium) {
-                        OutlinedTextField(caption, { if (it.length <= 1000) caption = it }, label = { Text("Caption / text") }, minLines = 2)
-                        TextButton(onClick = {
-                            scope.launch {
-                                runCatching {
-                                    val path = pickedUri?.let { api.upload(context, it, pickedMime) }
-                                    api.create(if (path == null) "text" else if (pickedMime.startsWith("video/")) "video" else "image", path, caption)
-                                    createOpen = false; pickedUri = null; pickedMime = ""; reload()
-                                }.onFailure { onStatus(it.message ?: "Could not create story.") }
-                            }
-                        }) { Text("Post Story") }
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (mediaUri != null) {
+                        if (pickedMime.startsWith("image/")) {
+                            AsyncImage(mediaUri, "Story preview", Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(16.dp)), contentScale = ContentScale.Crop)
+                        } else {
+                            AndroidView(
+                                factory = { ctx -> VideoView(ctx).apply {
+                                    setVideoURI(mediaUri)
+                                    setOnPreparedListener { mp -> mp.isLooping = true; start() }
+                                }},
+                                modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(16.dp))
+                            )
+                        }
+                        Text("Preview", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        Text("Create a text story", style = MaterialTheme.typography.bodyMedium)
                     }
+                    OutlinedButton(onClick = { picker.launch("*/*") }) {
+                        Text(if (mediaUri == null) "Choose photo / video" else "Change media")
+                    }
+                    OutlinedTextField(
+                        value = newCaption,
+                        onValueChange = { if (it.length <= 1000) newCaption = it },
+                        label = { Text(if (mediaUri == null) "Story text" else "Caption") },
+                        minLines = 2,
+                        maxLines = 5,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             },
-            confirmButton = {},
+            confirmButton = {
+                TextButton(enabled = canPost, onClick = {
+                    scope.launch {
+                        runCatching {
+                            val path = mediaUri?.let { api.upload(context, it, pickedMime) }
+                            api.create(if (path == null) "text" else if (pickedMime.startsWith("video/")) "video" else "image", path, newCaption)
+                            createOpen = false; pickedUri = null; pickedMime = ""; newCaption = ""; reload()
+                            onStatus("Story posted.")
+                        }.onFailure { onStatus(it.message ?: "Could not create story.") }
+                    }
+                }) { Text("Post Story") }
+            },
             dismissButton = { TextButton(onClick = { createOpen = false }) { Text("Cancel") } }
         )
     }
 
-    if (viewer.isNotEmpty()) StoryViewer(api, viewer, viewerIndex, { viewerIndex = it }, { viewer = emptyList() }, { reload() }, onStatus)
+    if (editingStory != null) {
+        val story = editingStory!!
+        AlertDialog(
+            onDismissRequest = { editingStory = null },
+            title = { Text("Edit Story") },
+            text = {
+                OutlinedTextField(editCaption, { if (it.length <= 1000) editCaption = it }, label = { Text("Caption") }, minLines = 2, modifier = Modifier.fillMaxWidth())
+            },
+            confirmButton = {
+                TextButton(enabled = editCaption.isNotBlank() || story.mediaType != "text", onClick = {
+                    scope.launch {
+                        runCatching {
+                            api.updateCaption(story, editCaption)
+                            editingStory = null
+                            reload()
+                            onStatus("Story updated.")
+                        }.onFailure { onStatus(it.message ?: "Could not update story.") }
+                    }
+                }) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { editingStory = null }) { Text("Cancel") } }
+        )
+    }
+
+    if (viewer.isNotEmpty()) StoryViewer(api, viewer, viewerIndex, { viewerIndex = it }, { viewer = emptyList() }, { reload() }, { story -> editCaption = story.caption; editingStory = story }, onStatus)
 }
 
 @Composable
-private fun StoryViewer(api: StoriesApi, stories: List<StoryItem>, index: Int, setIndex: (Int) -> Unit, close: () -> Unit, reload: () -> Unit, onStatus: (String) -> Unit) {
+private fun StoryViewer(api: StoriesApi, stories: List<StoryItem>, index: Int, setIndex: (Int) -> Unit, close: () -> Unit, reload: () -> Unit, onEdit: (StoryItem) -> Unit, onStatus: (String) -> Unit) {
     if (index !in stories.indices) { close(); return }
     val story = stories[index]
     val scope = rememberCoroutineScope()
@@ -337,7 +393,10 @@ private fun StoryViewer(api: StoriesApi, stories: List<StoryItem>, index: Int, s
             Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp)) {
                 if (story.caption.isNotBlank() && story.mediaType != "text") Text(story.caption, color = Color.White)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (mine) IconButton(onClick = { scope.launch { runCatching { api.delete(story); reload(); next() }.onFailure { onStatus(it.message ?: "Could not delete story.") } } }) { Icon(Icons.Default.Delete, "Delete", tint = Color.White) }
+                    if (mine) {
+                        IconButton(onClick = { onEdit(story) }) { Icon(Icons.Default.Edit, "Edit story", tint = Color.White) }
+                        IconButton(onClick = { scope.launch { runCatching { api.delete(story); reload(); next() }.onFailure { onStatus(it.message ?: "Could not delete story.") } } }) { Icon(Icons.Default.Delete, "Delete", tint = Color.White) }
+                    }
                     else {
                         IconButton(onClick = { scope.launch { runCatching { api.toggleLike(story, liked); liked = !liked; reload() }.onFailure { onStatus(it.message ?: "Could not like story.") } } }) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Like", tint = Color.White) }
                         OutlinedTextField(reply, { reply = it }, Modifier.weight(1f), singleLine = true, placeholder = { Text("Reply to story") })
