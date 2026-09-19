@@ -327,6 +327,18 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
         } else request("/rest/v1/user_blocks?blocker_id=eq.${mine}&blocked_id=eq.${other}", "DELETE")
     }
 
+    suspend fun setCallBlocked(other: String, blocked: Boolean) = withContext(Dispatchers.IO) {
+        val mine = userId()
+        if (blocked) {
+            val existing = JSONArray(request("/rest/v1/call_blocks?blocker_id=eq." + mine + "&blocked_id=eq." + other + "&select=blocked_id&limit=1", "GET"))
+            if (existing.length() == 0) request("/rest/v1/call_blocks", "POST", JSONObject().put("blocker_id", mine).put("blocked_id", other).toString())
+        } else request("/rest/v1/call_blocks?blocker_id=eq." + mine + "&blocked_id=eq." + other, "DELETE")
+    }
+
+    suspend fun isCallBlocked(other: String): Boolean = withContext(Dispatchers.IO) {
+        val mine = userId()
+        JSONArray(request("/rest/v1/call_blocks?or=(and(blocker_id.eq." + mine + ",blocked_id.eq." + other + "),and(blocker_id.eq." + other + ",blocked_id.eq." + mine + "))&select=blocked_id&limit=1", "GET")).length() > 0
+    }
     suspend fun report(other: String, reason: String) = withContext(Dispatchers.IO) {
         request("/rest/v1/chat_reports", "POST", JSONObject().put("reporter_id", userId()).put("reported_user_id", other).put("reason", reason.trim().take(500)).toString())
     }
@@ -511,6 +523,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
     var chatMuted by remember { mutableStateOf(false) }
     var chatPinned by remember { mutableStateOf(false) }
     var chatBlocked by remember { mutableStateOf(false) }
+    var callsBlocked by remember { mutableStateOf(false) }
     var showReportDialog by remember { mutableStateOf(false) }
     var reportReason by remember { mutableStateOf("") }
     var clearChatMode by remember { mutableStateOf<String?>(null) }
@@ -1019,7 +1032,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                 color = if (isOnline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        IconButton(enabled = !chatBlocked, onClick = {
+                        IconButton(enabled = !chatBlocked && !callsBlocked, onClick = {
                             context.startActivity(Intent(context, CallActivity::class.java).apply {
                                 putExtra("callee_id", chat.id)
                                 putExtra("call_type", "voice")
@@ -1074,6 +1087,19 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                         scope.launch {
                                             chatProfile = runCatching { api.profile(chat.id) }.getOrNull()
                                             showChatProfile = true
+                                        }
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(if (callsBlocked) "📵 Allow voice & video calls" else "📵 Block voice & video calls") },
+                                    onClick = {
+                                        showChatMenu = false
+                                        scope.launch {
+                                            runCatching {
+                                                api.setCallBlocked(chat.id, !callsBlocked)
+                                                callsBlocked = !callsBlocked
+                                                statusMessage = if (callsBlocked) "Voice and video calls blocked" else "Voice and video calls allowed"
+                                            }.onFailure { statusMessage = it.message ?: "Could not update call blocking." }
                                         }
                                     }
                                 )
