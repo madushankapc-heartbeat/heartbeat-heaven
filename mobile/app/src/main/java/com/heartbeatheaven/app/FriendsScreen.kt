@@ -541,6 +541,9 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
     var saveTarget by remember { mutableStateOf<ChatMessage?>(null) }
     var latestCall by remember { mutableStateOf<CallSession?>(null) }
     var launchedIncomingCallId by remember { mutableStateOf<String?>(null) }
+    var activeCallId by remember { mutableStateOf("") }
+    var activeCallUserId by remember { mutableStateOf("") }
+    var activeCallType by remember { mutableStateOf("voice") }
 
     LaunchedEffect(Unit) {
         session = withContext(Dispatchers.IO) { auth.currentSession() }
@@ -614,13 +617,33 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                 online = api.onlineUsers()
                 friends = api.friends()
                 chatSummaries = api.chatSummaries()
-                val incoming = CallApi(context, auth).incomingRinging().firstOrNull()
+                val callApi = CallApi(context, auth)
+                val incoming = callApi.incomingRinging().firstOrNull()
                 if (incoming != null && incoming.id != launchedIncomingCallId) {
                     launchedIncomingCallId = incoming.id
                     context.startActivity(Intent(context, CallActivity::class.java).apply {
                         putExtra("call_id", incoming.id)
                         putExtra("call_type", incoming.callType)
                     })
+                }
+                val prefs = context.getSharedPreferences("heartbeat_call_state", android.content.Context.MODE_PRIVATE)
+                val storedId = prefs.getString("active_call_id", "").orEmpty()
+                if (storedId.isNotBlank()) {
+                    val current = runCatching { callApi.get(storedId) }.getOrNull()
+                    if (current == null || current.status in listOf("ended", "failed", "declined", "missed", "cancelled")) {
+                        prefs.edit().clear().apply()
+                        activeCallId = ""
+                        activeCallUserId = ""
+                        activeCallType = "voice"
+                    } else {
+                        activeCallId = current.id
+                        activeCallUserId = prefs.getString("active_call_user_id", "").orEmpty()
+                        activeCallType = prefs.getString("active_call_type", current.callType).orEmpty().ifBlank { current.callType }
+                    }
+                } else {
+                    activeCallId = ""
+                    activeCallUserId = ""
+                    activeCallType = "voice"
                 }
             }
             delay(5000)
@@ -978,6 +1001,38 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
         }
 
         Column(Modifier.fillMaxSize()) {
+            if (activeCallId.isNotBlank() && activeCallUserId == chat.id) {
+                Surface(
+                    tonalElevation = 4.dp,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            if (activeCallType == "video") Icons.Default.Videocam else Icons.Default.Call,
+                            "Active call",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "Active " + if (activeCallType == "video") "video" else "voice" + " call",
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text("Call is still running", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Button(onClick = {
+                            context.startActivity(Intent(context, CallActivity::class.java).apply {
+                                putExtra("call_id", activeCallId)
+                                putExtra("call_type", activeCallType)
+                            })
+                        }) { Text("Return to call") }
+                    }
+                }
+            }
             Surface(shadowElevation = 2.dp) {
                 if (selectedForActions != null) {
                     Row(
