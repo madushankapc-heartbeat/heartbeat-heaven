@@ -1198,7 +1198,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                             }
                             IconButton(onClick = {
                                 context.startActivity(Intent(context, CallActivity::class.java).apply {
-                                    putExtra("callee_id", current.id)
+                                    putExtra("callee_id", chat.id)
                                     putExtra("call_type", callSession.callType)
                                 })
                             }) { Icon(Icons.Default.Call, "Call back") }
