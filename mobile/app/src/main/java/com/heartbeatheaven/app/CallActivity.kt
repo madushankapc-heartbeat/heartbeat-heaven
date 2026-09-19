@@ -563,11 +563,8 @@ class CallActivity : Activity() {
         isSpeakerOn = false
         if (android.os.Build.VERSION.SDK_INT >= 31) audio.clearCommunicationDevice()
         audio.isSpeakerphoneOn = false
-        // Keep the default earpiece route while ensuring Android treats this as
-        // a two-way communication stream rather than ordinary media playback.
-        if (android.os.Build.VERSION.SDK_INT >= 21) {
-            audio.setParameters("voice_volume=1")
-        }
+        // Keep the default earpiece route while Android treats this as a
+        // two-way communication stream.
         updateControlLabels()
     }
 
