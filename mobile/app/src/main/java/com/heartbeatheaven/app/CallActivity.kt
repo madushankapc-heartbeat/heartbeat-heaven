@@ -46,6 +46,8 @@ class CallActivity : Activity() {
     private var toneGenerator: ToneGenerator? = null
     private var toneJob: Job? = null
     private var ringStartedAt = 0L
+    private val adaptiveController = AdaptiveCallController()
+    private var statsJob: Job? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val auth by lazy { AuthApi(applicationContext) }
     private val callApi by lazy { CallApi(applicationContext, auth) }
@@ -291,11 +293,31 @@ class CallActivity : Activity() {
         val audioTrack = factory!!.createAudioTrack("audio_" + call!!.id, audioSource)
 
         val mediaConstraints = MediaConstraints()
+        val fallbackIceServers = listOf(
+            PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
+            PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer()
+        )
+        scope.launch {
+            val (relayServers, relayOnly) = runCatching { withContext(Dispatchers.IO) { callApi.fetchIceServers() } }
+                .getOrElse { Pair(emptyList(), false) }
+            if (relayOnly && relayServers.isNotEmpty()) {
+                createPeerConnectionWithServers(relayServers, true, video)
+            } else {
+                createPeerConnectionWithServers(fallbackIceServers, false, video)
+            }
+        }
+    }
+
+    private fun createPeerConnectionWithServers(
+        iceServers: List<PeerConnection.IceServer>,
+        relayOnly: Boolean,
+        video: Boolean
+    ) {
+        val config = PeerConnection.RTCConfiguration(iceServers).apply {
+            if (relayOnly) iceTransportsType = PeerConnection.IceTransportsType.RELAY
+        }
         peer = factory!!.createPeerConnection(
-            listOf(
-                PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
-                PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer()
-            ),
+            config,
             object : PeerConnection.Observer {
                 override fun onIceCandidate(c: IceCandidate) {
                     val j = JSONObject().put("sdpMid", c.sdpMid).put("sdpMLineIndex", c.sdpMLineIndex).put("candidate", c.sdp)
@@ -351,6 +373,68 @@ class CallActivity : Activity() {
             peer!!.addTrack(videoTrack, listOf("stream_" + call!!.id))
         } else {
             localView.visibility = android.view.View.GONE
+        }
+        if (video) startAdaptiveStats()
+    }
+
+    private fun startAdaptiveStats() {
+        statsJob?.cancel()
+        statsJob = scope.launch {
+            while (isActive && running) {
+                delay(2000)
+                val connection = peer ?: continue
+                connection.getStats(object : RTCStatsCollectorCallback {
+                    override fun onStatsDelivered(report: RTCStatsReport) {
+                        var rttMs = 0L
+                        var availableBps = 0L
+                        var lost = 0L
+                        var received = 0L
+                        report.statsMap.values.forEach { stat ->
+                            val m = stat.members
+                            when (stat.type) {
+                                "candidate-pair" -> {
+                                    val rtt = (m["currentRoundTripTime"] as? Number)?.toDouble()
+                                    val bitrate = (m["availableOutgoingBitrate"] as? Number)?.toLong()
+                                    if (rtt != null && rtt > 0) rttMs = (rtt * 1000.0).toLong()
+                                    if (bitrate != null && bitrate > availableBps) availableBps = bitrate
+                                }
+                                "remote-inbound-rtp" -> {
+                                    lost += (m["packetsLost"] as? Number)?.toLong() ?: 0L
+                                    received += (m["packetsReceived"] as? Number)?.toLong() ?: 0L
+                                }
+                            }
+                        }
+                        val lossPercent = if (lost + received > 0) lost.toDouble() * 100.0 / (lost + received).toDouble() else 0.0
+                        applyMediaProfile(adaptiveController.update(CallNetworkSample(rttMs, lossPercent, availableBps)))
+                    }
+                })
+            }
+        }
+    }
+
+    private fun applyMediaProfile(profile: CallMediaProfile) {
+        val connection = peer ?: return
+        connection.senders.filter { it.track() is VideoTrack }.forEach { sender ->
+            val params = sender.parameters
+            params.encodings.forEach { encoding ->
+                encoding.maxBitrateBps = profile.maxBitrateBps.takeIf { profile.videoEnabled }
+                encoding.maxFramerate = profile.maxFps.takeIf { profile.videoEnabled }
+                encoding.scaleResolutionDownBy = if (profile.videoEnabled) {
+                    when {
+                        profile.maxWidth >= 640 -> 1.0
+                        profile.maxWidth >= 480 -> 640.0 / 480.0
+                        else -> 640.0 / 320.0
+                    }
+                } else 2.0
+                encoding.active = profile.videoEnabled
+            }
+            sender.parameters = params
+        }
+        if (profile.videoEnabled) {
+            capturer?.let {
+                runCatching { it.stopCapture() }
+                runCatching { it.startCapture(profile.maxWidth, profile.maxHeight, profile.maxFps) }
+            }
         }
     }
 
@@ -610,6 +694,7 @@ class CallActivity : Activity() {
 
     override fun onDestroy() {
         controlsHideJob?.cancel()
+        statsJob?.cancel()
         if (running) {
             running = false
             val id = call?.id
