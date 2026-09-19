@@ -60,6 +60,23 @@ internal class CallApi(private val context: Context, private val auth: AuthApi) 
         val a = JSONArray(request("/rest/v1/call_sessions?id=eq." + id + "&select=*&limit=1", "GET"))
         if (a.length() == 0) null else parse(a.getJSONObject(0))
     }
+    suspend fun incomingRinging(): List<CallSession> = withContext(Dispatchers.IO) {
+        val userId = auth.currentSession()?.profile?.id ?: return@withContext emptyList()
+        val raw = request("/rest/v1/call_sessions?callee_id=eq.$userId&status=eq.ringing&order=created_at.desc&limit=5", "GET")
+        val array = JSONArray(raw)
+        (0 until array.length()).map { parse(array.getJSONObject(it)) }
+    }
+
+    suspend fun latestWithUser(otherUserId: String): CallSession? = withContext(Dispatchers.IO) {
+        val userId = auth.currentSession()?.profile?.id ?: return@withContext null
+        val raw = request(
+            "/rest/v1/call_sessions?or=(and(caller_id.eq.$userId,callee_id.eq.$otherUserId),and(caller_id.eq.$otherUserId,callee_id.eq.$userId))&order=created_at.desc&limit=1",
+            "GET"
+        )
+        val array = JSONArray(raw)
+        if (array.length() == 0) null else parse(array.getJSONObject(0))
+    }
+
     suspend fun updateStatus(id: String, status: String): CallSession = withContext(Dispatchers.IO) {
         parse(JSONObject(request("/rest/v1/rpc/update_call_status", "POST", JSONObject().put("p_call_id", id).put("p_status", status).toString())))
     }
