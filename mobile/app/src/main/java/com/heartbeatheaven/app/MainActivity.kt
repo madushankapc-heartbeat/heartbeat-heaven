@@ -25,6 +25,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -186,10 +187,14 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
                         val already = prefs.getString("incoming_call_launched_id", "").orEmpty()
                         if (already != incoming.id) {
                             prefs.edit().putString("incoming_call_launched_id", incoming.id).apply()
-                            context.startActivity(Intent(context, CallActivity::class.java).apply {
-                                putExtra("call_id", incoming.id)
-                                putExtra("call_type", incoming.callType)
-                            })
+                            CallNotificationManager.showIncoming(context, incoming.id, incoming.callType)
+                            val activity = context as? MainActivity
+                            if (activity?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) == true) {
+                                context.startActivity(Intent(context, CallActivity::class.java).apply {
+                                    putExtra("call_id", incoming.id)
+                                    putExtra("call_type", incoming.callType)
+                                })
+                            }
                         }
                     }
                 }
