@@ -850,9 +850,10 @@ class CallActivity : Activity() {
         }
         val video = intent.getStringExtra("call_type") == "video" || isVideoEnabled
         if (!video) {
-            // Keep CallActivity alive underneath the main UI so the WebRTC session
-            // is not destroyed just because the user opens the chat.
-            moveTaskToBack(true)
+            // Show the main chat UI while keeping this CallActivity alive underneath.
+            startActivity(Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+            })
             return
         }
         if (android.os.Build.VERSION.SDK_INT >= 26 &&
@@ -863,7 +864,9 @@ class CallActivity : Activity() {
             if (android.os.Build.VERSION.SDK_INT >= 31) builder.setAutoEnterEnabled(false)
             enterPictureInPictureMode(builder.build())
         } else {
-            moveTaskToBack(true)
+            startActivity(Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+            })
         }
     }
 
