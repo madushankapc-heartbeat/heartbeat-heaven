@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.Modifier
@@ -1681,6 +1682,10 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                         mediaProgress = ((sentCount.toDouble() / pendingItems.size) * 100.0).toInt().coerceIn(0, 100)
                                     }
                                     messages = api.messages(chat.id)
+                                    withFrameNanos { }
+                                    if (messages.isNotEmpty()) {
+                                        listState.animateScrollToItem(messages.lastIndex)
+                                    }
                                     reactions = api.reactions(chat.id)
                                     chatSummaries = api.chatSummaries()
                                     text = ""
@@ -1713,6 +1718,10 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                 runCatching {
                                     api.sendMessage(chat.id, outgoing, replyId)
                                     messages = api.messages(chat.id)
+                                    withFrameNanos { }
+                                    if (messages.isNotEmpty()) {
+                                        listState.animateScrollToItem(messages.lastIndex)
+                                    }
                                     reactions = api.reactions(chat.id)
                                     chatSummaries = api.chatSummaries()
                                 }.onFailure { error ->
