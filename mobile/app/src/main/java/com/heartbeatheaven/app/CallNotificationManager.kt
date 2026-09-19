@@ -17,6 +17,9 @@ import androidx.core.app.NotificationManagerCompat
 internal object CallNotificationManager {
     private const val CHANNEL_ID = "incoming_calls_v4"
     private const val NOTIFICATION_ID = 7401
+
+    @Volatile
+    private var incomingRingtone: Ringtone? = null
     const val ACTION_DECLINE = "com.heartbeatheaven.app.ACTION_DECLINE_CALL"
     const val EXTRA_CALL_ID = "call_id"
 
@@ -39,7 +42,7 @@ internal object CallNotificationManager {
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
             description = "Incoming HeartBeat Heaven voice and video calls"
-            setSound(ringtoneUri, audio)
+            setSound(null, audio)
             enableVibration(true)
             vibrationPattern = longArrayOf(0, 500, 300, 500)
             lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
