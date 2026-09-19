@@ -47,6 +47,7 @@ class CallActivity : Activity() {
     private var upgradeVideoPending = false
     private var peer: PeerConnection? = null
     private var factory: PeerConnectionFactory? = null
+    private var audioDeviceModule: AudioDeviceModule? = null
     private var capturer: VideoCapturer? = null
     private var videoSource: VideoSource? = null
     private var audioTrack: AudioTrack? = null
@@ -347,6 +348,8 @@ class CallActivity : Activity() {
                     createAndPublishOffer()
                 } else {
                     setIncomingControls()
+                    startCallTone(ToneGenerator.TONE_SUP_RINGTONE)
+                    statusPanel.text = "Incoming call"
                 }
                 startSignalLoop()
             }.onFailure {
@@ -360,7 +363,13 @@ class CallActivity : Activity() {
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(applicationContext).setEnableInternalTracer(false).createInitializationOptions()
         )
-        factory = PeerConnectionFactory.builder().createPeerConnectionFactory()
+        audioDeviceModule = JavaAudioDeviceModule.builder(applicationContext)
+            .setUseHardwareAcousticEchoCanceler(true)
+            .setUseHardwareNoiseSuppressor(true)
+            .createAudioDeviceModule()
+        factory = PeerConnectionFactory.builder()
+            .setAudioDeviceModule(audioDeviceModule)
+            .createPeerConnectionFactory()
 
         val audioConstraints = MediaConstraints()
         val audioSource = factory!!.createAudioSource(audioConstraints)
@@ -422,7 +431,12 @@ class CallActivity : Activity() {
                 }
                 override fun onRemoveStream(stream: MediaStream) {}
                 override fun onRemoveTrack(receiver: RtpReceiver) {}
-                override fun onTrack(transceiver: RtpTransceiver) {}
+                override fun onTrack(transceiver: RtpTransceiver) {
+                    val track = transceiver.receiver.track()
+                    if (track is VideoTrack) {
+                        runOnUiThread { track.addSink(remoteView); remoteView.visibility = View.VISIBLE }
+                    }
+                }
                 override fun onDataChannel(c: DataChannel) {}
                 override fun onRenegotiationNeeded() {}
                 override fun onAddTrack(receiver: RtpReceiver, streams: Array<out MediaStream>) {
