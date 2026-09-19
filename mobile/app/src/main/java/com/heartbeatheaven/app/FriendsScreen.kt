@@ -618,14 +618,6 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                 friends = api.friends()
                 chatSummaries = api.chatSummaries()
                 val callApi = CallApi(context, auth)
-                val incoming = callApi.incomingRinging().firstOrNull()
-                if (incoming != null && incoming.id != launchedIncomingCallId) {
-                    launchedIncomingCallId = incoming.id
-                    context.startActivity(Intent(context, CallActivity::class.java).apply {
-                        putExtra("call_id", incoming.id)
-                        putExtra("call_type", incoming.callType)
-                    })
-                }
                 val prefs = context.getSharedPreferences("heartbeat_call_state", android.content.Context.MODE_PRIVATE)
                 val storedId = prefs.getString("active_call_id", "").orEmpty()
                 if (storedId.isNotBlank()) {
