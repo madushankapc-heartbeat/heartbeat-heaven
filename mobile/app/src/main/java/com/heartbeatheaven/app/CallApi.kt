@@ -53,6 +53,36 @@ internal class CallApi(private val context: Context, private val auth: AuthApi) 
         o.optString("ended_at").takeUnless { it == "null" || it.isBlank() }
     )
 
+    suspend fun fetchIceServers(): Pair<List<PeerConnection.IceServer>, Boolean> = withContext(Dispatchers.IO) {
+        val session = auth.currentSession() ?: error("Login required")
+        val c = URL(base + "/functions/v1/call-turn-credentials").openConnection() as HttpURLConnection
+        try {
+            c.requestMethod = "GET"
+            c.connectTimeout = 10000
+            c.readTimeout = 12000
+            c.setRequestProperty("apikey", key)
+            c.setRequestProperty("Authorization", "Bearer " + session.accessToken)
+            if (c.responseCode !in 200..299) return@withContext Pair(emptyList(), false)
+            val root = JSONObject(c.inputStream.bufferedReader().use { it.readText() })
+            val array = root.optJSONArray("iceServers") ?: return@withContext Pair(emptyList(), false)
+            val servers = mutableListOf<PeerConnection.IceServer>()
+            for (i in 0 until array.length()) {
+                val item = array.getJSONObject(i)
+                val urls = mutableListOf<String>()
+                when (val raw = item.opt("urls")) {
+                    is org.json.JSONArray -> for (j in 0 until raw.length()) raw.optString(j).takeIf { it.isNotBlank() }?.let(urls::add)
+                    is String -> if (raw.isNotBlank()) urls.add(raw)
+                }
+                if (urls.isEmpty()) continue
+                val builder = PeerConnection.IceServer.builder(urls)
+                item.optString("username").takeIf { it.isNotBlank() }?.let { builder.setUsername(it) }
+                item.optString("credential").takeIf { it.isNotBlank() }?.let { builder.setPassword(it) }
+                servers.add(builder.createIceServer())
+            }
+            Pair(servers, root.optString("iceTransportPolicy") == "relay" && servers.any { it.urls.any { u -> u.startsWith("turn:") || u.startsWith("turns:") } })
+        } finally { c.disconnect() }
+    }
+
     suspend fun create(calleeId: String, type: String): CallSession = withContext(Dispatchers.IO) {
         parse(JSONObject(request("/rest/v1/rpc/create_call", "POST", JSONObject().put("p_callee_id", calleeId).put("p_call_type", type).toString())))
     }
