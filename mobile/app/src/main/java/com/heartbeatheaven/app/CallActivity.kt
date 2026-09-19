@@ -792,7 +792,6 @@ class CallActivity : Activity() {
             if (!id.isNullOrBlank()) {
                 runCatching { withContext(Dispatchers.IO) { callApi.updateStatus(id, statusValue) } }
             }
-            returnToMainActivity()
             cleanup()
             if (!isFinishing) finish()
         }
@@ -803,16 +802,8 @@ class CallActivity : Activity() {
         running = false
         stopCallTone()
         controlsHideJob?.cancel()
-        returnToMainActivity()
         cleanup()
         if (!isFinishing) finish()
-    }
-
-    private fun returnToMainActivity() {
-        val intent = Intent(this, MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-        }
-        startActivity(intent)
     }
 
     private fun cleanup() {
@@ -857,11 +848,9 @@ class CallActivity : Activity() {
         }
         val video = intent.getStringExtra("call_type") == "video" || isVideoEnabled
         if (!video) {
-            // Voice calls do not need a PiP video surface. Keep this CallActivity
-            // alive underneath MainActivity so the audio connection continues.
-            startActivity(Intent(this, MainActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-            })
+            // Keep CallActivity alive underneath the main UI so the WebRTC session
+            // is not destroyed just because the user opens the chat.
+            moveTaskToBack(true)
             return
         }
         if (android.os.Build.VERSION.SDK_INT >= 26 &&
@@ -872,9 +861,7 @@ class CallActivity : Activity() {
             if (android.os.Build.VERSION.SDK_INT >= 31) builder.setAutoEnterEnabled(false)
             enterPictureInPictureMode(builder.build())
         } else {
-            startActivity(Intent(this, MainActivity::class.java).apply {
-                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-            })
+            moveTaskToBack(true)
         }
     }
 
@@ -891,20 +878,18 @@ class CallActivity : Activity() {
         if (isInPictureInPictureMode) finishCall("ended") else minimizeToChat()
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (running && !cleanedUp) configureCallAudio()
+    }
+
     override fun onDestroy() {
         controlsHideJob?.cancel()
         statsJob?.cancel()
-        if (running) {
-            running = false
-            val id = call?.id
-            if (!id.isNullOrBlank()) {
-                val statusValue = if (isCaller && !callAnswered) "cancelled" else "ended"
-                Thread {
-                    runCatching { callApi.updateStatusBlocking(id, statusValue) }
-                }.start()
-            }
-        }
-        cleanup()
+        // Activity destruction is not the same as ending a call. Android/OEMs can
+        // destroy or recreate an Activity while a call is still active. Only the
+        // explicit End/decline/remote-terminal paths are allowed to end the call.
+        if (isFinishing) cleanup()
         super.onDestroy()
     }
 }
