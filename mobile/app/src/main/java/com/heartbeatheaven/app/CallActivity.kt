@@ -572,14 +572,26 @@ class CallActivity : Activity() {
     }
 
     private fun minimizeToChat() {
+        val video = intent.getStringExtra("call_type") == "video"
+        if (!video) {
+            // Voice calls do not need a PiP video surface. Keep this CallActivity
+            // alive underneath MainActivity so the audio connection continues.
+            startActivity(Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+            })
+            return
+        }
         if (android.os.Build.VERSION.SDK_INT >= 26 &&
             packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)
         ) {
-            val video = intent.getStringExtra("call_type") == "video"
-            val ratio = Rational(16, 9)
-            val builder = PictureInPictureParams.Builder().setAspectRatio(ratio)
+            val builder = PictureInPictureParams.Builder()
+                .setAspectRatio(Rational(16, 9))
             if (android.os.Build.VERSION.SDK_INT >= 31) builder.setAutoEnterEnabled(false)
             enterPictureInPictureMode(builder.build())
+        } else {
+            startActivity(Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+            })
         }
     }
 
