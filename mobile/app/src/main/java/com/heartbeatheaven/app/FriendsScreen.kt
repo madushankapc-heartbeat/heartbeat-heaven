@@ -738,13 +738,14 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                     when {
                         selectedId != null && change.eventType.equals("DELETE", true) -> {
                             scope.launch(Dispatchers.Main) {
-                                if (selected?.id == selectedId) {
-                                    val refreshed = runCatching { currentApi.messages(selectedId) }.getOrDefault(emptyList())
-                                    messages = refreshed
-                                    reactions = runCatching { currentApi.reactions(selectedId) }.getOrDefault(emptyList())
+                                if (selected?.id == selectedId && change.id.isNotBlank()) {
+                                    // Remove the deleted row locally as soon as Realtime delivers
+                                    // the DELETE event; do not wait for the 3-second polling reload.
+                                    messages = messages.filterNot { it.id == change.id }
+                                    reactions = reactions.filterNot { it.messageId == change.id }
+                                    searchResults = searchResults?.filterNot { it.id == change.id }
+                                    if (selectedMessage?.id == change.id) selectedMessage = null
                                     chatSummaries = runCatching { currentApi.chatSummaries() }.getOrDefault(chatSummaries)
-                                    selectedMessage = null
-                                    searchResults = null
                                 }
                             }
                         }
@@ -1006,9 +1007,13 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                 scope.launch {
                                     runCatching {
                                         val updated = api.deleteForEveryone(target.id)
-                                        messages = messages.map { if (it.id == updated.id) updated else it }
-                                        searchResults = searchResults?.map { if (it.id == updated.id) updated else it }
-                                        reactions = reactions.filterNot { it.messageId == updated.id }
+                                        // Keep the sender's open chat in sync immediately.
+                                        // Realtime will independently remove the same row on
+                                        // the other participant's device.
+                                        messages = messages.filterNot { it.id == target.id }
+                                        searchResults = searchResults?.filterNot { it.id == target.id }
+                                        reactions = reactions.filterNot { it.messageId == target.id }
+                                        selectedMessage = null
                                         chatSummaries = api.chatSummaries()
                                     }.onFailure { statusMessage = it.message ?: "Message could not be deleted for everyone." }
                                 }
