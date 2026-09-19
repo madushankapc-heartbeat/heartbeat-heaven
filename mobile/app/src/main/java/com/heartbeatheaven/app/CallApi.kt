@@ -114,13 +114,14 @@ internal class CallApi(private val context: Context, private val auth: AuthApi) 
         parse(JSONObject(request("/rest/v1/rpc/update_call_status", "POST", JSONObject().put("p_call_id", id).put("p_status", status).toString())))
     suspend fun publishOffer(id: String, sdp: String) = patch(id, JSONObject().put("offer_sdp", sdp))
     suspend fun publishAnswer(id: String, sdp: String) = patch(id, JSONObject().put("answer_sdp", sdp))
-    suspend fun addCallerIce(id: String, candidate: JSONObject) = appendIce(id, true, candidate)
-    suspend fun addCalleeIce(id: String, candidate: JSONObject) = appendIce(id, false, candidate)
+    suspend fun addCallerIce(id: String, candidate: JSONObject) = appendIceAtomically(id, true, candidate)
+    suspend fun addCalleeIce(id: String, candidate: JSONObject) = appendIceAtomically(id, false, candidate)
     private suspend fun patch(id: String, body: JSONObject) = withContext(Dispatchers.IO) { request("/rest/v1/call_sessions?id=eq." + id, "PATCH", body.toString()) }
-    private suspend fun appendIce(id: String, caller: Boolean, candidate: JSONObject) = withContext(Dispatchers.IO) {
-        val current = get(id) ?: return@withContext
-        val next = JSONArray((if (caller) current.callerIce else current.calleeIce).toString())
-        next.put(candidate)
-        patch(id, JSONObject().put(if (caller) "caller_ice" else "callee_ice", next))
+    private suspend fun appendIceAtomically(id: String, caller: Boolean, candidate: JSONObject) = withContext(Dispatchers.IO) {
+        request("/rest/v1/rpc/append_call_ice", "POST", JSONObject()
+            .put("p_call_id", id)
+            .put("p_caller", caller)
+            .put("p_candidate", candidate)
+            .toString())
     }
 }
