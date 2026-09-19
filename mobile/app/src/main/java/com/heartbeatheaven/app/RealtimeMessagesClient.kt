@@ -79,6 +79,16 @@ class RealtimeMessagesClient(
                         .put("schema", "public")
                         .put("table", "messages")
                         .put("filter", "sender_id=eq.$userId"))
+                    .put(JSONObject()
+                        .put("event", "DELETE")
+                        .put("schema", "public")
+                        .put("table", "messages")
+                        .put("filter", "sender_id=eq.$userId"))
+                    .put(JSONObject()
+                        .put("event", "DELETE")
+                        .put("schema", "public")
+                        .put("table", "messages")
+                        .put("filter", "receiver_id=eq.$userId"))
 
                 val payload = JSONObject()
                     .put("config", JSONObject()
@@ -130,15 +140,20 @@ class RealtimeMessagesClient(
                         "postgres_changes" -> {
                             val payload = root.optJSONObject("payload") ?: return@runCatching
                             val data = payload.optJSONObject("data") ?: payload
-                            val record = data.optJSONObject("record") ?: return@runCatching
                             val eventType = data.optString("type").ifBlank {
                                 payload.optString("eventType").ifBlank { root.optString("event_type") }
-                            }
+                            }.ifBlank { "INSERT" }
+                            // DELETE events carry the removed row in old_record when
+                            // replica identity is configured for the messages table.
+                            val record = data.optJSONObject("record")
+                                ?: data.optJSONObject("old_record")
+                                ?: payload.optJSONObject("old_record")
+                                ?: return@runCatching
                             val senderId = record.optString("sender_id")
                             val receiverId = record.optString("receiver_id")
                             if (senderId == userId || receiverId == userId) {
                                 val change = RealtimeMessageChange(
-                                    eventType = eventType.ifBlank { "INSERT" },
+                                    eventType = eventType,
                                     id = record.optString("id"),
                                     senderId = senderId,
                                     receiverId = receiverId,
