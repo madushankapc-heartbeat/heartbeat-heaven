@@ -1166,7 +1166,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                             Icon(if (callSession.callType == "video") Icons.Default.Videocam else Icons.Default.Call, "Missed call")
                             Spacer(Modifier.width(8.dp))
                             Column(Modifier.weight(1f)) {
-                                Text("Missed " + if (callSession.callType == "video") "video" else "voice" + " call", fontWeight = FontWeight.SemiBold)
+                                Text("Missed " + (if (callSession.callType == "video") "video" else "voice") + " call", fontWeight = FontWeight.SemiBold)
                                 Text("Tap to call back", style = MaterialTheme.typography.bodySmall)
                             }
                             IconButton(onClick = {
