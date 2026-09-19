@@ -356,12 +356,12 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
 
     suspend fun isCallBlockedByMe(other: String): Boolean = withContext(Dispatchers.IO) {
         val mine = userId()
-        JSONArray(request("/rest/v1/call_blocks?blocker_id.eq=" + mine + "&blocked_id.eq=" + other + "&select=blocked_id&limit=1", "GET")).length() > 0
+        JSONArray(request("/rest/v1/call_blocks?blocker_id=eq." + mine + "&blocked_id=eq." + other + "&select=blocked_id&limit=1", "GET")).length() > 0
     }
 
     suspend fun isCallBlockedByOther(other: String): Boolean = withContext(Dispatchers.IO) {
         val mine = userId()
-        JSONArray(request("/rest/v1/call_blocks?blocker_id.eq=" + other + "&blocked_id.eq=" + mine + "&select=blocked_id&limit=1", "GET")).length() > 0
+        JSONArray(request("/rest/v1/call_blocks?blocker_id=eq." + other + "&blocked_id=eq." + mine + "&select=blocked_id&limit=1", "GET")).length() > 0
     }
     suspend fun report(other: String, reason: String) = withContext(Dispatchers.IO) {
         request("/rest/v1/chat_reports", "POST", JSONObject().put("reporter_id", userId()).put("reported_user_id", other).put("reason", reason.trim().take(500)).toString())
@@ -549,7 +549,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
     var chatBlocked by remember { mutableStateOf(false) }
     var callBlockedByMe by remember { mutableStateOf(false) }
     var callBlockedByOther by remember { mutableStateOf(false) }
-    var showUnfriendDialog by remember { mutableStateOf(false) }
+    var unfriendTarget by remember { mutableStateOf<FriendUser?>(null) }
     var unfriendBusy by remember { mutableStateOf(false) }
     var showReportDialog by remember { mutableStateOf(false) }
     var reportReason by remember { mutableStateOf("") }
@@ -752,6 +752,43 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
         return
     }
 
+    unfriendTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { if (!unfriendBusy) unfriendTarget = null },
+            title = { Text("Unfriend ${target.username}?") },
+            text = { Text("You can send a new friend request later. Your existing chat messages will not be deleted.") },
+            confirmButton = {
+                TextButton(
+                    enabled = !unfriendBusy,
+                    onClick = {
+                        unfriendBusy = true
+                        scope.launch {
+                            runCatching {
+                                api.unfriend(target.id)
+                                if (selected?.id == target.id) {
+                                    selected = null
+                                    messages = emptyList()
+                                    reactions = emptyList()
+                                    pendingMediaItems = emptyList()
+                                }
+                                chatSummaries = api.chatSummaries()
+                                friends = api.friends()
+                                unfriendTarget = null
+                                statusMessage = "Friend removed"
+                            }.onFailure {
+                                statusMessage = it.message ?: "Could not unfriend this user."
+                            }
+                            unfriendBusy = false
+                        }
+                    }
+                ) { Text("Unfriend") }
+            },
+            dismissButton = {
+                TextButton(enabled = !unfriendBusy, onClick = { unfriendTarget = null }) { Text("Cancel") }
+            }
+        )
+    }
+
     if (selected != null) {
         val chat = selected!!
         val typingClient = remember(api, chat.id) {
@@ -848,45 +885,6 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                 },
                 dismissButton = {
                     TextButton(onClick = { showReportDialog = true; showChatProfile = false }) { Text("Report") }
-                }
-            )
-        }
-
-        if (showUnfriendDialog) {
-            AlertDialog(
-                onDismissRequest = { if (!unfriendBusy) showUnfriendDialog = false },
-                title = { Text("Unfriend ${chat.username}?") },
-                text = {
-                    Text("You can send a new friend request later. Your existing chat messages will not be deleted.")
-                },
-                confirmButton = {
-                    TextButton(
-                        enabled = !unfriendBusy,
-                        onClick = {
-                            unfriendBusy = true
-                            scope.launch {
-                                runCatching {
-                                    api.unfriend(chat.id)
-                                    selected = null
-                                    messages = emptyList()
-                                    reactions = emptyList()
-                                    pendingMediaItems = emptyList()
-                                    chatSummaries = api.chatSummaries()
-                                    friends = api.friends()
-                                    statusMessage = "Friend removed"
-                                    showUnfriendDialog = false
-                                }.onFailure {
-                                    statusMessage = it.message ?: "Could not unfriend this user."
-                                }
-                                unfriendBusy = false
-                            }
-                        }
-                    ) { Text("Unfriend") }
-                },
-                dismissButton = {
-                    TextButton(enabled = !unfriendBusy, onClick = { showUnfriendDialog = false }) {
-                        Text("Cancel")
-                    }
                 }
             )
         }
@@ -1127,7 +1125,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                     }
                 } else {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(onClick = { selected = null; messages = emptyList(); text = ""; replyingTo = null; pendingMediaItems = emptyList(); mediaProgress = 0; mediaProgressLabel = ""; fullScreenImage = null; chatSearch = ""; showChatSearch = false; showUnfriendDialog = false }) { Icon(Icons.Default.ArrowBack, "Back") }
+                        IconButton(onClick = { selected = null; messages = emptyList(); text = ""; replyingTo = null; pendingMediaItems = emptyList(); mediaProgress = 0; mediaProgressLabel = ""; fullScreenImage = null; chatSearch = ""; showChatSearch = false; unfriendTarget = null }) { Icon(Icons.Default.ArrowBack, "Back") }
                         val headerAvatar = chatProfile?.avatarUrl.orEmpty().ifBlank { chat.avatarUrl }
                         if (headerAvatar.isNotBlank()) AsyncImage(model = headerAvatar, contentDescription = "Profile picture", modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
                         else Surface(modifier = Modifier.size(44.dp).clip(CircleShape), tonalElevation = 2.dp) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Person, "Profile picture") } }
@@ -1235,7 +1233,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                     text = { Text("👥 Unfriend") },
                                     onClick = {
                                         showChatMenu = false
-                                        showUnfriendDialog = true
+                                        unfriendTarget = chat
                                     }
                                 )
                                 DropdownMenuItem(
@@ -1855,8 +1853,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                     },
                     trailingContent = {
                         IconButton(onClick = {
-                            selected = chatItem.user
-                            showUnfriendDialog = true
+                            unfriendTarget = chatItem.user
                         }) { Icon(Icons.Default.PersonRemove, "Unfriend") }
                     },
                     modifier = Modifier
@@ -1874,7 +1871,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                             },
                             onLongClick = {
                                 selected = chatItem.user
-                                showUnfriendDialog = true
+                                unfriendTarget = chatItem.user
                             }
                         )
                 )
