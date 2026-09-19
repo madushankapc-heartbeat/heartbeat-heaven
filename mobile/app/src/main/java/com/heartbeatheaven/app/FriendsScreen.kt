@@ -1893,3 +1893,4 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         }
     }
+}
