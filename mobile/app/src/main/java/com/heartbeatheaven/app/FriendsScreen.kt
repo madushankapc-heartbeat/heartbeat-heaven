@@ -735,9 +735,23 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                     }
                 },
                 onMessageChange = { change ->
-                    if (selectedId == null && change.eventType.equals("INSERT", true)) {
-                        scope.launch(Dispatchers.Main) {
-                            chatSummaries = currentApi.chatSummaries()
+                    when {
+                        selectedId != null && change.eventType.equals("DELETE", true) -> {
+                            scope.launch(Dispatchers.Main) {
+                                if (selected?.id == selectedId) {
+                                    val refreshed = runCatching { currentApi.messages(selectedId) }.getOrDefault(emptyList())
+                                    messages = refreshed
+                                    reactions = runCatching { currentApi.reactions(selectedId) }.getOrDefault(emptyList())
+                                    chatSummaries = runCatching { currentApi.chatSummaries() }.getOrDefault(chatSummaries)
+                                    selectedMessage = null
+                                    searchResults = null
+                                }
+                            }
+                        }
+                        selectedId == null && change.eventType.equals("INSERT", true) -> {
+                            scope.launch(Dispatchers.Main) {
+                                chatSummaries = currentApi.chatSummaries()
+                            }
                         }
                     }
                 }
