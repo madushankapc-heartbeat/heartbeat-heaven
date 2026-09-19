@@ -364,12 +364,19 @@ class CallActivity : Activity() {
     }
 
     private suspend fun setupPeer(video: Boolean) {
+        // Put Android into communication mode BEFORE WebRTC creates its audio device.
+        // This makes the microphone use the call-oriented audio path on devices where
+        // the normal media/voice path is significantly quieter.
+        configureCallAudio()
+
         PeerConnectionFactory.initialize(
             PeerConnectionFactory.InitializationOptions.builder(applicationContext).setEnableInternalTracer(false).createInitializationOptions()
         )
         audioDeviceModule = JavaAudioDeviceModule.builder(applicationContext)
-            .setUseHardwareAcousticEchoCanceler(true)
-            .setUseHardwareNoiseSuppressor(true)
+            // Let WebRTC's audio processing handle AEC/NS instead of relying on
+            // device-specific hardware effects that can attenuate speech too much.
+            .setUseHardwareAcousticEchoCanceler(false)
+            .setUseHardwareNoiseSuppressor(false)
             .createAudioDeviceModule()
         factory = PeerConnectionFactory.builder()
             .setAudioDeviceModule(audioDeviceModule!!)
@@ -556,6 +563,11 @@ class CallActivity : Activity() {
         isSpeakerOn = false
         if (android.os.Build.VERSION.SDK_INT >= 31) audio.clearCommunicationDevice()
         audio.isSpeakerphoneOn = false
+        // Keep the default earpiece route while ensuring Android treats this as
+        // a two-way communication stream rather than ordinary media playback.
+        if (android.os.Build.VERSION.SDK_INT >= 21) {
+            audio.setParameters("voice_volume=1")
+        }
         updateControlLabels()
     }
 
