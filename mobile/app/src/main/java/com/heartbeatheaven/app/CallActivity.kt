@@ -23,6 +23,7 @@ import androidx.core.content.ContextCompat
 import kotlinx.coroutines.*
 import org.json.JSONObject
 import org.webrtc.*
+import org.webrtc.audio.JavaAudioDeviceModule
 
 class CallActivity : Activity() {
     private lateinit var root: FrameLayout
@@ -368,7 +369,7 @@ class CallActivity : Activity() {
             .setUseHardwareNoiseSuppressor(true)
             .createAudioDeviceModule()
         factory = PeerConnectionFactory.builder()
-            .setAudioDeviceModule(audioDeviceModule)
+            .setAudioDeviceModule(audioDeviceModule!!)
             .createPeerConnectionFactory()
 
         val audioConstraints = MediaConstraints()
