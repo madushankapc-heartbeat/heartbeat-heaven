@@ -112,7 +112,18 @@ private class StoriesApi(private val auth: AuthApi, initial: AuthSession) {
                 val prof = profiles[uid] ?: continue
                 val path = o.optString("storage_path").takeUnless { it == "null" }.orEmpty()
                 val url = if (path.isBlank()) "" else STORIES_URL + "/storage/v1/object/public/" + STORY_BUCKET + "/" + path
-                add(StoryItem(o.optString("id"), uid, prof.first, prof.second, o.optString("media_type"), url, path, o.optString("caption"), o.optString("id") in liked))
+                add(StoryItem(
+                    id = o.optString("id"),
+                    userId = uid,
+                    username = prof.first,
+                    avatarUrl = prof.second,
+                    mediaType = o.optString("media_type"),
+                    mediaUrl = url,
+                    storagePath = path,
+                    caption = o.optString("caption"),
+                    createdAt = o.optString("created_at"),
+                    liked = o.optString("id") in liked
+                ))
             }
         }.sortedWith(compareBy<StoryItem> { it.userId != mine }.thenBy { it.createdAt })
     }
