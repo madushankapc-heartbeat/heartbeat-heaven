@@ -212,17 +212,17 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
         if (friendList.isEmpty()) return@withContext emptyList()
 
         val hidden = runCatching {
-            val d = JSONArray(request("/rest/v1/message_deletions?user_id=eq.$mine&select=message_id&limit=1000", "GET"))
+            val d = JSONArray(request("/rest/v1/message_deletions?user_id=eq.$mine&select=message_id&limit=5000", "GET"))
             buildSet { for (i in 0 until d.length()) add(d.getJSONObject(i).optString("message_id")) }
         }.getOrDefault(emptySet())
 
         val pinned = runCatching {
-            val p = JSONArray(request("/rest/v1/chat_pins?user_id=eq.${mine}&select=other_user_id&limit=1000", "GET"))
+            val p = JSONArray(request("/rest/v1/chat_pins?user_id=eq.${mine}&select=other_user_id&limit=5000", "GET"))
             buildSet { for (i in 0 until p.length()) add(p.getJSONObject(i).optString("other_user_id")) }
         }.getOrDefault(emptySet())
 
         val muted = runCatching {
-            val m = JSONArray(request("/rest/v1/chat_mutes?user_id=eq." + mine + "&select=other_user_id&limit=1000", "GET"))
+            val m = JSONArray(request("/rest/v1/chat_mutes?user_id=eq." + mine + "&select=other_user_id&limit=5000", "GET"))
             buildSet { for (i in 0 until m.length()) add(m.getJSONObject(i).optString("other_user_id")) }
         }.getOrDefault(emptySet())
 
@@ -650,7 +650,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                     activeCallType = "voice"
                 }
             }
-            delay(5000)
+            delay(10000)
         }
     }
 
@@ -675,7 +675,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             reactions = runCatching { a.reactions(current.id) }.getOrDefault(emptyList())
         }.onFailure { statusMessage = it.message ?: "Could not load messages." }
         while (true) {
-            delay(1500)
+            delay(3000)
             runCatching {
                 a.markSeen(current.id)
                 val fresh = a.messages(current.id)
@@ -792,6 +792,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             chatMuted = runCatching { api.isMuted(chat.id) }.getOrDefault(false)
             chatPinned = runCatching { api.isPinned(chat.id) }.getOrDefault(false)
             chatBlocked = runCatching { api.isBlocked(chat.id) }.getOrDefault(false)
+            callsBlocked = runCatching { api.isCallBlocked(chat.id) }.getOrDefault(false)
             chatSearch = ""
             showChatSearch = false
             showChatMenu = false
@@ -1023,7 +1024,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                         Spacer(Modifier.width(8.dp))
                         Column(Modifier.weight(1f)) {
                             Text(
-                                "Active " + if (activeCallType == "video") "video" else "voice" + " call",
+                                "Active " + (if (activeCallType == "video") "video" else "voice") + " call",
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text("Call is still running", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1069,7 +1070,8 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                 } else {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = { selected = null; messages = emptyList(); text = ""; replyingTo = null; pendingMediaItems = emptyList(); mediaProgress = 0; mediaProgressLabel = ""; fullScreenImage = null; chatSearch = ""; showChatSearch = false }) { Icon(Icons.Default.ArrowBack, "Back") }
-                        if (chat.avatarUrl.isNotBlank()) AsyncImage(model = chat.avatarUrl, contentDescription = "Profile picture", modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                        val headerAvatar = chatProfile?.avatarUrl.orEmpty().ifBlank { chat.avatarUrl }
+                        if (headerAvatar.isNotBlank()) AsyncImage(model = headerAvatar, contentDescription = "Profile picture", modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
                         else Surface(modifier = Modifier.size(44.dp).clip(CircleShape), tonalElevation = 2.dp) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Person, "Profile picture") } }
                         Column(Modifier.weight(1f).padding(start = 8.dp)) {
                             Text(
