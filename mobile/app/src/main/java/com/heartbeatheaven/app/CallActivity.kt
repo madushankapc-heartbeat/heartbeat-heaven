@@ -7,12 +7,13 @@ import android.os.Bundle
 import android.app.PictureInPictureParams
 import android.content.Intent
 import android.content.res.Configuration
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.util.Rational
 import android.view.Gravity
 import android.view.ViewGroup
-import android.widget.Button
+import android.graphics.drawable.GradientDrawable
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -27,12 +28,22 @@ class CallActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var localView: SurfaceViewRenderer
     private lateinit var remoteView: SurfaceViewRenderer
-    private lateinit var endButton: Button
+    private lateinit var endButton: TextView
+    private lateinit var videoButton: TextView
+    private lateinit var speakerButton: TextView
+    private lateinit var muteButton: TextView
     private lateinit var controlsPanel: LinearLayout
     private lateinit var statusPanel: TextView
     private var controlsHideJob: Job? = null
     private var controlsVisible = true
     private var callAnswered = false
+    private var isMuted = false
+    private var isSpeakerOn = false
+    private var isVideoEnabled = false
+    private var videoSender: RtpSender? = null
+    private var lastRemoteOfferSdp: String? = null
+    private var lastRemoteAnswerSdp: String? = null
+    private var upgradeVideoPending = false
     private var peer: PeerConnection? = null
     private var factory: PeerConnectionFactory? = null
     private var capturer: VideoCapturer? = null
@@ -76,6 +87,8 @@ class CallActivity : Activity() {
         if (requestCode == 7002 && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
             setupUi()
             initializeCall()
+        } else if (requestCode == 7003 && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+            enableVideoAndRenegotiate()
         } else finish()
     }
 
@@ -115,54 +128,53 @@ class CallActivity : Activity() {
         controlsPanel = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(10, 12, 10, 12)
-            setBackgroundColor(0xDD15171A.toInt())
+            setPadding(dp(8), dp(10), dp(8), dp(10))
+            setBackgroundColor(0xE615171A.toInt())
         }
 
-        fun control(text: String, description: String, onClick: () -> Unit): Button =
-            Button(this).apply {
-                this.text = text
+        fun control(icon: String, label: String, description: String, onClick: () -> Unit): TextView =
+            TextView(this).apply {
+                text = "$icon\n$label"
                 contentDescription = description
                 textSize = 12f
-                isAllCaps = false
+                setTextColor(0xFFFFFFFF.toInt())
+                gravity = Gravity.CENTER
+                setPadding(dp(2), dp(5), dp(2), dp(5))
+                isClickable = true
+                isFocusable = true
+                setBackground(GradientDrawable().apply {
+                    cornerRadius = dp(16).toFloat()
+                    setColor(0xFF25282D.toInt())
+                })
                 setOnClickListener { onClick() }
-                minWidth = 0
-                minimumWidth = 0
-                setPadding(8, 4, 8, 4)
-                layoutParams = LinearLayout.LayoutParams(0, 70).apply { weight = 1f }
+                layoutParams = LinearLayout.LayoutParams(0, dp(82)).apply {
+                    weight = 1f
+                    marginStart = dp(3)
+                    marginEnd = dp(3)
+                }
             }
 
-        val addPeopleButton = control("👥\nAdd", "Add people to group call") {
-            showAddPeopleMessage()
-        }
-        val videoButton = control("🎥\nVideo", "Toggle video") {
-            toggleVideoTrack()
-        }
-        val speakerButton = control("🔊\nSpeaker", "Toggle speaker") {
-            toggleSpeaker()
-        }
-        val muteButton = control("🎙\nMute", "Toggle microphone") {
-            toggleMute()
-        }
-        val chatButton = control("💬\nChat", "Open chat") {
-            minimizeToChat()
-        }
+        videoButton = control("🎥", "Video", "Enable or disable video", ::toggleVideoTrack)
+        speakerButton = control("🔊", "Speaker", "Toggle speaker", ::toggleSpeaker)
+        muteButton = control("🎙", "Mute", "Toggle microphone", ::toggleMute)
+        val chatButton = control("💬", "Chat", "Open chat", ::minimizeToChat)
 
-        controlsPanel.addView(addPeopleButton)
         controlsPanel.addView(videoButton)
         controlsPanel.addView(speakerButton)
         controlsPanel.addView(muteButton)
         controlsPanel.addView(chatButton)
 
-        endButton = control("🔴\nEnd", "Answer or end call") {
-            if (!callAnswered && !isCaller) answerIncoming() else finishCall(if (isCaller && !callAnswered) "cancelled" else "ended")
+        endButton = control("🔴", "End", "Answer or end call") {
+            if (!callAnswered && !isCaller) answerIncoming()
+            else finishCall(if (isCaller && !callAnswered) "cancelled" else "ended")
         }
         controlsPanel.addView(endButton)
         root.addView(controlsPanel, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM).apply {
-            bottomMargin = (48 * resources.displayMetrics.density).toInt()
-            leftMargin = 8
-            rightMargin = 8
+            bottomMargin = dp(18)
+            leftMargin = dp(8)
+            rightMargin = dp(8)
         })
+        updateControlLabels()
 
         val video = intent.getStringExtra("call_type") == "video"
         if (video) {
@@ -225,35 +237,95 @@ class CallActivity : Activity() {
     }
 
     private fun toggleMute() {
-        val senders = peer?.senders ?: emptyList()
-        senders.filter { it.track() is AudioTrack }.forEach {
-            val track = it.track() as AudioTrack
-            track.setEnabled(!track.enabled())
+        val track = audioTrack ?: peer?.senders?.firstOrNull { it.track() is AudioTrack }?.track() as? AudioTrack
+        if (track == null) {
+            statusPanel.text = "Microphone is not ready"
+            return
         }
+        isMuted = !isMuted
+        track.setEnabled(!isMuted)
+        updateControlLabels()
     }
 
     private fun toggleSpeaker() {
         val audio = getSystemService(AUDIO_SERVICE) as AudioManager
-        audio.isSpeakerphoneOn = !audio.isSpeakerphoneOn
+        audio.mode = AudioManager.MODE_IN_COMMUNICATION
+        isSpeakerOn = !isSpeakerOn
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            val target = audio.availableCommunicationDevices.firstOrNull {
+                if (isSpeakerOn) it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                else it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+            }
+            if (target != null) audio.setCommunicationDevice(target) else audio.clearCommunicationDevice()
+        }
+        audio.isSpeakerphoneOn = isSpeakerOn
+        updateControlLabels()
     }
 
     private fun toggleVideoTrack() {
-        val videoSender = peer?.senders?.firstOrNull { it.track() is VideoTrack }
-        if (videoSender?.track() is VideoTrack) {
-            val track = videoSender.track() as VideoTrack
-            track.setEnabled(!track.enabled())
+        val sender = videoSender ?: peer?.senders?.firstOrNull { it.track() is VideoTrack }
+        if (sender?.track() is VideoTrack) {
+            val track = sender.track() as VideoTrack
+            isVideoEnabled = !isVideoEnabled
+            track.setEnabled(isVideoEnabled)
+            updateControlLabels()
             return
         }
-        runOnUiThread { statusPanel.text = "Video is not available on this voice call yet" }
+        if (!isCaller) {
+            statusPanel.text = "Video can be enabled by the caller"
+            return
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            upgradeVideoPending = true
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), 7003)
+            return
+        }
+        enableVideoAndRenegotiate()
     }
 
-    private fun showAddPeopleMessage() {
-        android.app.AlertDialog.Builder(this)
-            .setTitle("Add people")
-            .setMessage("Group-call participant selection is ready for the call controls. The multi-party WebRTC session layer will be added before this button starts a real group call.")
-            .setPositiveButton("OK", null)
-            .show()
+    private fun enableVideoAndRenegotiate() {
+        if (videoSender != null || peer == null || factory == null || call == null) return
+        upgradeVideoPending = false
+        try {
+            capturer = createCameraCapturer()
+            videoSource = factory!!.createVideoSource(capturer!!.isScreencast)
+            capturer!!.initialize(SurfaceTextureHelper.create("CallCameraUpgrade", egl.eglBaseContext), this, videoSource!!.capturerObserver)
+            capturer!!.startCapture(640, 360, 24)
+            val track = factory!!.createVideoTrack("video_" + call!!.id, videoSource)
+            track.addSink(localView)
+            localView.visibility = View.VISIBLE
+            videoSender = peer!!.addTrack(track, listOf("stream_" + call!!.id))
+            isVideoEnabled = true
+            updateControlLabels()
+            statusPanel.text = "Switching to video…"
+            peer!!.createOffer(object : SdpObserver {
+                override fun onCreateSuccess(sdp: SessionDescription) {
+                    peer!!.setLocalDescription(object : SdpObserver {
+                        override fun onCreateSuccess(p0: SessionDescription?) {}
+                        override fun onSetSuccess() {
+                            scope.launch(Dispatchers.IO) { runCatching { callApi.publishOffer(call!!.id, sdp.description) } }
+                        }
+                        override fun onCreateFailure(e: String?) {}
+                        override fun onSetFailure(e: String?) {}
+                    }, sdp)
+                }
+                override fun onSetSuccess() {}
+                override fun onCreateFailure(e: String?) { statusPanel.text = e ?: "Video offer failed" }
+                override fun onSetFailure(e: String?) { statusPanel.text = e ?: "Video offer failed" }
+            }, MediaConstraints())
+        } catch (e: Throwable) {
+            statusPanel.text = e.message ?: "Could not enable video"
+        }
     }
+
+    private fun updateControlLabels() {
+        if (!::videoButton.isInitialized || !::speakerButton.isInitialized || !::muteButton.isInitialized || !::endButton.isInitialized) return
+        videoButton.text = if (isVideoEnabled) "📹\nVideo On" else "🎥\nVideo"
+        speakerButton.text = if (isSpeakerOn) "🔊\nSpeaker On" else "🔈\nSpeaker"
+        muteButton.text = if (isMuted) "🔇\nUnmute" else "🎙\nMute"
+    }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private fun initializeCall() {
         val callId = intent.getStringExtra("call_id")
@@ -293,7 +365,7 @@ class CallActivity : Activity() {
         val audioSource = factory!!.createAudioSource(audioConstraints)
         audioTrack = factory!!.createAudioTrack("audio_" + call!!.id, audioSource)
 
-        val mediaConstraints = MediaConstraints()
+        configureCallAudio()
         val fallbackIceServers = listOf(
             PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
             PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer()
@@ -369,7 +441,9 @@ class CallActivity : Activity() {
             capturer!!.startCapture(640, 360, 24)
             val videoTrack = factory!!.createVideoTrack("video_" + call!!.id, videoSource)
             videoTrack.addSink(localView)
-            peer!!.addTrack(videoTrack, listOf("stream_" + call!!.id))
+            videoSender = peer!!.addTrack(videoTrack, listOf("stream_" + call!!.id))
+            isVideoEnabled = true
+            updateControlLabels()
         } else {
             localView.visibility = android.view.View.GONE
         }
@@ -435,6 +509,15 @@ class CallActivity : Activity() {
                 runCatching { it.startCapture(profile.maxWidth, profile.maxHeight, profile.maxFps) }
             }
         }
+    }
+
+    private fun configureCallAudio() {
+        val audio = getSystemService(AUDIO_SERVICE) as AudioManager
+        audio.mode = AudioManager.MODE_IN_COMMUNICATION
+        isSpeakerOn = false
+        if (android.os.Build.VERSION.SDK_INT >= 31) audio.clearCommunicationDevice()
+        audio.isSpeakerphoneOn = false
+        updateControlLabels()
     }
 
     private fun createCameraCapturer(): VideoCapturer {
@@ -560,18 +643,48 @@ class CallActivity : Activity() {
                     break
                 }
 
-                if (isCaller && c.answerSdp != null && peer?.remoteDescription == null) {
+                if (isCaller && c.answerSdp != null && c.answerSdp != lastRemoteAnswerSdp) {
                     withContext(Dispatchers.Main) {
                         peer?.setRemoteDescription(object : SdpObserver {
                             override fun onCreateSuccess(p0: SessionDescription?) {}
                             override fun onSetSuccess() {
                                 stopCallTone()
+                                lastRemoteAnswerSdp = c.answerSdp
                                 setActiveControls()
-                                statusPanel.text = "Connected"
+                                statusPanel.text = if (isVideoEnabled) "Video connected" else "Connected"
                             }
                             override fun onCreateFailure(e: String?) { statusPanel.text = e ?: "Answer failed" }
                             override fun onSetFailure(e: String?) { statusPanel.text = e ?: "Answer failed" }
                         }, SessionDescription(SessionDescription.Type.ANSWER, c.answerSdp))
+                    }
+                }
+
+                if (!isCaller && !c.offerSdp.isNullOrBlank() && c.offerSdp != lastRemoteOfferSdp && peer?.remoteDescription != null) {
+                    val offer = SessionDescription(SessionDescription.Type.OFFER, c.offerSdp)
+                    withContext(Dispatchers.Main) {
+                        peer?.setRemoteDescription(object : SdpObserver {
+                            override fun onCreateSuccess(p0: SessionDescription?) {}
+                            override fun onSetSuccess() {
+                                lastRemoteOfferSdp = c.offerSdp
+                                peer?.createAnswer(object : SdpObserver {
+                                    override fun onCreateSuccess(answer: SessionDescription) {
+                                        peer?.setLocalDescription(object : SdpObserver {
+                                            override fun onCreateSuccess(p0: SessionDescription?) {}
+                                            override fun onSetSuccess() {
+                                                scope.launch(Dispatchers.IO) { runCatching { callApi.publishAnswer(call!!.id, answer.description) } }
+                                            }
+                                            override fun onCreateFailure(e: String?) {}
+                                            override fun onSetFailure(e: String?) {}
+                                        }, answer)
+                                    }
+                                    override fun onSetSuccess() {}
+                                    override fun onCreateFailure(e: String?) {}
+                                    override fun onSetFailure(e: String?) {}
+                                }, MediaConstraints())
+                            }
+                            override fun onCreateFailure(e: String?) { statusPanel.text = e ?: "Video offer failed" }
+                            override fun onSetFailure(e: String?) { statusPanel.text = e ?: "Video offer failed" }
+                        }, offer)
                     }
                 }
 
@@ -650,12 +763,27 @@ class CallActivity : Activity() {
         factory = null
         if (::localView.isInitialized) runCatching { localView.release() }
         if (::remoteView.isInitialized) runCatching { remoteView.release() }
+        val audio = getSystemService(AUDIO_SERVICE) as AudioManager
+        if (android.os.Build.VERSION.SDK_INT >= 31) audio.clearCommunicationDevice()
+        audio.isSpeakerphoneOn = false
+        audio.mode = AudioManager.MODE_NORMAL
         runCatching { egl.release() }
         scope.cancel()
     }
 
     private fun minimizeToChat() {
-        val video = intent.getStringExtra("call_type") == "video"
+        val prefs = getSharedPreferences("heartbeat_call_state", MODE_PRIVATE)
+        val otherUserId = call?.let { current ->
+            val me = auth.currentSession()?.profile?.id
+            if (current.callerId == me) current.calleeId else current.callerId
+        }
+        prefs.edit().apply {
+            putString("active_call_id", call?.id)
+            putString("active_call_user_id", otherUserId)
+            putString("active_call_type", if (isVideoEnabled) "video" else "voice")
+            apply()
+        }
+        val video = intent.getStringExtra("call_type") == "video" || isVideoEnabled
         if (!video) {
             // Voice calls do not need a PiP video surface. Keep this CallActivity
             // alive underneath MainActivity so the audio connection continues.
