@@ -17,6 +17,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.draw.clip
@@ -600,7 +601,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                 online = api.onlineUsers()
                 friends = api.friends()
                 chatSummaries = api.chatSummaries()
-                val incoming = api.incomingRinging().firstOrNull()
+                val incoming = CallApi(context, auth).incomingRinging().firstOrNull()
                 if (incoming != null && incoming.id != launchedIncomingCallId) {
                     launchedIncomingCallId = incoming.id
                     context.startActivity(Intent(context, CallActivity::class.java).apply {
@@ -1149,7 +1150,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             }
 
             latestCall?.let { callSession ->
-                val me = api.userId()
+                val me = session?.profile?.id.orEmpty()
                 val missed = callSession.calleeId == me &&
                     callSession.startedAt.isNullOrBlank() &&
                     callSession.status in listOf("ended", "failed", "cancelled", "missed")
