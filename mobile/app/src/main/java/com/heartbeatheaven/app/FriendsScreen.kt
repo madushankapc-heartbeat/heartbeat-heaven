@@ -2127,3 +2127,4 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
         }
     }
 }
+}
