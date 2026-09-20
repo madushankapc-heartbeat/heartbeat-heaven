@@ -1,12 +1,15 @@
 // CI build source is intentionally kept explicit.
 package com.heartbeatheaven.app
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,6 +29,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -108,6 +113,14 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 7404)
+        }
+
+        startIncomingCallPolling()
+
         setContent {
             MaterialTheme {
                 LaunchedEffect(currentSongId, isPlaying) {
@@ -118,6 +131,38 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 HeartbeatApp(currentSong, currentSongId, isPlaying, positionMs, durationMs, ::playSong, ::pausePlayback, ::seekPlayback, ::stopPlayback)
+            }
+        }
+    }
+
+    private fun startIncomingCallPolling() {
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                val auth = AuthApi(applicationContext)
+                val callApi = CallApi(applicationContext, auth)
+                while (true) {
+                    try {
+                        val session = withContext(Dispatchers.IO) { auth.currentSession() }
+                        if (session != null) {
+                            val incoming = withContext(Dispatchers.IO) { callApi.incomingRinging().firstOrNull() }
+                            if (incoming != null) {
+                                val prefs = getSharedPreferences("heartbeat_call_state", Context.MODE_PRIVATE)
+                                val already = prefs.getString("incoming_call_launched_id", "").orEmpty()
+                                if (already != incoming.id) {
+                                    prefs.edit().putString("incoming_call_launched_id", incoming.id).apply()
+                                    CallNotificationManager.showIncoming(this@MainActivity, incoming.id, incoming.callType)
+                                    startActivity(Intent(this@MainActivity, CallActivity::class.java).apply {
+                                        putExtra("call_id", incoming.id)
+                                        putExtra("call_type", incoming.callType)
+                                    })
+                                }
+                            }
+                        }
+                    } catch (_: Throwable) {
+                        // Keep polling alive. A transient auth/network failure must not stop incoming-call detection.
+                    }
+                    delay(2000)
+                }
             }
         }
     }
@@ -175,33 +220,6 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
         loading = false
     }
 
-    LaunchedEffect(authSession?.accessToken) {
-        if (authSession != null) {
-            val auth = AuthApi(context)
-            val callApi = CallApi(context, auth)
-            while (true) {
-                runCatching {
-                    val incoming = withContext(Dispatchers.IO) { callApi.incomingRinging().firstOrNull() }
-                    if (incoming != null) {
-                        val prefs = context.getSharedPreferences("heartbeat_call_state", Context.MODE_PRIVATE)
-                        val already = prefs.getString("incoming_call_launched_id", "").orEmpty()
-                        if (already != incoming.id) {
-                            prefs.edit().putString("incoming_call_launched_id", incoming.id).apply()
-                            CallNotificationManager.showIncoming(context, incoming.id, incoming.callType)
-                            val activity = context as? MainActivity
-                            if (activity?.lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) == true) {
-                                context.startActivity(Intent(context, CallActivity::class.java).apply {
-                                    putExtra("call_id", incoming.id)
-                                    putExtra("call_type", incoming.callType)
-                                })
-                            }
-                        }
-                    }
-                }
-                delay(2000)
-            }
-        }
-    }
 
     LaunchedEffect(refreshTrigger) {
         if (refreshTrigger > 0) {
