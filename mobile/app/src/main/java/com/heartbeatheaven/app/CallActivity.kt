@@ -379,9 +379,9 @@ class CallActivity : Activity() {
             PeerConnectionFactory.InitializationOptions.builder(applicationContext).setEnableInternalTracer(false).createInitializationOptions()
         )
         audioDeviceModule = JavaAudioDeviceModule.builder(applicationContext)
-            // Let WebRTC's audio processing handle AEC/NS instead of relying on
-            // device-specific hardware effects that can attenuate speech too much.
-            .setUseHardwareAcousticEchoCanceler(false)
+            // Use Android's hardware AEC when available to suppress speaker-to-mic
+            // feedback. Keep hardware NS disabled so speech is not unnecessarily attenuated.
+            .setUseHardwareAcousticEchoCanceler(true)
             .setUseHardwareNoiseSuppressor(false)
             .createAudioDeviceModule()
         factory = PeerConnectionFactory.builder()
@@ -389,9 +389,9 @@ class CallActivity : Activity() {
             .createPeerConnectionFactory()
 
         // Explicitly enable WebRTC voice processing for call audio.
-        // Hardware AEC/NS are disabled above because device-specific effects can
-        // attenuate speech. These constraints keep WebRTC's own APM responsible
-        // for echo cancellation, noise suppression and automatic mic gain.
+        // WebRTC APM remains enabled for echo cancellation, noise suppression and
+        // automatic mic gain; Android hardware AEC provides an additional device-level
+        // echo suppression path when supported.
         val audioConstraints = MediaConstraints().apply {
             mandatory.add(MediaConstraints.KeyValuePair("googEchoCancellation", "true"))
             mandatory.add(MediaConstraints.KeyValuePair("googAutoGainControl", "true"))
