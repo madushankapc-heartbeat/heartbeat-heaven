@@ -523,7 +523,10 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
     }
 
     suspend fun reactions(other: String): List<MessageReaction> = withContext(Dispatchers.IO) {
-        val ids = messages(other).map { it.id }
+        reactionsForMessageIds(messages(other).map { it.id })
+    }
+
+    suspend fun reactionsForMessageIds(ids: List<String>): List<MessageReaction> = withContext(Dispatchers.IO) {
         if (ids.isEmpty()) return@withContext emptyList()
         val idFilter = ids.joinToString(",")
         val a = JSONArray(request("/rest/v1/message_reactions?select=message_id,user_id,reaction&message_id=in.($idFilter)&limit=500", "GET"))
@@ -762,7 +765,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             messages = page.first
             hasOlderMessages = page.second
             initialMessagesLoaded = true
-            reactions = runCatching { a.reactions(current.id) }.getOrDefault(emptyList())
+            reactions = runCatching { a.reactionsForMessageIds(messages.map { it.id }) }.getOrDefault(emptyList())
         }.onFailure { statusMessage = it.message ?: "Could not load messages." }
         while (true) {
             delay(3000)
@@ -772,7 +775,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                 val byId = LinkedHashMap<String, ChatMessage>()
                 (messages + fresh).forEach { byId[it.id] = it }
                 messages = byId.values.sortedBy { it.createdAt }
-                reactions = runCatching { a.reactions(current.id) }.getOrDefault(emptyList())
+                reactions = runCatching { a.reactionsForMessageIds(messages.map { it.id }) }.getOrDefault(emptyList())
                 messages.filter { it.senderId == current.id && it.deliveredAt.isBlank() }.forEach { a.markDelivered(it.id) }
             }
         }
