@@ -57,6 +57,8 @@ class CallActivity : Activity() {
     private var capturer: VideoCapturer? = null
     private var videoSource: VideoSource? = null
     private var audioTrack: AudioTrack? = null
+    private var remoteAudioTrack: AudioTrack? = null
+    private val earpieceAudioGain = 1.4
     private var localStream: MediaStream? = null
     private var call: CallSession? = null
     private var isCaller = false
@@ -286,6 +288,10 @@ class CallActivity : Activity() {
             if (target != null) audio.setCommunicationDevice(target) else audio.clearCommunicationDevice()
         }
         audio.isSpeakerphoneOn = isSpeakerOn
+        // The Galaxy earpiece path can be noticeably quieter than the loudspeaker
+        // even at the maximum voice-call stream volume. Apply a small WebRTC
+        // playout gain only on the earpiece; keep speaker output at unity gain.
+        remoteAudioTrack?.setVolume(if (isSpeakerOn) 1.0 else earpieceAudioGain)
         updateControlLabels()
     }
 
@@ -477,7 +483,10 @@ class CallActivity : Activity() {
                 override fun onRemoveTrack(receiver: RtpReceiver) {}
                 override fun onTrack(transceiver: RtpTransceiver) {
                     val track = transceiver.receiver.track()
-                    if (track is VideoTrack) {
+                    if (track is AudioTrack) {
+                        remoteAudioTrack = track
+                        track.setVolume(if (isSpeakerOn) 1.0 else earpieceAudioGain)
+                    } else if (track is VideoTrack) {
                         runOnUiThread { track.addSink(remoteView); remoteView.visibility = View.VISIBLE }
                     }
                 }
