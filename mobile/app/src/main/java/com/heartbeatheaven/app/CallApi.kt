@@ -41,7 +41,14 @@ internal class CallApi(private val context: Context, private val auth: AuthApi) 
         val session = auth.currentSession() ?: error("Login required")
         var pair = once(session.accessToken)
         if (pair.first == 401) pair = once((auth.currentSession() ?: error("Session expired")).accessToken)
-        if (pair.first !in 200..299) error("Call request failed (" + pair.first + ")")
+        if (pair.first !in 200..299) {
+            val detail = runCatching {
+                val o = JSONObject(pair.second)
+                listOf(o.optString("message"), o.optString("details"), o.optString("hint"), o.optString("code"))
+                    .filter { it.isNotBlank() }.joinToString(" | ")
+            }.getOrDefault("")
+            error(if (detail.isBlank()) "Call request failed (" + pair.first + ")" else "Call request failed (" + pair.first + "): " + detail)
+        }
         return pair.second
     }
 
@@ -85,7 +92,13 @@ internal class CallApi(private val context: Context, private val auth: AuthApi) 
     }
 
     suspend fun create(calleeId: String, type: String): CallSession = withContext(Dispatchers.IO) {
-        parse(JSONObject(request("/rest/v1/rpc/create_call", "POST", JSONObject().put("p_callee_id", calleeId).put("p_call_type", type).toString())))
+        // The database accepts only voice/video. Treat every non-video request as
+        // voice so an older caller label such as "audio" can never produce a 400.
+        val normalizedType = if (type.equals("video", ignoreCase = true)) "video" else "voice"
+        parse(JSONObject(request("/rest/v1/rpc/create_call", "POST", JSONObject()
+            .put("p_callee_id", calleeId)
+            .put("p_call_type", normalizedType)
+            .toString())))
     }
     suspend fun get(id: String): CallSession? = withContext(Dispatchers.IO) {
         val a = JSONArray(request("/rest/v1/call_sessions?id=eq." + id + "&select=*&limit=1", "GET"))
