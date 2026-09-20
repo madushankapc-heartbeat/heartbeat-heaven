@@ -1232,6 +1232,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                         }
                         Button(onClick = {
                             context.startActivity(Intent(context, CallActivity::class.java).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
                                 putExtra("call_id", activeCallId)
                                 putExtra("call_type", activeCallType)
                             })
