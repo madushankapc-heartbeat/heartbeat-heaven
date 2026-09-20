@@ -28,6 +28,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -649,12 +651,14 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
         busy = true
         scope.launch {
             runCatching {
-                withContext(Dispatchers.IO) {
-                    a.touchPresence()
-                    val friendList = a.friends()
-                    val friendIds = friendList.mapTo(hashSetOf()) { it.id }
-                    Triple(friendList, a.requests(), a.onlineUsers(friendIds))
+                val friendList = withContext(Dispatchers.IO) { a.friends() }
+                val friendIds = friendList.mapTo(hashSetOf()) { it.id }
+                val (requestsResult, onlineResult) = coroutineScope {
+                    val requestsDeferred = async(Dispatchers.IO) { a.requests() }
+                    val onlineDeferred = async(Dispatchers.IO) { a.onlineUsers(friendIds) }
+                    requestsDeferred.await() to onlineDeferred.await()
                 }
+                Triple(friendList, requestsResult, onlineResult)
             }.onSuccess { (f, r, o) ->
                 friends = f
                 requests = r
