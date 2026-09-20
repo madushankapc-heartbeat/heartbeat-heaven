@@ -248,27 +248,52 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
         val friendList = friendListOverride ?: friends()
         if (friendList.isEmpty()) return@withContext emptyList()
 
-        val hidden = runCatching {
-            val d = JSONArray(request("/rest/v1/message_deletions?user_id=eq.$mine&select=message_id&limit=5000", "GET"))
-            buildSet { for (i in 0 until d.length()) add(d.getJSONObject(i).optString("message_id")) }
-        }.getOrDefault(emptySet())
-
-        val pinned = runCatching {
-            val p = JSONArray(request("/rest/v1/chat_pins?user_id=eq.${mine}&select=other_user_id&limit=5000", "GET"))
-            buildSet { for (i in 0 until p.length()) add(p.getJSONObject(i).optString("other_user_id")) }
-        }.getOrDefault(emptySet())
-
-        val muted = runCatching {
-            val m = JSONArray(request("/rest/v1/chat_mutes?user_id=eq." + mine + "&select=other_user_id&limit=5000", "GET"))
-            buildSet { for (i in 0 until m.length()) add(m.getJSONObject(i).optString("other_user_id")) }
-        }.getOrDefault(emptySet())
-
-        val a = JSONArray(
-            request(
-                "/rest/v1/messages?or=(sender_id.eq.$mine,receiver_id.eq.$mine)&select=id,sender_id,receiver_id,body,created_at,read_at,deleted_at&order=created_at.desc&limit=1000",
-                "GET"
-            )
+        data class SummaryParts(
+            val hidden: Set<String>,
+            val pinned: Set<String>,
+            val muted: Set<String>,
+            val messages: JSONArray
         )
+
+        val parts = coroutineScope {
+            val hiddenDeferred = async(Dispatchers.IO) {
+                runCatching {
+                    val d = JSONArray(request("/rest/v1/message_deletions?user_id=eq.$mine&select=message_id&limit=5000", "GET"))
+                    buildSet { for (i in 0 until d.length()) add(d.getJSONObject(i).optString("message_id")) }
+                }.getOrDefault(emptySet())
+            }
+            val pinnedDeferred = async(Dispatchers.IO) {
+                runCatching {
+                    val p = JSONArray(request("/rest/v1/chat_pins?user_id=eq.$mine&select=other_user_id&limit=5000", "GET"))
+                    buildSet { for (i in 0 until p.length()) add(p.getJSONObject(i).optString("other_user_id")) }
+                }.getOrDefault(emptySet())
+            }
+            val mutedDeferred = async(Dispatchers.IO) {
+                runCatching {
+                    val m = JSONArray(request("/rest/v1/chat_mutes?user_id=eq.$mine&select=other_user_id&limit=5000", "GET"))
+                    buildSet { for (i in 0 until m.length()) add(m.getJSONObject(i).optString("other_user_id")) }
+                }.getOrDefault(emptySet())
+            }
+            val messagesDeferred = async(Dispatchers.IO) {
+                JSONArray(
+                    request(
+                        "/rest/v1/messages?or=(sender_id.eq.$mine,receiver_id.eq.$mine)&select=id,sender_id,receiver_id,body,created_at,read_at,deleted_at&order=created_at.desc&limit=1000",
+                        "GET"
+                    )
+                )
+            }
+            SummaryParts(
+                hiddenDeferred.await(),
+                pinnedDeferred.await(),
+                mutedDeferred.await(),
+                messagesDeferred.await()
+            )
+        }
+
+        val hidden = parts.hidden
+        val pinned = parts.pinned
+        val muted = parts.muted
+        val a = parts.messages
 
         data class Row(val otherId: String, val body: String, val createdAt: String, val unread: Boolean)
         val latest = LinkedHashMap<String, Row>()
