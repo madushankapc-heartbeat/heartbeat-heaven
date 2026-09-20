@@ -28,9 +28,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.lifecycleScope
-import androidx.lifecycle.repeatOnLifecycle
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
@@ -119,7 +116,6 @@ class MainActivity : ComponentActivity() {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 7404)
         }
 
-        startIncomingCallPolling()
 
         setContent {
             MaterialTheme {
@@ -131,38 +127,6 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 HeartbeatApp(currentSong, currentSongId, isPlaying, positionMs, durationMs, ::playSong, ::pausePlayback, ::seekPlayback, ::stopPlayback)
-            }
-        }
-    }
-
-    private fun startIncomingCallPolling() {
-        lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.RESUMED) {
-                val auth = AuthApi(applicationContext)
-                val callApi = CallApi(applicationContext, auth)
-                while (true) {
-                    try {
-                        val session = withContext(Dispatchers.IO) { auth.currentSession() }
-                        if (session != null) {
-                            val incoming = withContext(Dispatchers.IO) { callApi.incomingRinging().firstOrNull() }
-                            if (incoming != null) {
-                                val prefs = getSharedPreferences("heartbeat_call_state", Context.MODE_PRIVATE)
-                                val already = prefs.getString("incoming_call_launched_id", "").orEmpty()
-                                if (already != incoming.id) {
-                                    prefs.edit().putString("incoming_call_launched_id", incoming.id).apply()
-                                    CallNotificationManager.showIncoming(this@MainActivity, incoming.id, incoming.callType, fullScreen = false)
-                                    startActivity(Intent(this@MainActivity, CallActivity::class.java).apply {
-                                        putExtra("call_id", incoming.id)
-                                        putExtra("call_type", incoming.callType)
-                                    })
-                                }
-                            }
-                        }
-                    } catch (_: Throwable) {
-                        // Keep polling alive. A transient auth/network failure must not stop incoming-call detection.
-                    }
-                    delay(2000)
-                }
             }
         }
     }
