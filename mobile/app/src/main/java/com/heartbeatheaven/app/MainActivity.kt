@@ -216,18 +216,33 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
         topBar = { TopAppBar(
         title = { Column { Text("HEARTBEAT HEAVEN", fontWeight = FontWeight.Bold); Text("Original Music by Madushanka", fontSize = 11.sp) } },
         actions = {
-            IconButton(
-                enabled = !refreshing,
-                onClick = {
-                    refreshTrigger += 1
-                }
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
             ) {
-                if (refreshing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                else Icon(Icons.Default.Refresh, "Refresh")
-            }
-            if (authSession?.profile?.isAdmin == true) {
-                IconButton(onClick = { context.startActivity(Intent(context, StudioActivity::class.java)) }) {
-                    Icon(Icons.Default.LibraryMusic, "Studio")
+                Text(
+                    "Chat & Music",
+                    fontSize = 9.sp,
+                    lineHeight = 10.sp,
+                    maxLines = 1
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        enabled = !refreshing,
+                        onClick = {
+                            refreshTrigger += 1
+                        }
+                    ) {
+                        if (refreshing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                        else Icon(Icons.Default.Refresh, "Refresh")
+                    }
+                    if (authSession?.profile?.isAdmin == true) {
+                        IconButton(onClick = { context.startActivity(Intent(context, StudioActivity::class.java)) }) {
+                            Icon(Icons.Default.LibraryMusic, "Studio")
+                        }
+                    }
                 }
             }
         }
