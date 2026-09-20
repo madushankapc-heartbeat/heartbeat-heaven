@@ -140,38 +140,46 @@ internal class CallRealtimeClient(
                             .toString()
                     )
 
-                    onTransportState(true)
-
-                    heartbeatJob?.cancel()
-                    heartbeatJob = scope.launch {
-                        while (isActive && !stopped) {
-                            delay(15_000)
-                            val currentToken = accessTokenProvider()
-                            webSocket.send(
-                                JSONObject()
-                                    .put("topic", topic)
-                                    .put("event", "access_token")
-                                    .put("payload", JSONObject().put("access_token", currentToken))
-                                    .put("ref", nextRef())
-                                    .put("join_ref", joinRef)
-                                    .toString()
-                            )
-                            webSocket.send(
-                                JSONObject()
-                                    .put("topic", "phoenix")
-                                    .put("event", "heartbeat")
-                                    .put("payload", JSONObject())
-                                    .put("ref", nextRef())
-                                    .toString()
-                            )
-                        }
-                    }
                 }
 
                 override fun onMessage(webSocket: WebSocket, text: String) {
                     runCatching {
                         val root = JSONObject(text)
                         when (root.optString("event")) {
+                            "phx_reply" -> {
+                                val status = root.optJSONObject("payload")?.optString("status").orEmpty()
+                                if (status == "ok") {
+                                    onTransportState(true)
+                                    heartbeatJob?.cancel()
+                                    heartbeatJob = scope.launch {
+                                        while (isActive && !stopped) {
+                                            delay(15_000)
+                                            val currentToken = accessTokenProvider()
+                                            webSocket.send(
+                                                JSONObject()
+                                                    .put("topic", topic)
+                                                    .put("event", "access_token")
+                                                    .put("payload", JSONObject().put("access_token", currentToken))
+                                                    .put("ref", nextRef())
+                                                    .put("join_ref", joinRef)
+                                                    .toString()
+                                            )
+                                            webSocket.send(
+                                                JSONObject()
+                                                    .put("topic", "phoenix")
+                                                    .put("event", "heartbeat")
+                                                    .put("payload", JSONObject())
+                                                    .put("ref", nextRef())
+                                                    .toString()
+                                            )
+                                        }
+                                    }
+                                } else {
+                                    onTransportState(false)
+                                    webSocket.close(4000, "realtime join failed")
+                                }
+                            }
+
                             "postgres_changes" -> {
                                 val payload = root.optJSONObject("payload") ?: return@runCatching
                                 val data = payload.optJSONObject("data") ?: payload
