@@ -105,6 +105,15 @@ class CallActivity : Activity() {
         initializeCall()
     }
 
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        if (intent == null) return
+        setIntent(intent)
+        if (intent.getBooleanExtra("answer_now", false) && !isCaller && !callAnswered && running && !cleanedUp) {
+            answerIncoming()
+        }
+    }
+
     private fun neededPermissions(): Array<String> {
         val list = mutableListOf(Manifest.permission.RECORD_AUDIO)
         if (intent.getStringExtra("call_type") == "video") list += Manifest.permission.CAMERA
