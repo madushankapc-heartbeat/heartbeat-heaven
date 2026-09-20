@@ -684,17 +684,124 @@ private fun StoryViewer(api: StoriesApi, stories: List<StoryItem>, index: Int, s
                 Box(Modifier.weight(1f).height(280.dp).clickable { prev() })
                 Box(Modifier.weight(1f).height(280.dp).clickable { next() })
             }
-            Column(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp)) {
-                if (story.caption.isNotBlank() && story.mediaType != "text") Text(story.caption, color = Color.White)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (mine) {
-                        IconButton(onClick = { onEdit(story) }) { Icon(Icons.Default.Edit, "Edit story", tint = Color.White) }
-                        IconButton(onClick = { scope.launch { runCatching { api.delete(story); reload(); next() }.onFailure { onStatus(it.message ?: "Could not delete story.") } } }) { Icon(Icons.Default.Delete, "Delete", tint = Color.White) }
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .imePadding()
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                if (story.caption.isNotBlank() && story.mediaType != "text") {
+                    Text(
+                        story.caption,
+                        color = Color.White,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                }
+                if (!mine) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        listOf("❤️", "🔥", "😂", "😍", "😭").forEach { emoji ->
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(42.dp)
+                                    .clickable {
+                                        scope.launch {
+                                            runCatching {
+                                                api.reply(story, emoji)
+                                                onStatus("Reaction sent.")
+                                            }.onFailure {
+                                                onStatus(it.message ?: "Could not send reaction.")
+                                            }
+                                        }
+                                    },
+                                shape = RoundedCornerShape(22.dp),
+                                color = Color.Black.copy(alpha = 0.72f)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(emoji, style = MaterialTheme.typography.titleLarge)
+                                }
+                            }
+                        }
                     }
-                    else {
-                        IconButton(onClick = { scope.launch { runCatching { api.toggleLike(story, liked); liked = !liked; reload() }.onFailure { onStatus(it.message ?: "Could not like story.") } } }) { Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Like", tint = Color.White) }
-                        OutlinedTextField(reply, { reply = it }, Modifier.weight(1f), singleLine = true, placeholder = { Text("Reply to story") })
-                        IconButton(enabled = reply.isNotBlank(), onClick = { scope.launch { runCatching { api.reply(story, reply); reply = ""; onStatus("Story reply sent.") }.onFailure { onStatus(it.message ?: "Could not send reply.") } } }) { Icon(Icons.Default.Send, "Send", tint = Color.White) }
+                }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (mine) {
+                        IconButton(onClick = { onEdit(story) }) {
+                            Icon(Icons.Default.Edit, "Edit story", tint = Color.White)
+                        }
+                        IconButton(onClick = {
+                            scope.launch {
+                                runCatching {
+                                    api.delete(story)
+                                    reload()
+                                    next()
+                                }.onFailure {
+                                    onStatus(it.message ?: "Could not delete story.")
+                                }
+                            }
+                        }) {
+                            Icon(Icons.Default.Delete, "Delete", tint = Color.White)
+                        }
+                    } else {
+                        IconButton(onClick = {
+                            scope.launch {
+                                runCatching {
+                                    api.toggleLike(story, liked)
+                                    liked = !liked
+                                    reload()
+                                }.onFailure {
+                                    onStatus(it.message ?: "Could not like story.")
+                                }
+                            }
+                        }) {
+                            Icon(
+                                if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                "Like",
+                                tint = Color.White
+                            )
+                        }
+                        OutlinedTextField(
+                            value = reply,
+                            onValueChange = { reply = it },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            shape = RoundedCornerShape(22.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color.White,
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.7f),
+                                cursorColor = Color.White,
+                                focusedPlaceholderColor = Color.White.copy(alpha = 0.75f),
+                                unfocusedPlaceholderColor = Color.White.copy(alpha = 0.75f)
+                            ),
+                            placeholder = { Text("Reply to story") }
+                        )
+                        IconButton(
+                            enabled = reply.isNotBlank(),
+                            onClick = {
+                                scope.launch {
+                                    runCatching {
+                                        api.reply(story, reply.trim())
+                                        reply = ""
+                                        onStatus("Story reply sent.")
+                                    }.onFailure {
+                                        onStatus(it.message ?: "Could not send reply.")
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(Icons.Default.Send, "Send", tint = Color.White)
+                        }
                     }
                 }
             }
