@@ -700,7 +700,8 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                     }
                     online = onlineDeferred.await()
                     chatSummaries = summariesDeferred.await()
-                }delay(10000)
+                }
+            delay(10000)
         }
     }
 
@@ -1155,7 +1156,8 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             }
         }
 
-        Column(Modifier.fillMaxSize()) {Surface(shadowElevation = 2.dp) {
+        Column(Modifier.fillMaxSize()) {
+            Surface(shadowElevation = 2.dp) {
                 if (selectedForActions != null) {
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp),
@@ -1209,7 +1211,8 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (isOnline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                        }Box {
+                        }
+                        Box {
                             IconButton(onClick = { showChatMenu = true }) {
                                 Icon(Icons.Default.MoreVert, "Chat actions")
                             }
@@ -1254,7 +1257,8 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                             showChatProfile = true
                                         }
                                     }
-                                )DropdownMenuItem(
+                                )
+                                DropdownMenuItem(
                                     text = { Text("👥 Unfriend") },
                                     onClick = {
                                         showChatMenu = false
@@ -1332,7 +1336,8 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                     }
                 }
             }
-Box(
+
+            Box(
                 modifier = Modifier.weight(1f).fillMaxWidth()
             ) {
                 LazyColumn(
