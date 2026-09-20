@@ -651,7 +651,11 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
         busy = true
         scope.launch {
             runCatching {
-                val friendList = withContext(Dispatchers.IO) { a.friends() }
+                val (friendList, _) = coroutineScope {
+                    val presenceDeferred = async(Dispatchers.IO) { a.touchPresence() }
+                    val friendsDeferred = async(Dispatchers.IO) { a.friends() }
+                    friendsDeferred.await() to presenceDeferred.await()
+                }
                 val friendIds = friendList.mapTo(hashSetOf()) { it.id }
                 val (requestsResult, onlineResult) = coroutineScope {
                     val requestsDeferred = async(Dispatchers.IO) { a.requests() }
