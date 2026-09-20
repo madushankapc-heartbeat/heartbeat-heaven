@@ -596,15 +596,26 @@ class CallActivity : Activity() {
             audioFocusHeld = granted
         }
         if (android.os.Build.VERSION.SDK_INT >= 31) {
-            if (audio.communicationDevice == null) {
-                val target = audio.availableCommunicationDevices.firstOrNull {
-                    if (isSpeakerOn) it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
-                    else it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
-                }
-                if (target != null) audio.setCommunicationDevice(target)
+            val target = audio.availableCommunicationDevices.firstOrNull {
+                if (isSpeakerOn) it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
+                else it.type == AudioDeviceInfo.TYPE_BUILTIN_EARPIECE
+            }
+            if (target != null) {
+                audio.setCommunicationDevice(target)
             }
         } else {
             audio.isSpeakerphoneOn = isSpeakerOn
+        }
+
+        // Keep the voice-call output at the user's current volume; when Android
+        // exposes a valid communication stream, do not silently leave a stale
+        // media/earpiece route behind.
+        if (!isSpeakerOn && audio.getStreamVolume(AudioManager.STREAM_VOICE_CALL) == 0) {
+            audio.setStreamVolume(
+                AudioManager.STREAM_VOICE_CALL,
+                audio.getStreamMaxVolume(AudioManager.STREAM_VOICE_CALL).coerceAtLeast(1),
+                0
+            )
         }
         updateControlLabels()
     }
