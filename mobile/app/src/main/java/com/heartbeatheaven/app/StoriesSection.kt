@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -625,6 +626,7 @@ internal fun StoriesSection(session: AuthSession, onStatus: (String) -> Unit = {
     if (viewer.isNotEmpty()) StoryViewer(api, viewer, viewerIndex, { viewerIndex = it }, { viewer = emptyList() }, { reload() }, { story -> editCaption = story.caption; editingStory = story }, onStatus)
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun StoryViewer(api: StoriesApi, stories: List<StoryItem>, index: Int, setIndex: (Int) -> Unit, close: () -> Unit, reload: () -> Unit, onEdit: (StoryItem) -> Unit, onStatus: (String) -> Unit) {
     if (index !in stories.indices) { close(); return }
@@ -646,7 +648,7 @@ private fun StoryViewer(api: StoriesApi, stories: List<StoryItem>, index: Int, s
     LaunchedEffect(story.id, imeVisible, reply) {
         if (story.mediaType != "video" && !imeVisible && reply.isBlank()) {
             delay(5000)
-            if (!WindowInsets.isImeVisible && reply.isBlank()) {
+            if (!imeVisible && reply.isBlank()) {
                 next()
             }
         }
