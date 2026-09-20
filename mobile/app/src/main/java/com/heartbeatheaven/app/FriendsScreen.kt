@@ -703,11 +703,22 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
     LaunchedEffect(api) {
         if (api != null) while (true) {
             runCatching {
-                api.touchPresence()
-                val friendList = api.friends()
+                val friendList = coroutineScope {
+                    val presenceDeferred = async(Dispatchers.IO) { api.touchPresence() }
+                    val friendsDeferred = async(Dispatchers.IO) { api.friends() }
+                    friendsDeferred.await().also { presenceDeferred.await() }
+                }
                 friends = friendList
-                online = api.onlineUsers(friendList.mapTo(hashSetOf()) { it.id })
-                chatSummaries = api.chatSummaries(friendList)
+                coroutineScope {
+                    val onlineDeferred = async(Dispatchers.IO) {
+                        api.onlineUsers(friendList.mapTo(hashSetOf()) { it.id })
+                    }
+                    val summariesDeferred = async(Dispatchers.IO) {
+                        api.chatSummaries(friendList)
+                    }
+                    online = onlineDeferred.await()
+                    chatSummaries = summariesDeferred.await()
+                }
                 val callApi = CallApi(context, auth)
                 val prefs = context.getSharedPreferences("heartbeat_call_state", android.content.Context.MODE_PRIVATE)
                 val storedId = prefs.getString("active_call_id", "").orEmpty()
