@@ -820,13 +820,13 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                     reactions = reactions.filterNot { it.messageId == change.id }
                                     searchResults = searchResults?.filterNot { it.id == change.id }
                                     if (selectedMessage?.id == change.id) selectedMessage = null
-                                    chatSummaries = runCatching { currentApi.chatSummaries() }.getOrDefault(chatSummaries)
+                                    chatSummaries = runCatching { currentApi.chatSummaries(friends) }.getOrDefault(chatSummaries)
                                 }
                             }
                         }
                         selectedId == null && change.eventType.equals("INSERT", true) -> {
                             scope.launch(Dispatchers.Main) {
-                                chatSummaries = currentApi.chatSummaries()
+                                chatSummaries = currentApi.chatSummaries(friends)
                             }
                         }
                     }
