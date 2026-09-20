@@ -375,6 +375,10 @@ class CallActivity : Activity() {
                 } else error("Missing call information")
                 CallKeepAliveService.start(this@CallActivity)
                 setupPeer(type == "video")
+                // Start realtime delivery before the Answer flow. This removes a
+                // timing gap where the callee could answer before the call-session
+                // coordinator was listening for the caller's SDP/ICE updates.
+                startSignalLoop()
                 if (isCaller) {
                     setOutgoingControls()
                     createAndPublishOffer()
@@ -385,7 +389,6 @@ class CallActivity : Activity() {
                         answerIncoming()
                     }
                 }
-                startSignalLoop()
             }.onFailure {
                 statusPanel.text = it.message ?: "Could not start call"
                 endButton.text = "Close"
@@ -430,13 +433,21 @@ class CallActivity : Activity() {
             PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer(),
             PeerConnection.IceServer.builder("stun:stun1.l.google.com:19302").createIceServer()
         )
-        val (relayServers, relayOnly) = runCatching { withContext(Dispatchers.IO) { callApi.fetchIceServers() } }
-            .getOrElse { Pair(emptyList(), false) }
-        if (relayOnly && relayServers.isNotEmpty()) {
-            createPeerConnectionWithServers(relayServers, true, video)
-        } else {
-            createPeerConnectionWithServers(fallbackIceServers, false, video)
+        val (relayServers, relayOnly) = runCatching {
+            withContext(Dispatchers.IO) { callApi.fetchIceServers() }
+        }.getOrElse { Pair(emptyList(), false) }
+
+        // Always keep TURN servers when the backend provides them. Previously the
+        // app discarded them unless the server explicitly requested relay-only,
+        // which made some NAT/carrier/device combinations fail after Answer.
+        val iceServers = buildList {
+            addAll(relayServers)
+            if (isEmpty()) addAll(fallbackIceServers)
+            else if (all { server -> server.urls.none { it.startsWith("stun:") || it.startsWith("stuns:") } }) {
+                addAll(fallbackIceServers)
+            }
         }
+        createPeerConnectionWithServers(iceServers, relayOnly && relayServers.isNotEmpty(), video)
     }
 
     private fun createPeerConnectionWithServers(
@@ -693,40 +704,95 @@ class CallActivity : Activity() {
         scope.launch {
             runCatching {
                 val id = call?.id ?: error("Call not found")
+                withContext(Dispatchers.Main) {
+                    statusPanel.text = "Answering…"
+                }
+
+                // Mark accepted, but do not treat the call as connected until the
+                // answer SDP has actually been created and published.
                 call = withContext(Dispatchers.IO) { callApi.updateStatus(id, "accepted") }
-                setActiveControls()
+
                 val offer = call?.offerSdp ?: waitForOffer()
                 lastRemoteOfferSdp = offer
                 val remote = SessionDescription(SessionDescription.Type.OFFER, offer)
-                withContext(Dispatchers.Main) {
-                    peer?.setRemoteDescription(object : SdpObserver {
-                        override fun onCreateSuccess(p0: SessionDescription?) {}
-                        override fun onSetSuccess() {
-                            flushPendingRemoteIce()
-                            peer?.createAnswer(object : SdpObserver {
-                                override fun onCreateSuccess(answer: SessionDescription) {
-                                    peer?.setLocalDescription(object : SdpObserver {
-                                        override fun onCreateSuccess(p0: SessionDescription?) {}
-                                        override fun onSetSuccess() {
-                                            scope.launch(Dispatchers.IO) {
-                                                runCatching { callApi.publishAnswer(call!!.id, answer.description) }
-                                            }
-                                        }
-                                        override fun onCreateFailure(e: String?) {}
-                                        override fun onSetFailure(e: String?) {}
-                                    }, answer)
-                                }
-                                override fun onSetSuccess() {}
-                                override fun onCreateFailure(e: String?) {}
-                                override fun onSetFailure(e: String?) {}
-                            }, MediaConstraints())
+
+                suspendCancellableCoroutine<Unit> { continuation ->
+                    runOnUiThread {
+                        val connection = peer
+                        if (connection == null) {
+                            continuation.resumeWith(Result.failure(IllegalStateException("WebRTC connection is not ready")))
+                            return@runOnUiThread
                         }
-                        override fun onCreateFailure(e: String?) { runOnUiThread { statusPanel.text = e ?: "Call answer failed" } }
-                        override fun onSetFailure(e: String?) { runOnUiThread { statusPanel.text = e ?: "Call answer failed" } }
-                    }, remote)
+                        connection.setRemoteDescription(object : SdpObserver {
+                            override fun onCreateSuccess(p0: SessionDescription?) = Unit
+                            override fun onSetSuccess() {
+                                flushPendingRemoteIce()
+                                connection.createAnswer(object : SdpObserver {
+                                    override fun onCreateSuccess(answer: SessionDescription) {
+                                        connection.setLocalDescription(object : SdpObserver {
+                                            override fun onCreateSuccess(p0: SessionDescription?) = Unit
+                                            override fun onSetSuccess() {
+                                                scope.launch(Dispatchers.IO) {
+                                                    runCatching {
+                                                        callApi.publishAnswer(id, answer.description)
+                                                    }.onSuccess {
+                                                        withContext(Dispatchers.Main) {
+                                                            if (running) {
+                                                                setActiveControls()
+                                                                statusPanel.text = "Connecting…"
+                                                                callStateMachine.dispatch(CallEvent.Accept)
+                                                            }
+                                                        }
+                                                        continuation.resume(Unit) {}
+                                                    }.onFailure { error ->
+                                                        withContext(Dispatchers.Main) {
+                                                            if (running) statusPanel.text = error.message ?: "Could not send answer"
+                                                        }
+                                                        continuation.resumeWith(Result.failure(error))
+                                                    }
+                                                }
+                                            }
+                                            override fun onCreateFailure(e: String?) {
+                                                continuation.resumeWith(Result.failure(IllegalStateException(e ?: "Could not set local answer")))
+                                            }
+                                            override fun onSetFailure(e: String?) {
+                                                continuation.resumeWith(Result.failure(IllegalStateException(e ?: "Could not set local answer")))
+                                            }
+                                        }, answer)
+                                    }
+                                    override fun onSetSuccess() = Unit
+                                    override fun onCreateFailure(e: String?) {
+                                        continuation.resumeWith(Result.failure(IllegalStateException(e ?: "Could not create answer")))
+                                    }
+                                    override fun onSetFailure(e: String?) {
+                                        continuation.resumeWith(Result.failure(IllegalStateException(e ?: "Could not create answer")))
+                                    }
+                                }, MediaConstraints())
+                            }
+                            override fun onCreateFailure(e: String?) {
+                                continuation.resumeWith(Result.failure(IllegalStateException(e ?: "Could not set remote offer")))
+                            }
+                            override fun onSetFailure(e: String?) {
+                                continuation.resumeWith(Result.failure(IllegalStateException(e ?: "Could not set remote offer")))
+                            }
+                        }, remote)
+                    }
                 }
-            }.onFailure {
-                runOnUiThread { statusPanel.text = it.message ?: "Could not answer call" }
+            }.onFailure { error ->
+                if (running) {
+                    runOnUiThread {
+                        statusPanel.text = error.message ?: "Could not answer call"
+                        setIncomingControls()
+                    }
+                    // Let the other side see a deterministic terminal state instead
+                    // of waiting indefinitely on a half-accepted call.
+                    val id = call?.id
+                    if (!id.isNullOrBlank()) {
+                        scope.launch(Dispatchers.IO) {
+                            runCatching { callApi.updateStatus(id, "failed") }
+                        }
+                    }
+                }
             }
         }
     }
