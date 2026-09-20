@@ -637,9 +637,19 @@ private fun StoryViewer(api: StoriesApi, stories: List<StoryItem>, index: Int, s
     fun next() { if (index + 1 < stories.size) setIndex(index + 1) else close() }
     fun prev() { if (index > 0) setIndex(index - 1) }
 
+    val imeVisible = WindowInsets.isImeVisible
+
     LaunchedEffect(story.id) {
         runCatching { api.view(story.id) }
-        if (story.mediaType != "video") { delay(5000); next() }
+    }
+
+    LaunchedEffect(story.id, imeVisible, reply) {
+        if (story.mediaType != "video" && !imeVisible && reply.isBlank()) {
+            delay(5000)
+            if (!WindowInsets.isImeVisible && reply.isBlank()) {
+                next()
+            }
+        }
     }
 
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
