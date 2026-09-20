@@ -825,9 +825,14 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                             // Keep incoming messages in the same chronological order.
                             val wasAtLatest = !showLatestButton
                             val incoming = ChatMessage(id, senderId, body, createdAt, Instant.now().toString(), "", "", "", "")
-                            messages = (messages + incoming)
-                                .distinctBy { it.id }
-                                .sortedBy { it.createdAt }
+                            // Realtime arrival is the authoritative position for a new
+                            // incoming message while this chat is open. Append it to
+                            // the current conversation instead of re-sorting by timestamp.
+                            messages = if (messages.any { it.id == id }) {
+                                messages
+                            } else {
+                                messages + incoming
+                            }
                             if (wasAtLatest) pendingLatestScroll = true
                             scope.launch(Dispatchers.IO) {
                                 currentApi.markDelivered(id)
