@@ -6,6 +6,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -1506,6 +1507,25 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                 shape = RoundedCornerShape(18.dp),
                                 modifier = Modifier
                                     .then(if (isHighlighted) Modifier.padding(2.dp) else Modifier)
+                                    .pointerInput(m.id) {
+                                        var totalDrag = 0f
+                                        detectHorizontalDragGestures(
+                                            onHorizontalDrag = { change, dragAmount ->
+                                                change.consume()
+                                                totalDrag += dragAmount
+                                            },
+                                            onDragEnd = {
+                                                // WhatsApp-style: swipe a message to the right
+                                                // far enough to start replying to that exact message.
+                                                if (totalDrag >= 72f && selectedForActions == null) {
+                                                    replyingTo = m
+                                                    text = ""
+                                                }
+                                                totalDrag = 0f
+                                            },
+                                            onDragCancel = { totalDrag = 0f }
+                                        )
+                                    }
                                     .combinedClickable(
                                     onClick = { if (selectedForActions != null) selectedMessage = if (isSelected) null else m },
                                     onLongClick = { selectedMessage = m }
