@@ -58,7 +58,7 @@ class CallActivity : Activity() {
     private var videoSource: VideoSource? = null
     private var audioTrack: AudioTrack? = null
     private var remoteAudioTrack: AudioTrack? = null
-    private val earpieceAudioGain = 1.4
+    private val earpieceAudioGain = 2.0
     private var localStream: MediaStream? = null
     private var call: CallSession? = null
     private var isCaller = false
@@ -640,8 +640,11 @@ class CallActivity : Activity() {
             }
             if (target != null) {
                 audio.setCommunicationDevice(target)
+            } else {
+                audio.clearCommunicationDevice()
             }
         } else {
+            @Suppress("DEPRECATION")
             audio.isSpeakerphoneOn = isSpeakerOn
         }
 
