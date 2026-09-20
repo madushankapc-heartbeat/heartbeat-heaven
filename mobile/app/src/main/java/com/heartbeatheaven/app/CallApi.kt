@@ -45,7 +45,7 @@ internal class CallApi(private val context: Context, private val auth: AuthApi) 
         return pair.second
     }
 
-    private fun parse(o: JSONObject): CallSession = CallSession(
+    internal fun parse(o: JSONObject): CallSession = CallSession(
         o.optString("id"), o.optString("caller_id"), o.optString("callee_id"), o.optString("call_type"),
         o.optString("status"), o.optString("offer_sdp").takeUnless { it == "null" || it.isBlank() },
         o.optString("answer_sdp").takeUnless { it == "null" || it.isBlank() },
