@@ -154,16 +154,33 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
     suspend fun requests(): List<FriendRequest> = withContext(Dispatchers.IO) {
         val mine = userId()
         val a = JSONArray(request("/rest/v1/friendships?or=(requester_id.eq.$mine,addressee_id.eq.$mine)&status=eq.pending&select=id,requester_id,addressee_id", "GET"))
+        if (a.length() == 0) return@withContext emptyList()
+        val ids = buildList {
+            for (i in 0 until a.length()) {
+                val o = a.getJSONObject(i)
+                add(if (o.optString("addressee_id") == mine) o.optString("requester_id") else o.optString("addressee_id"))
+            }
+        }.filter { it.isNotBlank() }.distinct()
+        val profileMap = HashMap<String, FriendUser>()
+        if (ids.isNotEmpty()) {
+            val filter = ids.joinToString(",")
+            val profiles = runCatching {
+                JSONArray(request("/rest/v1/public_profiles?id=in.($filter)&select=id,username,gender,avatar_url", "GET"))
+            }.getOrElse {
+                JSONArray(request("/rest/v1/public_profiles?id=in.($filter)&select=id,username,gender", "GET"))
+            }
+            for (i in 0 until profiles.length()) {
+                val u = profiles.getJSONObject(i)
+                val id = u.optString("id")
+                profileMap[id] = FriendUser(id, u.optString("username"), u.optString("gender"), u.optString("avatar_url").takeUnless { it == "null" }.orEmpty())
+            }
+        }
         buildList {
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
                 val incoming = o.optString("addressee_id") == mine
                 val uid = if (incoming) o.optString("requester_id") else o.optString("addressee_id")
-                val p = runCatching { JSONArray(request("/rest/v1/public_profiles?id=eq.$uid&select=id,username,gender,avatar_url", "GET")) }.getOrElse { JSONArray(request("/rest/v1/public_profiles?id=eq.$uid&select=id,username,gender", "GET")) }
-                if (p.length() > 0) {
-                    val u = p.getJSONObject(0)
-                    add(FriendRequest(o.optString("id"), FriendUser(uid, u.optString("username"), u.optString("gender"), u.optString("avatar_url").takeUnless { it == "null" }.orEmpty()), incoming))
-                }
+                profileMap[uid]?.let { add(FriendRequest(o.optString("id"), it, incoming)) }
             }
         }
     }
@@ -202,17 +219,26 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
     suspend fun friends(): List<FriendUser> = withContext(Dispatchers.IO) {
         val mine = userId()
         val a = JSONArray(request("/rest/v1/friendships?or=(requester_id.eq." + mine + ",addressee_id.eq." + mine + ")&status=eq.accepted&select=requester_id,addressee_id", "GET"))
-        buildList {
+        if (a.length() == 0) return@withContext emptyList()
+        val ids = buildList {
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
-                val uid = if (o.optString("requester_id") == mine) o.optString("addressee_id") else o.optString("requester_id")
-                val p = runCatching { JSONArray(request("/rest/v1/public_profiles?id=eq." + uid + "&select=id,username,gender,avatar_url,last_seen_at,last_seen_visibility", "GET")) }.getOrElse { JSONArray(request("/rest/v1/public_profiles?id=eq." + uid + "&select=id,username,gender,avatar_url", "GET")) }
-                if (p.length() > 0) {
-                    val u = p.getJSONObject(0)
-                    add(FriendUser(uid, u.optString("username"), u.optString("gender"), u.optString("avatar_url").takeUnless { it == "null" }.orEmpty(), u.optString("last_seen_at").takeUnless { it == "null" }.orEmpty(), u.optString("last_seen_visibility").ifBlank { "everyone" }))
-                }
+                add(if (o.optString("requester_id") == mine) o.optString("addressee_id") else o.optString("requester_id"))
             }
+        }.filter { it.isNotBlank() }.distinct()
+        val filter = ids.joinToString(",")
+        val profiles = runCatching {
+            JSONArray(request("/rest/v1/public_profiles?id=in.($filter)&select=id,username,gender,avatar_url,last_seen_at,last_seen_visibility", "GET"))
+        }.getOrElse {
+            JSONArray(request("/rest/v1/public_profiles?id=in.($filter)&select=id,username,gender,avatar_url", "GET"))
         }
+        val profileMap = HashMap<String, FriendUser>()
+        for (i in 0 until profiles.length()) {
+            val u = profiles.getJSONObject(i)
+            val id = u.optString("id")
+            profileMap[id] = FriendUser(id, u.optString("username"), u.optString("gender"), u.optString("avatar_url").takeUnless { it == "null" }.orEmpty(), u.optString("last_seen_at").takeUnless { it == "null" }.orEmpty(), u.optString("last_seen_visibility").ifBlank { "everyone" })
+        }
+        ids.mapNotNull { profileMap[it] }
     }
 
     suspend fun chatSummaries(friendListOverride: List<FriendUser>? = null): List<ChatSummary> = withContext(Dispatchers.IO) {
