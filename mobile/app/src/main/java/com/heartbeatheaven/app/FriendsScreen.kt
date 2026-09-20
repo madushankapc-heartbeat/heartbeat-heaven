@@ -1489,7 +1489,6 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
-                contentPadding = PaddingValues(bottom = if (showLatestButton && chatSearch.isBlank()) 40.dp else 0.dp),
                 verticalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 items(visibleMessages, key = { it.id }) { m ->
@@ -1704,18 +1703,21 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
 
             if (showLatestButton && chatSearch.isBlank() && selectedForActions == null && messages.isNotEmpty()) {
                 Surface(
-                    tonalElevation = 2.dp,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                    tonalElevation = 3.dp,
+                    shape = CircleShape,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 14.dp, bottom = 84.dp)
+                        .size(40.dp)
                 ) {
-                    TextButton(
-                        onClick = { scope.launch { listState.animateScrollToItem(messages.lastIndex) } },
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                        modifier = Modifier.height(32.dp)
+                    IconButton(
+                        onClick = { scope.launch { listState.animateScrollToItem(messages.lastIndex) } }
                     ) {
-                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Latest", modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(2.dp))
-                        Text("Latest", style = MaterialTheme.typography.labelSmall)
+                        Icon(
+                            Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Latest",
+                            modifier = Modifier.size(22.dp)
+                        )
                     }
                 }
             }
