@@ -61,6 +61,7 @@ class CallActivity : Activity() {
     private var call: CallSession? = null
     private var isCaller = false
     private var remoteIceCount = 0
+    private val pendingRemoteIce = mutableListOf<IceCandidate>()
     private var running = true
     private var cleanedUp = false
     private var toneGenerator: ToneGenerator? = null
@@ -700,6 +701,22 @@ class CallActivity : Activity() {
         error("Caller did not send an offer")
     }
 
+
+    private fun addRemoteIceCandidateSafely(candidate: IceCandidate) {
+        val connection = peer ?: return
+        if (connection.remoteDescription != null) {
+            connection.addIceCandidate(candidate)
+        } else {
+            pendingRemoteIce += candidate
+        }
+    }
+
+    private fun flushPendingRemoteIce() {
+        val connection = peer ?: return
+        if (connection.remoteDescription == null || pendingRemoteIce.isEmpty()) return
+        pendingRemoteIce.forEach { connection.addIceCandidate(it) }
+        pendingRemoteIce.clear()
+    }
 
     private fun startCallTone(tone: Int) {
         stopCallTone()
