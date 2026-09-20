@@ -150,7 +150,7 @@ class MainActivity : ComponentActivity() {
                                 val already = prefs.getString("incoming_call_launched_id", "").orEmpty()
                                 if (already != incoming.id) {
                                     prefs.edit().putString("incoming_call_launched_id", incoming.id).apply()
-                                    CallNotificationManager.showIncoming(this@MainActivity, incoming.id, incoming.callType)
+                                    CallNotificationManager.showIncoming(this@MainActivity, incoming.id, incoming.callType, fullScreen = false)
                                     startActivity(Intent(this@MainActivity, CallActivity::class.java).apply {
                                         putExtra("call_id", incoming.id)
                                         putExtra("call_type", incoming.callType)
