@@ -81,6 +81,14 @@ internal data class StoryItem(
 
 private const val STORY_MAX_VIDEO_MS = 90_000L
 
+private data class StoryUploadProgress(
+    val uploadedBytes: Long,
+    val totalBytes: Long
+) {
+    val percent: Int
+        get() = if (totalBytes <= 0L) 0 else ((uploadedBytes * 100L) / totalBytes).toInt().coerceIn(0, 100)
+}
+
 private suspend fun videoDurationMs(context: Context, uri: Uri): Long = withContext(Dispatchers.IO) {
     val retriever = MediaMetadataRetriever()
     try {
@@ -212,6 +220,12 @@ private fun StoryVideoTrimEditor(
     }
 }
 
+private fun formatBytes(bytes: Long): String {
+    if (bytes < 1024L) return "$bytes B"
+    if (bytes < 1024L * 1024L) return String.format("%.1f KB", bytes / 1024f)
+    return String.format("%.1f MB", bytes / (1024f * 1024f))
+}
+
 private fun formatStoryTime(ms: Long): String {
     val totalSeconds = (ms / 1000L).coerceAtLeast(0L)
     return "%d:%02d".format(totalSeconds / 60L, totalSeconds % 60L)
@@ -281,24 +295,58 @@ private class StoriesApi(private val auth: AuthApi, initial: AuthSession) {
         }.sortedWith(compareBy<StoryItem> { it.userId != mine }.thenBy { it.createdAt })
     }
 
-    suspend fun upload(context: Context, uri: Uri, mime: String): String = withContext(Dispatchers.IO) {
+    suspend fun upload(
+        context: Context,
+        uri: Uri,
+        mime: String,
+        onProgress: suspend (StoryUploadProgress) -> Unit
+    ): String = withContext(Dispatchers.IO) {
         val size = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use {
             if (it.moveToFirst()) it.getLong(0) else -1L
-        } ?: -1L
+        }?.takeIf { it >= 0L }
+            ?: context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length }
+            ?: -1L
+        if (size <= 0L) throw IllegalStateException("Could not determine Story media size.")
         if (size > STORY_MAX_BYTES) throw IllegalStateException("Story media must be 20 MB or smaller.")
+
         val ext = mime.substringAfter('/').substringBefore(';').replace("jpeg", "jpg")
         val path = userId() + "/" + UUID.randomUUID() + "." + ext
         val c = URL(STORIES_URL + "/storage/v1/object/" + STORY_BUCKET + "/" + path).openConnection() as HttpURLConnection
         try {
-            c.requestMethod = "POST"; c.doOutput = true
-            c.connectTimeout = 15000; c.readTimeout = 60000
+            c.requestMethod = "POST"
+            c.doOutput = true
+            c.connectTimeout = 15000
+            c.readTimeout = 60000
+            c.setFixedLengthStreamingMode(size)
             c.setRequestProperty("apikey", STORIES_KEY)
             c.setRequestProperty("Authorization", "Bearer " + session.accessToken)
             c.setRequestProperty("Content-Type", mime)
-            c.outputStream.use { out -> context.contentResolver.openInputStream(uri)?.use { it.copyTo(out) } ?: error("Could not read media.") }
+            c.setRequestProperty("Content-Length", size.toString())
+
+            var uploaded = 0L
+            var lastReported = 0L
+            val buffer = ByteArray(128 * 1024)
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                c.outputStream.use { out ->
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        out.write(buffer, 0, count)
+                        uploaded += count
+                        if (uploaded - lastReported >= 256 * 1024 || uploaded == size) {
+                            lastReported = uploaded
+                            onProgress(StoryUploadProgress(uploaded, size))
+                        }
+                    }
+                    out.flush()
+                }
+            } ?: error("Could not read media.")
+
             if (c.responseCode !in 200..299) error("Story upload failed (" + c.responseCode + ").")
             path
-        } finally { c.disconnect() }
+        } finally {
+            c.disconnect()
+        }
     }
 
     suspend fun create(type: String, path: String?, caption: String) = withContext(Dispatchers.IO) {
@@ -359,6 +407,7 @@ internal fun StoriesSection(session: AuthSession, onStatus: (String) -> Unit = {
     var trimEndMs by remember { mutableLongStateOf(0L) }
     var isPosting by remember { mutableStateOf(false) }
     var postError by remember { mutableStateOf("") }
+    var uploadProgress by remember { mutableStateOf<StoryUploadProgress?>(null) }
 
     fun reload() { scope.launch { runCatching { stories = api.load() }.onFailure { onStatus(it.message ?: "Could not load stories.") } } }
 
@@ -466,6 +515,21 @@ internal fun StoriesSection(session: AuthSession, onStatus: (String) -> Unit = {
                     OutlinedButton(onClick = { picker.launch("*/*") }) {
                         Text(if (mediaUri == null) "Choose photo / video" else "Change media")
                     }
+                    uploadProgress?.let { progress ->
+                        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Uploading… ${progress.percent}%", style = MaterialTheme.typography.labelMedium)
+                                Text(
+                                    "${formatBytes(progress.uploadedBytes)} / ${formatBytes(progress.totalBytes)}",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                            LinearProgressIndicator(
+                                progress = { progress.percent / 100f },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
                     if (postError.isNotBlank()) {
                         Text(postError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     }
@@ -493,7 +557,15 @@ internal fun StoriesSection(session: AuthSession, onStatus: (String) -> Unit = {
                                     trimVideo(context, mediaUri, trimStartMs, trimEndMs)
                                 } else mediaUri
                                 val uploadMime = if (pickedMime.startsWith("video/")) "video/mp4" else pickedMime
-                                val path = uploadUri?.let { api.upload(context, it, uploadMime) }
+                                uploadProgress = null
+                                val path = uploadUri?.let {
+                                    onStatus("Uploading Story…")
+                                    api.upload(context, it, uploadMime) { progress ->
+                                        withContext(Dispatchers.Main.immediate) {
+                                            uploadProgress = progress
+                                        }
+                                    }
+                                }
                                 api.create(
                                     if (path == null) "text" else if (pickedMime.startsWith("video/")) "video" else "image",
                                     path,
@@ -504,6 +576,7 @@ internal fun StoriesSection(session: AuthSession, onStatus: (String) -> Unit = {
                                 pickedMime = ""
                                 newCaption = ""
                                 postError = ""
+                                uploadProgress = null
                                 videoDurationMs = 0L
                                 trimStartMs = 0L
                                 trimEndMs = 0L
