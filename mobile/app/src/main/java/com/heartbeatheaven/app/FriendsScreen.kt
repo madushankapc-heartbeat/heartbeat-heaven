@@ -1489,6 +1489,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             LazyColumn(
                 state = listState,
                 modifier = Modifier.weight(1f).fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                contentPadding = PaddingValues(bottom = if (showLatestButton && chatSearch.isBlank()) 40.dp else 0.dp),
                 verticalArrangement = Arrangement.spacedBy(5.dp)
             ) {
                 items(visibleMessages, key = { it.id }) { m ->
