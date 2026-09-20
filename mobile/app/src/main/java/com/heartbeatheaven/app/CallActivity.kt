@@ -381,7 +381,7 @@ class CallActivity : Activity() {
         audioDeviceModule = JavaAudioDeviceModule.builder(applicationContext)
             // Use Android's hardware AEC when available to suppress speaker-to-mic
             // feedback. Keep hardware NS disabled so speech is not unnecessarily attenuated.
-            .setUseHardwareAcousticEchoCanceler(true)
+            .setUseHardwareAcousticEchoCanceler(false)
             .setUseHardwareNoiseSuppressor(false)
             .createAudioDeviceModule()
         factory = PeerConnectionFactory.builder()
