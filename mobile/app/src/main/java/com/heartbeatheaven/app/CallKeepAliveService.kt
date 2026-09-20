@@ -38,7 +38,15 @@ internal class CallKeepAliveService : Service() {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .build()
         if (Build.VERSION.SDK_INT >= 29) {
-            startForeground(NOTIFICATION_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+            // Active video calls need both microphone and camera foreground-service
+            // types. Declaring only microphone can make Android stop/restrict the
+            // call on some devices when camera capture is active.
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
+                    android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+            )
         } else {
             startForeground(NOTIFICATION_ID, notification)
         }
