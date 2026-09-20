@@ -701,7 +701,7 @@ private fun StoryViewer(api: StoriesApi, stories: List<StoryItem>, index: Int, s
                     .navigationBarsPadding()
                     .imePadding()
                     .padding(horizontal = 12.dp)
-                    .padding(bottom = 28.dp, top = 8.dp)
+                    .padding(bottom = 76.dp, top = 8.dp)
             ) {
                 if (story.caption.isNotBlank() && story.mediaType != "text") {
                     Text(
