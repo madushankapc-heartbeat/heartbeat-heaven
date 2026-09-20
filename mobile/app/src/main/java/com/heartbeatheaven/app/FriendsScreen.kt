@@ -402,23 +402,6 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
         } else request("/rest/v1/user_blocks?blocker_id=eq.${mine}&blocked_id=eq.${other}", "DELETE")
     }
 
-    suspend fun setCallBlocked(other: String, blocked: Boolean) = withContext(Dispatchers.IO) {
-        val mine = userId()
-        if (blocked) {
-            val existing = JSONArray(request("/rest/v1/call_blocks?blocker_id=eq." + mine + "&blocked_id=eq." + other + "&select=blocked_id&limit=1", "GET"))
-            if (existing.length() == 0) request("/rest/v1/call_blocks", "POST", JSONObject().put("blocker_id", mine).put("blocked_id", other).toString())
-        } else request("/rest/v1/call_blocks?blocker_id=eq." + mine + "&blocked_id=eq." + other, "DELETE")
-    }
-
-    suspend fun isCallBlockedByMe(other: String): Boolean = withContext(Dispatchers.IO) {
-        val mine = userId()
-        JSONArray(request("/rest/v1/call_blocks?blocker_id=eq." + mine + "&blocked_id=eq." + other + "&select=blocked_id&limit=1", "GET")).length() > 0
-    }
-
-    suspend fun isCallBlockedByOther(other: String): Boolean = withContext(Dispatchers.IO) {
-        val mine = userId()
-        JSONArray(request("/rest/v1/call_blocks?blocker_id=eq." + other + "&blocked_id=eq." + mine + "&select=blocked_id&limit=1", "GET")).length() > 0
-    }
     suspend fun report(other: String, reason: String) = withContext(Dispatchers.IO) {
         request("/rest/v1/chat_reports", "POST", JSONObject().put("reporter_id", userId()).put("reported_user_id", other).put("reason", reason.trim().take(500)).toString())
     }
@@ -606,8 +589,6 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
     var chatMuted by remember { mutableStateOf(false) }
     var chatPinned by remember { mutableStateOf(false) }
     var chatBlocked by remember { mutableStateOf(false) }
-    var callBlockedByMe by remember { mutableStateOf(false) }
-    var callBlockedByOther by remember { mutableStateOf(false) }
     var unfriendTarget by remember { mutableStateOf<FriendUser?>(null) }
     var unfriendBusy by remember { mutableStateOf(false) }
     var showReportDialog by remember { mutableStateOf(false) }
@@ -627,11 +608,6 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
     var pendingLatestScroll by remember { mutableStateOf(false) }
     var fullScreenImage by remember { mutableStateOf<ChatMessage?>(null) }
     var saveTarget by remember { mutableStateOf<ChatMessage?>(null) }
-    var latestCall by remember { mutableStateOf<CallSession?>(null) }
-    var launchedIncomingCallId by remember { mutableStateOf<String?>(null) }
-    var activeCallId by remember { mutableStateOf("") }
-    var activeCallUserId by remember { mutableStateOf("") }
-    var activeCallType by remember { mutableStateOf("voice") }
     var friendTab by remember { mutableStateOf(0) }
 
     LaunchedEffect(Unit) {
@@ -724,29 +700,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                     }
                     online = onlineDeferred.await()
                     chatSummaries = summariesDeferred.await()
-                }
-                val callApi = CallApi(context, auth)
-                val prefs = context.getSharedPreferences("heartbeat_call_state", android.content.Context.MODE_PRIVATE)
-                val storedId = prefs.getString("active_call_id", "").orEmpty()
-                if (storedId.isNotBlank()) {
-                    val current = runCatching { callApi.get(storedId) }.getOrNull()
-                    if (current == null || current.status in listOf("ended", "failed", "declined", "missed", "cancelled")) {
-                        prefs.edit().clear().apply()
-                        activeCallId = ""
-                        activeCallUserId = ""
-                        activeCallType = "voice"
-                    } else {
-                        activeCallId = current.id
-                        activeCallUserId = prefs.getString("active_call_user_id", "").orEmpty()
-                        activeCallType = prefs.getString("active_call_type", current.callType).orEmpty().ifBlank { current.callType }
-                    }
-                } else {
-                    activeCallId = ""
-                    activeCallUserId = ""
-                    activeCallType = "voice"
-                }
-            }
-            delay(10000)
+                }delay(10000)
         }
     }
 
@@ -754,7 +708,6 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
         val current = selected ?: return@LaunchedEffect
         val a = api ?: return@LaunchedEffect
         messages = emptyList()
-        latestCall = runCatching { CallApi(context, auth).latestWithUser(current.id) }.getOrNull()
         searchResults = null
         pendingMediaItems = emptyList()
         mediaProgress = 0
@@ -982,14 +935,10 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
         }
 
         LaunchedEffect(chat.id) {
-            callBlockedByMe = false
-            callBlockedByOther = false
             chatProfile = runCatching { api.profile(chat.id) }.getOrNull()
             chatMuted = runCatching { api.isMuted(chat.id) }.getOrDefault(false)
             chatPinned = runCatching { api.isPinned(chat.id) }.getOrDefault(false)
             chatBlocked = runCatching { api.isBlocked(chat.id) }.getOrDefault(false)
-            callBlockedByMe = runCatching { api.isCallBlockedByMe(chat.id) }.getOrDefault(false)
-            callBlockedByOther = runCatching { api.isCallBlockedByOther(chat.id) }.getOrDefault(false)
             chatSearch = ""
             showChatSearch = false
             showChatMenu = false
@@ -1206,41 +1155,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             }
         }
 
-        Column(Modifier.fillMaxSize()) {
-            if (activeCallId.isNotBlank() && activeCallUserId == chat.id) {
-                Surface(
-                    tonalElevation = 4.dp,
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 7.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            if (activeCallType == "video") Icons.Default.Videocam else Icons.Default.Call,
-                            "Active call",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                "Active " + (if (activeCallType == "video") "video" else "voice") + " call",
-                                fontWeight = FontWeight.SemiBold
-                            )
-                            Text("Call is still running", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Button(onClick = {
-                            context.startActivity(Intent(context, CallActivity::class.java).apply {
-                                addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
-                                putExtra("call_id", activeCallId)
-                                putExtra("call_type", activeCallType)
-                            })
-                        }) { Text("Return to call") }
-                    }
-                }
-            }
-            Surface(shadowElevation = 2.dp) {
+        Column(Modifier.fillMaxSize()) {Surface(shadowElevation = 2.dp) {
                 if (selectedForActions != null) {
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp),
@@ -1294,20 +1209,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (isOnline) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                        }
-                        IconButton(enabled = !chatBlocked && !callBlockedByMe && !callBlockedByOther, onClick = {
-                            context.startActivity(Intent(context, CallActivity::class.java).apply {
-                                putExtra("callee_id", chat.id)
-                                putExtra("call_type", "voice")
-                            })
-                        }) { Icon(Icons.Default.Call, "Voice call") }
-                        IconButton(enabled = !chatBlocked && !callBlockedByMe && !callBlockedByOther, onClick = {
-                            context.startActivity(Intent(context, CallActivity::class.java).apply {
-                                putExtra("callee_id", chat.id)
-                                putExtra("call_type", "video")
-                            })
-                        }) { Icon(Icons.Default.Videocam, "Video call") }
-                        Box {
+                        }Box {
                             IconButton(onClick = { showChatMenu = true }) {
                                 Icon(Icons.Default.MoreVert, "Chat actions")
                             }
@@ -1352,30 +1254,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                             showChatProfile = true
                                         }
                                     }
-                                )
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            when {
-                                                callBlockedByMe -> "📵 Allow voice & video calls"
-                                                callBlockedByOther -> "📵 Calls blocked by this user"
-                                                else -> "📵 Block voice & video calls"
-                                            }
-                                        )
-                                    },
-                                    enabled = !callBlockedByOther,
-                                    onClick = {
-                                        showChatMenu = false
-                                        scope.launch {
-                                            runCatching {
-                                                api.setCallBlocked(chat.id, !callBlockedByMe)
-                                                callBlockedByMe = !callBlockedByMe
-                                                statusMessage = if (callBlockedByMe) "Voice and video calls blocked" else "Voice and video calls allowed"
-                                            }.onFailure { statusMessage = it.message ?: "Could not update call blocking." }
-                                        }
-                                    }
-                                )
-                                DropdownMenuItem(
+                                )DropdownMenuItem(
                                     text = { Text("👥 Unfriend") },
                                     onClick = {
                                         showChatMenu = false
@@ -1453,40 +1332,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                     }
                 }
             }
-
-            latestCall?.let { callSession ->
-                val me = session?.profile?.id.orEmpty()
-                val missed = callSession.calleeId == me &&
-                    callSession.startedAt.isNullOrBlank() &&
-                    callSession.status in listOf("ended", "failed", "cancelled", "missed")
-                if (missed) {
-                    Surface(
-                        tonalElevation = 3.dp,
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp)
-                    ) {
-                        Row(
-                            Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(if (callSession.callType == "video") Icons.Default.Videocam else Icons.Default.Call, "Missed call")
-                            Spacer(Modifier.width(8.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text("Missed " + (if (callSession.callType == "video") "video" else "voice") + " call", fontWeight = FontWeight.SemiBold)
-                                Text("Tap to call back", style = MaterialTheme.typography.bodySmall)
-                            }
-                            IconButton(onClick = {
-                                context.startActivity(Intent(context, CallActivity::class.java).apply {
-                                    putExtra("callee_id", chat.id)
-                                    putExtra("call_type", callSession.callType)
-                                })
-                            }) { Icon(Icons.Default.Call, "Call back") }
-                        }
-                    }
-                }
-            }
-
-            Box(
+Box(
                 modifier = Modifier.weight(1f).fillMaxWidth()
             ) {
                 LazyColumn(
