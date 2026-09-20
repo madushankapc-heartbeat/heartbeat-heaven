@@ -528,7 +528,7 @@ class CallActivity : Activity() {
                     }
                 }
                 override fun onSelectedCandidatePairChanged(event: CandidatePairChangeEvent) {
-                    Log.d("HeartbeatCall", "ICE selected pair call=" + call?.id + " local=" + event.localCandidate?.address + ":" + event.localCandidate?.port + " remote=" + event.remoteCandidate?.address + ":" + event.remoteCandidate?.port + " reason=" + event.reason)
+                    Log.d("HeartbeatCall", "ICE selected candidate pair changed call=" + call?.id + " reason=" + event.reason + " pair=" + event)
                 }
             }
         ) ?: error("Could not create WebRTC connection")
