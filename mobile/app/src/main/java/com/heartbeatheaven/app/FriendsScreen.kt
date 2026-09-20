@@ -622,6 +622,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
     var pendingMediaItems by remember { mutableStateOf<List<PendingChatAttachment>>(emptyList()) }
     var mediaUploadJob by remember { mutableStateOf<Job?>(null) }
     var showLatestButton by remember { mutableStateOf(false) }
+    var pendingLatestScroll by remember { mutableStateOf(false) }
     var fullScreenImage by remember { mutableStateOf<ChatMessage?>(null) }
     var saveTarget by remember { mutableStateOf<ChatMessage?>(null) }
     var latestCall by remember { mutableStateOf<CallSession?>(null) }
@@ -772,9 +773,14 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             runCatching {
                 a.markSeen(current.id)
                 val fresh = a.messages(current.id)
+                val existingIds = messages.asSequence().map { it.id }.toHashSet()
+                val hasNewIncoming = fresh.any { it.id !in existingIds && it.senderId == current.id }
                 val byId = LinkedHashMap<String, ChatMessage>()
                 (messages + fresh).forEach { byId[it.id] = it }
                 messages = byId.values.sortedBy { it.createdAt }
+                if (hasNewIncoming && !showLatestButton) {
+                    pendingLatestScroll = true
+                }
                 reactions = runCatching { a.reactionsForMessageIds(messages.map { it.id }) }.getOrDefault(emptyList())
                 messages.filter { it.senderId == current.id && it.deliveredAt.isBlank() }.forEach { a.markDelivered(it.id) }
             }
@@ -801,7 +807,14 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                 onMessage = { id, senderId, body, createdAt ->
                     scope.launch(Dispatchers.Main) {
                         if (selectedId != null && selected?.id == selectedId && senderId == selectedId && messages.none { it.id == id }) {
-                            messages = messages + ChatMessage(id, senderId, body, createdAt, Instant.now().toString(), "", "", "", "")
+                            // Realtime delivery can arrive before the polling refresh.
+                            // Keep incoming messages in the same chronological order.
+                            val wasAtLatest = !showLatestButton
+                            val incoming = ChatMessage(id, senderId, body, createdAt, Instant.now().toString(), "", "", "", "")
+                            messages = (messages + incoming)
+                                .distinctBy { it.id }
+                                .sortedBy { it.createdAt }
+                            if (wasAtLatest) pendingLatestScroll = true
                             scope.launch(Dispatchers.IO) {
                                 currentApi.markDelivered(id)
                                 currentApi.markSeen(selectedId)
@@ -915,6 +928,13 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             }
         }
         val listState = rememberLazyListState()
+        LaunchedEffect(messages.size, chat.id) {
+            if (pendingLatestScroll && messages.isNotEmpty()) {
+                pendingLatestScroll = false
+                withFrameNanos { }
+                runCatching { listState.scrollToItem(messages.lastIndex) }
+            }
+        }
         val selectedForActions = selectedMessage
         val replyTarget = replyingTo
         val visibleMessages = searchResults ?: messages
