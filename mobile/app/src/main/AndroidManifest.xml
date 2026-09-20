@@ -11,7 +11,7 @@
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <application android:name=".HeartbeatHeavenApplication" android:allowBackup="true" android:icon="@drawable/heartbeat_heaven_logo" android:label="HEARTBEAT HEAVEN Chat &amp; Music" android:roundIcon="@drawable/heartbeat_heaven_logo" android:supportsRtl="true" android:theme="@style/Theme.HeartbeatHeaven">
-        <activity android:name=".CallActivity" android:exported="false" android:showWhenLocked="true" android:turnScreenOn="true" android:supportsPictureInPicture="true" android:configChanges="orientation|screenLayout|screenSize|smallestScreenSize" />
+        <activity android:name=".CallActivity" android:launchMode="singleTop" android:exported="false" android:showWhenLocked="true" android:turnScreenOn="true" android:supportsPictureInPicture="true" android:configChanges="orientation|screenLayout|screenSize|smallestScreenSize" />
         <receiver android:name=".CallActionReceiver" android:exported="false" />
         <service android:name=".CallKeepAliveService" android:exported="false" android:foregroundServiceType="microphone|camera" />
         <activity android:name=".StudioActivity" android:exported="false" />
