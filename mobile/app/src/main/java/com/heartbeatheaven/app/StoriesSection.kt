@@ -4,8 +4,10 @@ import android.content.Context
 import android.net.Uri
 import android.view.ViewGroup
 import android.widget.VideoView
+import android.media.MediaMetadataRetriever
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -28,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -35,6 +38,16 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.media3.common.MediaItem
+import androidx.media3.transformer.Composition
+import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.ExportException
+import androidx.media3.transformer.ExportResult
+import androidx.media3.transformer.Transformer
+import kotlinx.coroutines.suspendCancellableCoroutine
+import java.io.File
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import coil.compose.AsyncImage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -65,6 +78,144 @@ internal data class StoryItem(
     val createdAt: String,
     val liked: Boolean
 )
+
+private const val STORY_MAX_VIDEO_MS = 90_000L
+
+private suspend fun videoDurationMs(context: Context, uri: Uri): Long = withContext(Dispatchers.IO) {
+    val retriever = MediaMetadataRetriever()
+    try {
+        retriever.setDataSource(context, uri)
+        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+    } finally {
+        retriever.release()
+    }
+}
+
+private suspend fun trimVideo(context: Context, uri: Uri, startMs: Long, endMs: Long): Uri =
+    withContext(Dispatchers.Main) {
+        suspendCancellableCoroutine { continuation ->
+            val output = File(context.cacheDir, "story_trim_${UUID.randomUUID()}.mp4")
+            val clipping = MediaItem.ClippingConfiguration.Builder()
+                .setStartPositionMs(startMs)
+                .setEndPositionMs(endMs)
+                .build()
+            val input = MediaItem.Builder()
+                .setUri(uri)
+                .setClippingConfiguration(clipping)
+                .build()
+            val edited = EditedMediaItem.Builder(input).build()
+            val transformer = Transformer.Builder(context)
+                .addListener(object : Transformer.Listener {
+                    override fun onCompleted(composition: Composition, result: ExportResult) {
+                        if (continuation.isActive) continuation.resume(Uri.fromFile(output))
+                    }
+
+                    override fun onError(
+                        composition: Composition,
+                        result: ExportResult,
+                        exception: ExportException
+                    ) {
+                        if (continuation.isActive) {
+                            output.delete()
+                            continuation.resumeWithException(exception)
+                        }
+                    }
+                })
+                .build()
+
+            continuation.invokeOnCancellation {
+                runCatching { transformer.cancel() }
+                output.delete()
+            }
+            transformer.start(edited, output.absolutePath)
+        }
+    }
+
+@Composable
+private fun StoryVideoTrimEditor(
+    context: Context,
+    uri: Uri,
+    durationMs: Long,
+    startMs: Long,
+    endMs: Long,
+    onRangeChange: (Long, Long) -> Unit
+) {
+    val thumbnails by produceState<List<android.graphics.Bitmap>>(initialValue = emptyList(), uri, durationMs) {
+        value = withContext(Dispatchers.IO) {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(context, uri)
+                val count = 10
+                buildList {
+                    for (i in 0 until count) {
+                        val timeUs = if (durationMs <= 0L) 0L
+                        else ((durationMs * i) / (count - 1).coerceAtLeast(1)).coerceAtLeast(0L) * 1000L
+                        retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)?.let { add(it) }
+                    }
+                }
+            } catch (_: Throwable) {
+                emptyList()
+            } finally {
+                retriever.release()
+            }
+        }
+    }
+
+    val durationSec = (durationMs.coerceAtLeast(1000L) / 1000f)
+    val oldStart = startMs / 1000f
+    val oldEnd = endMs / 1000f
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Select up to 1:30", style = MaterialTheme.typography.labelMedium)
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(72.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color.Black)
+        ) {
+            Row(Modifier.fillMaxSize()) {
+                thumbnails.forEach { bitmap ->
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = null,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+            }
+            RangeSlider(
+                value = oldStart..oldEnd,
+                onValueChange = { range ->
+                    val changedStart = kotlin.math.abs(range.start - oldStart) >= kotlin.math.abs(range.endInclusive - oldEnd)
+                    var ns = range.start.coerceIn(0f, durationSec)
+                    var ne = range.endInclusive.coerceIn(0f, durationSec)
+                    if (ne - ns > 90f) {
+                        if (changedStart) ns = (ne - 90f).coerceAtLeast(0f)
+                        else ne = (ns + 90f).coerceAtMost(durationSec)
+                    }
+                    if (ne - ns >= 0.5f) onRangeChange((ns * 1000L).toLong(), (ne * 1000L).toLong())
+                },
+                valueRange = 0f..durationSec,
+                modifier = Modifier.fillMaxWidth().align(Alignment.Center),
+                colors = SliderDefaults.colors(
+                    thumbColor = Color.White,
+                    activeTrackColor = Color.White,
+                    inactiveTrackColor = Color.Transparent
+                )
+            )
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(formatStoryTime(startMs), style = MaterialTheme.typography.labelSmall)
+            Text(formatStoryTime(endMs) + " / 1:30 max", style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+private fun formatStoryTime(ms: Long): String {
+    val totalSeconds = (ms / 1000L).coerceAtLeast(0L)
+    return "%d:%02d".format(totalSeconds / 60L, totalSeconds % 60L)
+}
 
 private class StoriesApi(private val auth: AuthApi, initial: AuthSession) {
     private var session = initial
@@ -203,6 +354,11 @@ internal fun StoriesSection(session: AuthSession, onStatus: (String) -> Unit = {
     var newCaption by remember { mutableStateOf("") }
     var editingStory by remember { mutableStateOf<StoryItem?>(null) }
     var editCaption by remember { mutableStateOf("") }
+    var videoDurationMs by remember { mutableLongStateOf(0L) }
+    var trimStartMs by remember { mutableLongStateOf(0L) }
+    var trimEndMs by remember { mutableLongStateOf(0L) }
+    var isPosting by remember { mutableStateOf(false) }
+    var postError by remember { mutableStateOf("") }
 
     fun reload() { scope.launch { runCatching { stories = api.load() }.onFailure { onStatus(it.message ?: "Could not load stories.") } } }
 
@@ -212,7 +368,25 @@ internal fun StoriesSection(session: AuthSession, onStatus: (String) -> Unit = {
         if (uri == null) return@rememberLauncherForActivityResult
         val mime = context.contentResolver.getType(uri).orEmpty().lowercase()
         if (!mime.startsWith("image/") && !mime.startsWith("video/")) onStatus("Please choose an image or video.")
-        else { pickedUri = uri; pickedMime = mime; newCaption = ""; createOpen = true }
+        else {
+            pickedUri = uri
+            pickedMime = mime
+            newCaption = ""
+            postError = ""
+            if (mime.startsWith("video/")) {
+                scope.launch {
+                    videoDurationMs = videoDurationMs(context, uri)
+                    trimStartMs = 0L
+                    trimEndMs = minOf(videoDurationMs, STORY_MAX_VIDEO_MS)
+                    createOpen = true
+                }
+            } else {
+                videoDurationMs = 0L
+                trimStartMs = 0L
+                trimEndMs = 0L
+                createOpen = true
+            }
+        }
     }
 
     val mine = stories.filter { it.userId == api.userId() }
@@ -249,7 +423,7 @@ internal fun StoriesSection(session: AuthSession, onStatus: (String) -> Unit = {
                 }
             }
         }
-        TextButton(onClick = { pickedUri = null; pickedMime = ""; newCaption = ""; createOpen = true }) { Text("Add Story") }
+        TextButton(onClick = { pickedUri = null; pickedMime = ""; newCaption = ""; postError = ""; videoDurationMs = 0L; trimStartMs = 0L; trimEndMs = 0L; createOpen = true }) { Text("Add Story") }
     }
 
     if (createOpen) {
@@ -271,6 +445,19 @@ internal fun StoriesSection(session: AuthSession, onStatus: (String) -> Unit = {
                                 }},
                                 modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(16.dp))
                             )
+                            if (videoDurationMs > 0L) {
+                                StoryVideoTrimEditor(
+                                    context = context,
+                                    uri = mediaUri,
+                                    durationMs = videoDurationMs,
+                                    startMs = trimStartMs,
+                                    endMs = trimEndMs,
+                                    onRangeChange = { start, end ->
+                                        trimStartMs = start
+                                        trimEndMs = end
+                                    }
+                                )
+                            }
                         }
                         Text("Preview", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     } else {
@@ -278,6 +465,9 @@ internal fun StoriesSection(session: AuthSession, onStatus: (String) -> Unit = {
                     }
                     OutlinedButton(onClick = { picker.launch("*/*") }) {
                         Text(if (mediaUri == null) "Choose photo / video" else "Change media")
+                    }
+                    if (postError.isNotBlank()) {
+                        Text(postError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     }
                     OutlinedTextField(
                         value = newCaption,
@@ -290,18 +480,48 @@ internal fun StoriesSection(session: AuthSession, onStatus: (String) -> Unit = {
                 }
             },
             confirmButton = {
-                TextButton(enabled = canPost, onClick = {
-                    scope.launch {
-                        runCatching {
-                            val path = mediaUri?.let { api.upload(context, it, pickedMime) }
-                            api.create(if (path == null) "text" else if (pickedMime.startsWith("video/")) "video" else "image", path, newCaption)
-                            createOpen = false; pickedUri = null; pickedMime = ""; newCaption = ""; reload()
-                            onStatus("Story posted.")
-                        }.onFailure { onStatus(it.message ?: "Could not create story.") }
+                TextButton(
+                    enabled = canPost && !isPosting,
+                    onClick = {
+                        postError = ""
+                        isPosting = true
+                        scope.launch {
+                            runCatching {
+                                val uploadUri = if (mediaUri != null && pickedMime.startsWith("video/") && videoDurationMs > 0L &&
+                                    (trimStartMs > 0L || trimEndMs < videoDurationMs - 250L)) {
+                                    onStatus("Preparing selected video…")
+                                    trimVideo(context, mediaUri, trimStartMs, trimEndMs)
+                                } else mediaUri
+                                val uploadMime = if (pickedMime.startsWith("video/")) "video/mp4" else pickedMime
+                                val path = uploadUri?.let { api.upload(context, it, uploadMime) }
+                                api.create(
+                                    if (path == null) "text" else if (pickedMime.startsWith("video/")) "video" else "image",
+                                    path,
+                                    newCaption
+                                )
+                                createOpen = false
+                                pickedUri = null
+                                pickedMime = ""
+                                newCaption = ""
+                                postError = ""
+                                videoDurationMs = 0L
+                                trimStartMs = 0L
+                                trimEndMs = 0L
+                                reload()
+                                onStatus("Story posted.")
+                            }.onFailure {
+                                postError = it.message ?: "Could not create story."
+                                onStatus(postError)
+                            }
+                            isPosting = false
+                        }
                     }
-                }) { Text("Post Story") }
+                ) {
+                    if (isPosting) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    else Text("Post Story")
+                }
             },
-            dismissButton = { TextButton(onClick = { createOpen = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(enabled = !isPosting, onClick = { createOpen = false }) { Text("Cancel") } }
         )
     }
 
