@@ -773,11 +773,25 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             runCatching {
                 a.markSeen(current.id)
                 val fresh = a.messages(current.id)
-                val existingIds = messages.asSequence().map { it.id }.toHashSet()
-                val hasNewIncoming = fresh.any { it.id !in existingIds && it.senderId == current.id }
-                val byId = LinkedHashMap<String, ChatMessage>()
-                (messages + fresh).forEach { byId[it.id] = it }
-                messages = byId.values.sortedBy { it.createdAt }
+                val existingById = messages.associateBy { it.id }
+                val freshNew = fresh.filter { it.id !in existingById }
+                val hasNewIncoming = freshNew.any { it.senderId == current.id }
+
+                // Keep the established chat order for messages that are already on screen.
+                // Newly arrived messages are appended in the server's chronological order.
+                // This avoids a device/server timestamp difference moving an incoming
+                // message above the user's most recent message.
+                val merged = ArrayList<ChatMessage>(messages.size + freshNew.size)
+                merged.addAll(messages.map { existingById[it.id] ?: it })
+                fresh.forEach { message ->
+                    if (message.id in existingById) {
+                        val index = merged.indexOfFirst { it.id == message.id }
+                        if (index >= 0) merged[index] = message
+                    }
+                }
+                merged.addAll(freshNew.sortedBy { it.createdAt })
+                messages = merged
+
                 if (hasNewIncoming && !showLatestButton) {
                     pendingLatestScroll = true
                 }
