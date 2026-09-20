@@ -701,7 +701,9 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                     online = onlineDeferred.await()
                     chatSummaries = summariesDeferred.await()
                 }
+            }
             delay(10000)
+        }
         }
     }
 
