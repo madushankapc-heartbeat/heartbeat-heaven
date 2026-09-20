@@ -1490,10 +1490,10 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                 modifier = Modifier.weight(1f).fillMaxWidth()
             ) {
                 LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(5.dp)
-            ) {
+                    state = listState,
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
                 items(visibleMessages, key = { it.id }) { m ->
                     val mine = m.senderId == api.userId()
                     val isSelected = selectedForActions?.id == m.id
@@ -1702,19 +1702,15 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                         }
                     }
                 }
-                }
+            }
 
                 if (showLatestButton && chatSearch.isBlank() && selectedForActions == null && messages.isNotEmpty()) {
-                    Surface(
-                    tonalElevation = 3.dp,
-                    shape = CircleShape,
-                    modifier = Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(end = 14.dp, bottom = 14.dp)
-                        .size(40.dp)
-                ) {
                     IconButton(
-                        onClick = { scope.launch { listState.animateScrollToItem(messages.lastIndex) } }
+                        onClick = { scope.launch { listState.animateScrollToItem(messages.lastIndex) } },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 14.dp, bottom = 14.dp)
+                            .size(40.dp)
                     ) {
                         Icon(
                             Icons.Default.KeyboardArrowDown,
