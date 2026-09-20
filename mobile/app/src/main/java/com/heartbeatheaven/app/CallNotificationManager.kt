@@ -72,7 +72,7 @@ internal object CallNotificationManager {
         incomingRingtone = null
     }
 
-    fun showIncoming(context: Context, callId: String, callType: String) {
+    fun showIncoming(context: Context, callId: String, callType: String, fullScreen: Boolean = true) {
         ensureChannel(context)
 
         // Start the actual phone ringtone immediately when the incoming call
@@ -83,11 +83,13 @@ internal object CallNotificationManager {
         val openIntent = Intent(context, CallActivity::class.java).apply {
             putExtra(EXTRA_CALL_ID, callId)
             putExtra("call_type", callType)
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
         val answerIntent = Intent(context, CallActivity::class.java).apply {
             putExtra(EXTRA_CALL_ID, callId)
             putExtra("call_type", callType)
             putExtra("answer_now", true)
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
         val declineIntent = Intent(context, CallActionReceiver::class.java).apply {
             action = ACTION_DECLINE
@@ -110,7 +112,7 @@ internal object CallNotificationManager {
             .setAutoCancel(false)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(content)
-            .setFullScreenIntent(content, true)
+            .setFullScreenIntent(content, fullScreen)
 
         if (Build.VERSION.SDK_INT >= 31) {
             builder.setStyle(NotificationCompat.CallStyle.forIncomingCall(caller, decline, answer))
