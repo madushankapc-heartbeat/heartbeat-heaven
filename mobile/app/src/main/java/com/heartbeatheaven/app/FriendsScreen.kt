@@ -1712,11 +1712,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                             .padding(end = 14.dp, bottom = 14.dp)
                             .size(40.dp)
                     ) {
-                        Icon(
-                            Icons.Default.KeyboardArrowDown,
-                            contentDescription = "Latest",
-                            modifier = Modifier.size(22.dp)
-                        )
+                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Latest", modifier = Modifier.size(22.dp))
                     }
                 }
             }
@@ -2122,5 +2118,4 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
         }
     }
-}
 }
