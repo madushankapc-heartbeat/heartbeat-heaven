@@ -957,7 +957,18 @@ class CallActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        if (running && !cleanedUp) configureCallAudio()
+        if (running && !cleanedUp) {
+            configureCallAudio()
+            // Returning from Chat must restore the existing call UI state.
+            // Do not reinitialize WebRTC or create a second call session.
+            if (::endButton.isInitialized && call != null) {
+                when {
+                    callAnswered -> setActiveControls()
+                    isCaller -> setOutgoingControls()
+                    else -> setIncomingControls()
+                }
+            }
+        }
     }
 
     override fun onDestroy() {
