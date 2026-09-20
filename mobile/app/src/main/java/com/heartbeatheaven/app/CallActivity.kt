@@ -664,6 +664,7 @@ class CallActivity : Activity() {
                     peer?.setRemoteDescription(object : SdpObserver {
                         override fun onCreateSuccess(p0: SessionDescription?) {}
                         override fun onSetSuccess() {
+                            flushPendingRemoteIce()
                             peer?.createAnswer(object : SdpObserver {
                                 override fun onCreateSuccess(answer: SessionDescription) {
                                     peer?.setLocalDescription(object : SdpObserver {
@@ -766,6 +767,7 @@ class CallActivity : Activity() {
                             override fun onCreateSuccess(p0: SessionDescription?) {}
                             override fun onSetSuccess() {
                                 stopCallTone()
+                                flushPendingRemoteIce()
                                 lastRemoteAnswerSdp = c.answerSdp
                                 setActiveControls()
                                 statusPanel.text = if (isVideoEnabled) "Video connected" else "Connected"
@@ -783,6 +785,7 @@ class CallActivity : Activity() {
                             override fun onCreateSuccess(p0: SessionDescription?) {}
                             override fun onSetSuccess() {
                                 lastRemoteOfferSdp = c.offerSdp
+                                flushPendingRemoteIce()
                                 peer?.createAnswer(object : SdpObserver {
                                     override fun onCreateSuccess(answer: SessionDescription) {
                                         peer?.setLocalDescription(object : SdpObserver {
@@ -809,7 +812,7 @@ class CallActivity : Activity() {
                 while (remoteIceCount < ice.length()) {
                     val j = ice.getJSONObject(remoteIceCount++)
                     val candidate = IceCandidate(j.optString("sdpMid"), j.optInt("sdpMLineIndex"), j.optString("candidate"))
-                    withContext(Dispatchers.Main) { peer?.addIceCandidate(candidate) }
+                    withContext(Dispatchers.Main) { addRemoteIceCandidateSafely(candidate) }
                 }
 
                 if (c.status in listOf("declined", "missed", "ended", "failed", "cancelled")) {
