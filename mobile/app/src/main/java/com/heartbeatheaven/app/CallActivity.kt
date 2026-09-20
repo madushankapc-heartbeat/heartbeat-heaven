@@ -73,6 +73,24 @@ class CallActivity : Activity() {
     private val auth by lazy { AuthApi(applicationContext) }
     private val callApi by lazy { CallApi(applicationContext, auth) }
     private val egl by lazy { EglBase.create() }
+    private var signalCoordinator: CallSignalCoordinator? = null
+    private val callStateMachine = CallStateMachine(
+        onStateChanged = { state ->
+            runOnUiThread {
+                when (state) {
+                    CallState.RINGING -> if (!isCaller) statusPanel.text = "Incoming call"
+                    CallState.CONNECTING -> if (running) statusPanel.text = "Connecting…"
+                    CallState.CONNECTED -> if (running) {
+                        stopCallTone()
+                        statusPanel.text = if (isVideoEnabled) "Video connected" else "Connected"
+                        if (::endButton.isInitialized) setActiveControls()
+                    }
+                    CallState.FAILED -> if (running) statusPanel.text = "Call failed"
+                    else -> Unit
+                }
+            }
+        }
+    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -757,52 +775,69 @@ class CallActivity : Activity() {
     }
 
     private fun startSignalLoop() {
-        scope.launch(Dispatchers.IO) {
-            while (isActive && running) {
-                val c = callApi.get(call!!.id) ?: break
-                call = c
+        val id = call?.id ?: return
+        callStateMachine.dispatch(if (isCaller) CallEvent.StartOutgoing else CallEvent.Incoming)
 
-                if (isCaller && c.status == "ringing" && c.answerSdp == null &&
-                    System.currentTimeMillis() - ringStartedAt >= 20000L) {
-                    playBusyTone()
+        signalCoordinator = CallSignalCoordinator(
+            context = applicationContext,
+            auth = auth,
+            callApi = callApi,
+            callId = id,
+            onSession = { session ->
+                if (!running) return@CallSignalCoordinator
+                call = session
+
+                if (isCaller && session.status == "ringing" &&
+                    session.answerSdp == null &&
+                    System.currentTimeMillis() - ringStartedAt >= 20_000L) {
+                    callStateMachine.dispatch(CallEvent.Error)
                     runOnUiThread { statusPanel.text = "User unavailable" }
-                    runCatching { callApi.updateStatus(call!!.id, "failed") }
-                    delay(1200)
-                    finishWithoutRemoteUpdate()
-                    break
+                    scope.launch(Dispatchers.IO) {
+                        runCatching { callApi.updateStatus(id, "failed") }
+                        delay(1200)
+                        withContext(Dispatchers.Main) { finishWithoutRemoteUpdate() }
+                    }
+                    return@CallSignalCoordinator
                 }
 
-                if (isCaller && c.answerSdp != null && c.answerSdp != lastRemoteAnswerSdp) {
-                    withContext(Dispatchers.Main) {
+                if (isCaller && !session.answerSdp.isNullOrBlank() &&
+                    session.answerSdp != lastRemoteAnswerSdp) {
+                    callStateMachine.dispatch(CallEvent.Accept)
+                    runOnUiThread {
                         peer?.setRemoteDescription(object : SdpObserver {
                             override fun onCreateSuccess(p0: SessionDescription?) {}
                             override fun onSetSuccess() {
                                 stopCallTone()
                                 flushPendingRemoteIce()
-                                lastRemoteAnswerSdp = c.answerSdp
+                                lastRemoteAnswerSdp = session.answerSdp
+                                callStateMachine.dispatch(CallEvent.PeerConnected)
                                 setActiveControls()
                                 statusPanel.text = if (isVideoEnabled) "Video connected" else "Connected"
                             }
                             override fun onCreateFailure(e: String?) { statusPanel.text = e ?: "Answer failed" }
                             override fun onSetFailure(e: String?) { statusPanel.text = e ?: "Answer failed" }
-                        }, SessionDescription(SessionDescription.Type.ANSWER, c.answerSdp))
+                        }, SessionDescription(SessionDescription.Type.ANSWER, session.answerSdp))
                     }
                 }
 
-                if (!isCaller && !c.offerSdp.isNullOrBlank() && c.offerSdp != lastRemoteOfferSdp && peer?.remoteDescription != null) {
-                    val offer = SessionDescription(SessionDescription.Type.OFFER, c.offerSdp)
-                    withContext(Dispatchers.Main) {
+                if (!isCaller && !session.offerSdp.isNullOrBlank() &&
+                    session.offerSdp != lastRemoteOfferSdp &&
+                    peer?.remoteDescription != null) {
+                    val offer = SessionDescription(SessionDescription.Type.OFFER, session.offerSdp)
+                    runOnUiThread {
                         peer?.setRemoteDescription(object : SdpObserver {
                             override fun onCreateSuccess(p0: SessionDescription?) {}
                             override fun onSetSuccess() {
-                                lastRemoteOfferSdp = c.offerSdp
+                                lastRemoteOfferSdp = session.offerSdp
                                 flushPendingRemoteIce()
                                 peer?.createAnswer(object : SdpObserver {
                                     override fun onCreateSuccess(answer: SessionDescription) {
                                         peer?.setLocalDescription(object : SdpObserver {
                                             override fun onCreateSuccess(p0: SessionDescription?) {}
                                             override fun onSetSuccess() {
-                                                scope.launch(Dispatchers.IO) { runCatching { callApi.publishAnswer(call!!.id, answer.description) } }
+                                                scope.launch(Dispatchers.IO) {
+                                                    runCatching { callApi.publishAnswer(id, answer.description) }
+                                                }
                                             }
                                             override fun onCreateFailure(e: String?) {}
                                             override fun onSetFailure(e: String?) {}
@@ -819,34 +854,52 @@ class CallActivity : Activity() {
                     }
                 }
 
-                val ice = if (isCaller) c.calleeIce else c.callerIce
+                val ice = if (isCaller) session.calleeIce else session.callerIce
                 while (remoteIceCount < ice.length()) {
-                    val j = ice.getJSONObject(remoteIceCount++)
-                    val candidate = IceCandidate(j.optString("sdpMid"), j.optInt("sdpMLineIndex"), j.optString("candidate"))
-                    withContext(Dispatchers.Main) { addRemoteIceCandidateSafely(candidate) }
+                    val j = ice.optJSONObject(remoteIceCount++) ?: continue
+                    val candidate = IceCandidate(
+                        j.optString("sdpMid"),
+                        j.optInt("sdpMLineIndex"),
+                        j.optString("candidate")
+                    )
+                    runOnUiThread { addRemoteIceCandidateSafely(candidate) }
                 }
 
-                if (c.status in listOf("declined", "missed", "ended", "failed", "cancelled")) {
+                if (session.status in listOf("declined", "missed", "ended", "failed", "cancelled")) {
+                    callStateMachine.dispatch(CallEvent.PeerEnded)
                     CallNotificationManager.cancelIncoming(this@CallActivity)
-                    runOnUiThread { statusPanel.text = when (c.status) {
-                        "ended" -> "Call ended"
-                        "cancelled" -> "Call cancelled"
-                        "failed" -> "Call failed"
-                        "missed" -> "Missed call"
-                        else -> "Call declined"
-                    }}
-                    delay(500)
-                    finishWithoutRemoteUpdate()
-                    break
+                    runOnUiThread {
+                        statusPanel.text = when (session.status) {
+                            "ended" -> "Call ended"
+                            "cancelled" -> "Call cancelled"
+                            "failed" -> "Call failed"
+                            "missed" -> "Missed call"
+                            else -> "Call declined"
+                        }
+                    }
+                    scope.launch {
+                        delay(500)
+                        withContext(Dispatchers.Main) { finishWithoutRemoteUpdate() }
+                    }
                 }
-                delay(1000)
+            },
+            onTransport = { connected ->
+                if (!running) return@CallSignalCoordinator
+                callStateMachine.dispatch(
+                    if (connected) CallEvent.TransportRestored else CallEvent.TransportLost
+                )
+                if (!connected && callStateMachine.state == CallState.CONNECTING) {
+                    runOnUiThread { statusPanel.text = "Network reconnecting…" }
+                }
             }
-        }
+        )
+        signalCoordinator?.start()
     }
 
     private fun finishCall(statusValue: String) {
         if (!running) return
         running = false
+        callStateMachine.dispatch(CallEvent.LocalEnded)
         stopCallTone()
         controlsHideJob?.cancel()
         val id = call?.id
@@ -871,6 +924,8 @@ class CallActivity : Activity() {
     private fun cleanup() {
         if (cleanedUp) return
         cleanedUp = true
+        signalCoordinator?.stop()
+        signalCoordinator = null
         CallKeepAliveService.stop(this)
         stopCallTone()
         runCatching { capturer?.stopCapture() }
