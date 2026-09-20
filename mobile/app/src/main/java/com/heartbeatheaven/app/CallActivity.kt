@@ -13,6 +13,7 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.util.Rational
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -455,8 +456,10 @@ class CallActivity : Activity() {
         relayOnly: Boolean,
         video: Boolean
     ) {
+        // Keep TURN available, but do not force relay-only. Some carrier/device
+        // paths fail with RELAY even though direct/STUN connectivity works.
         val config = PeerConnection.RTCConfiguration(iceServers).apply {
-            if (relayOnly) iceTransportsType = PeerConnection.IceTransportsType.RELAY
+            iceTransportsType = PeerConnection.IceTransportsType.ALL
         }
         peer = factory!!.createPeerConnection(
             config,
@@ -469,24 +472,40 @@ class CallActivity : Activity() {
                         }
                     }
                 }
-                override fun onIceCandidateError(event: IceCandidateErrorEvent) {}
+                override fun onIceCandidateError(event: IceCandidateErrorEvent) {
+                    Log.w("HeartbeatCall", "ICE candidate error " + event.errorCode + " " + event.errorText + " " + event.address + ":" + event.port)
+                }
                 override fun onIceCandidatesRemoved(c: Array<out IceCandidate>) {}
                 override fun onSignalingChange(s: PeerConnection.SignalingState) {}
                 override fun onIceConnectionChange(s: PeerConnection.IceConnectionState) {
-                    runOnUiThread { statusPanel.text = when (s) {
-                        PeerConnection.IceConnectionState.CONNECTED, PeerConnection.IceConnectionState.COMPLETED -> "Connected"
-                        PeerConnection.IceConnectionState.CHECKING -> "Connecting…"
-                        PeerConnection.IceConnectionState.DISCONNECTED -> "Network reconnecting…"
-                        PeerConnection.IceConnectionState.FAILED -> "Connection failed"
-                        else -> statusPanel.text
-                    }}
+                    Log.d("HeartbeatCall", "ICE state=" + s + " call=" + call?.id + " caller=" + isCaller)
+                    runOnUiThread {
+                        statusPanel.text = when (s) {
+                            PeerConnection.IceConnectionState.CHECKING -> "Connecting…"
+                            PeerConnection.IceConnectionState.DISCONNECTED -> "Network reconnecting…"
+                            PeerConnection.IceConnectionState.FAILED -> "Connection failed"
+                            else -> statusPanel.text
+                        }
+                    }
                 }
                 override fun onStandardizedIceConnectionChange(s: PeerConnection.IceConnectionState) {}
                 override fun onConnectionChange(s: PeerConnection.PeerConnectionState) {
-                    if (s == PeerConnection.PeerConnectionState.CONNECTED) runOnUiThread { stopCallTone(); statusPanel.text = "Connected" }
+                    Log.d("HeartbeatCall", "PeerConnection state=" + s + " call=" + call?.id + " caller=" + isCaller)
+                    if (s == PeerConnection.PeerConnectionState.CONNECTED) {
+                        runOnUiThread {
+                            stopCallTone()
+                            statusPanel.text = if (isVideoEnabled) "Video connected" else "Connected"
+                            if (::endButton.isInitialized) setActiveControls()
+                        }
+                        callStateMachine.dispatch(CallEvent.PeerConnected)
+                    }
                 }
-                override fun onIceConnectionReceivingChange(receiving: Boolean) {}
-                override fun onIceGatheringChange(s: PeerConnection.IceGatheringState) {}
+                override fun onIceConnectionReceivingChange(receiving: Boolean) {
+                    Log.d("HeartbeatCall", "ICE receiving=" + receiving + " call=" + call?.id)
+                }
+                override fun onIceGatheringChange(s: PeerConnection.IceGatheringState) {
+                    Log.d("HeartbeatCall", "ICE gathering=" + s + " call=" + call?.id)
+                }
                 override fun onAddStream(stream: MediaStream) {
                     runOnUiThread { stream.videoTracks.firstOrNull()?.addSink(remoteView) }
                 }
@@ -508,7 +527,9 @@ class CallActivity : Activity() {
                         if (track is VideoTrack) runOnUiThread { track.addSink(remoteView) }
                     }
                 }
-                override fun onSelectedCandidatePairChanged(event: CandidatePairChangeEvent) {}
+                override fun onSelectedCandidatePairChanged(event: CandidatePairChangeEvent) {
+                    Log.d("HeartbeatCall", "ICE selected pair call=" + call?.id + " local=" + event.localCandidate?.address + ":" + event.localCandidate?.port + " remote=" + event.remoteCandidate?.address + ":" + event.remoteCandidate?.port + " reason=" + event.reason)
+                }
             }
         ) ?: error("Could not create WebRTC connection")
 
@@ -686,10 +707,30 @@ class CallActivity : Activity() {
                     peer!!.setLocalDescription(object : SdpObserver {
                         override fun onCreateSuccess(p0: SessionDescription?) {}
                         override fun onSetSuccess() {
-                            scope.launch(Dispatchers.IO) { callApi.publishOffer(call!!.id, sdp.description) }
+                            scope.launch(Dispatchers.IO) {
+                                runCatching { callApi.publishOffer(call!!.id, sdp.description) }
+                                    .onSuccess {
+                                        withContext(Dispatchers.Main) {
+                                            if (running) {
+                                                statusPanel.text = "Ringing…"
+                                                startCallTone(ToneGenerator.TONE_SUP_RINGTONE)
+                                            }
+                                        }
+                                    }
+                                    .onFailure { error ->
+                                        withContext(Dispatchers.Main) {
+                                            if (running) {
+                                                statusPanel.text = error.message ?: "Could not start call"
+                                                callStateMachine.dispatch(CallEvent.Error)
+                                            }
+                                        }
+                                    }
+                            }
                         }
                         override fun onCreateFailure(e: String?) {}
-                        override fun onSetFailure(e: String?) {}
+                        override fun onSetFailure(e: String?) {
+                            runOnUiThread { statusPanel.text = e ?: "Could not set offer" }
+                        }
                     }, sdp)
                 }
                 override fun onSetSuccess() {}
@@ -697,8 +738,7 @@ class CallActivity : Activity() {
                 override fun onSetFailure(e: String?) {}
             }, MediaConstraints())
         }
-        statusPanel.text = "Ringing…"
-        startCallTone(ToneGenerator.TONE_SUP_RINGTONE)
+        statusPanel.text = "Creating call…"
     }
 
     private fun answerIncoming() {
