@@ -385,6 +385,13 @@ class CallActivity : Activity() {
                 } else error("Missing call information")
                 CallKeepAliveService.start(this@CallActivity)
                 setupPeer(type == "video")
+                if (isCaller) {
+                    // Start the caller timeout clock BEFORE the realtime coordinator.
+                    // The coordinator can immediately receive the existing "ringing"
+                    // snapshot; if the clock is still zero, that snapshot looks like
+                    // a 20+ second timeout and the caller is closed immediately.
+                    ringStartedAt = System.currentTimeMillis()
+                }
                 // Start realtime delivery before the Answer flow. This removes a
                 // timing gap where the callee could answer before the call-session
                 // coordinator was listening for the caller's SDP/ICE updates.
