@@ -961,9 +961,16 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
         val visibleMessages = searchResults ?: messages
 
         LaunchedEffect(chat.id) {
-            snapshotFlow { listState.firstVisibleItemIndex }.collectLatest { first ->
-                showLatestButton = messages.isNotEmpty() && first < messages.lastIndex - 3
-                if (first <= 2 && chatSearch.isBlank() && !loadingOlderMessages && hasOlderMessages && messages.isNotEmpty()) {
+            snapshotFlow {
+                listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1
+            }.collectLatest { lastVisible ->
+                // "At latest" must be based on the LAST visible message, not the first.
+                // Using firstVisibleItemIndex made showLatestButton true even while the
+                // user was already at the bottom of a long chat, so incoming messages
+                // could remain hidden underneath the composer.
+                val atLatest = messages.isNotEmpty() && lastVisible >= messages.lastIndex - 1
+                showLatestButton = messages.isNotEmpty() && !atLatest
+                if (lastVisible <= 2 && chatSearch.isBlank() && !loadingOlderMessages && hasOlderMessages && messages.isNotEmpty()) {
                     loadingOlderMessages = true
                     val oldest = messages.first()
                     runCatching { api.messagesPage(chat.id, oldest.createdAt) }
