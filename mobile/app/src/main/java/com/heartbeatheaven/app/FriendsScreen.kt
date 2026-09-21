@@ -49,6 +49,7 @@ import java.time.temporal.ChronoUnit
 private const val FRIENDS_SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.co"
 private const val FRIENDS_KEY = "sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
 private data class FriendUser(val id: String, val username: String, val gender: String, val avatarUrl: String = "", val lastSeenAt: String = "", val lastSeenVisibility: String = "everyone")
+private enum class FriendSearchState { Idle, Loading, Results, Empty, Error }
 private data class FriendProfile(val id: String, val username: String, val gender: String, val bio: String = "", val lastSeenAt: String, val avatarUrl: String = "", val lastSeenVisibility: String = "everyone")
 private data class FriendRequest(val id: String, val user: FriendUser, val incoming: Boolean)
 private data class ChatSummary(val user: FriendUser, val lastMessage: String, val lastMessageAt: String, val unreadCount: Int, val pinned: Boolean, val muted: Boolean)
@@ -574,6 +575,8 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
     var checkingSession by remember { mutableStateOf(true) }
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<FriendUser>>(emptyList()) }
+    var searchState by remember { mutableStateOf(FriendSearchState.Idle) }
+    var searchError by remember { mutableStateOf<String?>(null) }
     var online by remember { mutableStateOf<List<FriendUser>>(emptyList()) }
     var friends by remember { mutableStateOf<List<FriendUser>>(emptyList()) }
     var chatSummaries by remember { mutableStateOf<List<ChatSummary>>(emptyList()) }
@@ -1786,16 +1789,47 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     query,
-                    { query = it },
+                    {
+                        query = it
+                        results = emptyList()
+                        searchError = null
+                        searchState = if (it.isBlank()) FriendSearchState.Idle else FriendSearchState.Idle
+                    },
                     Modifier.weight(1f),
                     label = { Text("Search username") },
                     singleLine = true
                 )
-                Button(enabled = query.isNotBlank(), onClick = {
+                Button(enabled = query.isNotBlank() && searchState != FriendSearchState.Loading, onClick = {
                     scope.launch {
-                        results = runCatching { api.search(query) }.getOrElse { statusMessage = it.message; emptyList() }
+                        val term = query.trim()
+                        if (term.isBlank()) {
+                            results = emptyList()
+                            searchError = null
+                            searchState = FriendSearchState.Idle
+                            return@launch
+                        }
+                        searchState = FriendSearchState.Loading
+                        searchError = null
+                        statusMessage = null
+                        results = emptyList()
+                        runCatching { api.search(term) }
+                            .onSuccess {
+                                results = it
+                                searchState = if (it.isEmpty()) FriendSearchState.Empty else FriendSearchState.Results
+                            }
+                            .onFailure {
+                                results = emptyList()
+                                searchError = it.message ?: "Could not search users."
+                                searchState = FriendSearchState.Error
+                            }
                     }
-                }) { Text("Search") }
+                }) {
+                    if (searchState == FriendSearchState.Loading) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text("Search")
+                    }
+                }
             }
         }
         item {
@@ -1812,10 +1846,28 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                 )
             }
         }
-        if (query.isNotBlank() && results.isEmpty()) {
-            item {
+        when (searchState) {
+            FriendSearchState.Loading -> item {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text("Searching...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            FriendSearchState.Empty -> item {
                 Text("No users found.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            FriendSearchState.Error -> item {
+                Text(
+                    searchError ?: "Could not search users.",
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+            else -> Unit
         }
         if (results.isNotEmpty()) {
             item { Text("Search results", style = MaterialTheme.typography.titleMedium) }
