@@ -940,7 +940,8 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             chatProfile = runCatching { api.profile(chat.id) }.getOrNull()
             chatMuted = runCatching { api.isMuted(chat.id) }.getOrDefault(false)
             chatPinned = runCatching { api.isPinned(chat.id) }.getOrDefault(false)
-            chatBlocked = runCatching { api.isBlocked(chat.id) }.getOrDefault(false)            chatSearch = ""
+            chatBlocked = runCatching { api.isBlocked(chat.id) }.getOrDefault(false)
+            chatSearch = ""
             showChatSearch = false
             showChatMenu = false
         }
