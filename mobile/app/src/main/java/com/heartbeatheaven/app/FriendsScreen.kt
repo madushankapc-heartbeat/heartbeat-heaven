@@ -619,6 +619,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
     var showChatProfile by remember { mutableStateOf(false) }
     var chatFriendSince by remember { mutableStateOf("") }
     var showChatMenu by remember { mutableStateOf(false) }
+    var showChatThemeDialog by remember { mutableStateOf(false) }
     var showChatSearch by remember { mutableStateOf(false) }
     var chatSearch by remember { mutableStateOf("") }
     var chatMuted by remember { mutableStateOf(false) }
@@ -673,6 +674,23 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             statusMessage = null
             mediaProgress = 0
             mediaProgressLabel = ""
+        }
+    }
+
+    val chatWallpaperPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val chat = selected
+        if (uri != null && chat != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            ChatThemeStore(context).setWallpaper(chat.id, uri.toString())
+            chatWallpaperUri = uri.toString()
+        }
+        if (uri != null && chat != null) {
+            statusMessage = "Chat wallpaper updated."
         }
     }
 
@@ -936,6 +954,10 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
 
     if (selected != null) {
         val chat = selected!!
+        val chatThemeStore = remember { ChatThemeStore(context) }
+        var chatThemeId by remember(chat.id) { mutableStateOf(chatThemeStore.themeId(chat.id)) }
+        var chatWallpaperUri by remember(chat.id) { mutableStateOf(chatThemeStore.wallpaperUri(chat.id)) }
+        val chatTheme = chatThemeOption(chatThemeId)
         val typingClient = remember(api, chat.id) {
             api?.let { a ->
                 RealtimeTypingClient(
@@ -1008,6 +1030,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             chatSearch = ""
             showChatSearch = false
             showChatMenu = false
+            showChatThemeDialog = false
         }
 
         if (showChatProfile) {
@@ -1256,6 +1279,28 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             )
         }
 
+        if (showChatThemeDialog) {
+            ChatThemePickerDialog(
+                selectedThemeId = chatThemeId,
+                hasWallpaper = chatWallpaperUri.isNotBlank(),
+                onThemeSelected = { option ->
+                    chatThemeId = option.id
+                    chatThemeStore.setTheme(chat.id, option.id)
+                    showChatThemeDialog = false
+                    statusMessage = "Chat theme: ${option.name}"
+                },
+                onPickWallpaper = {
+                    chatWallpaperPicker.launch(arrayOf("image/*"))
+                },
+                onRemoveWallpaper = {
+                    chatWallpaperUri = ""
+                    chatThemeStore.setWallpaper(chat.id, null)
+                    statusMessage = "Chat wallpaper removed."
+                },
+                onDismiss = { showChatThemeDialog = false }
+            )
+        }
+
         fullScreenImage?.let { image ->
             Dialog(
                 onDismissRequest = { fullScreenImage = null },
@@ -1284,8 +1329,22 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             }
         }
 
-        Column(Modifier.fillMaxSize()) {
-            Surface(shadowElevation = 2.dp) {
+        Box(Modifier.fillMaxSize()) {
+            if (chatWallpaperUri.isNotBlank()) {
+                AsyncImage(
+                    model = Uri.parse(chatWallpaperUri),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    alpha = 0.18f
+                )
+            }
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = chatTheme.background.copy(alpha = if (chatWallpaperUri.isBlank()) 1f else 0.90f)
+            ) {
+                Column(Modifier.fillMaxSize()) {
+                    Surface(shadowElevation = 2.dp) {
                 if (selectedForActions != null) {
                     Row(
                         Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp),
@@ -1352,6 +1411,13 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                 DropdownMenuItem(
                                     text = { Text("🔍 Search messages") },
                                     onClick = { showChatMenu = false; showChatSearch = !showChatSearch; if (!showChatSearch) chatSearch = "" }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("🎨 Chat Theme") },
+                                    onClick = {
+                                        showChatMenu = false
+                                        showChatThemeDialog = true
+                                    }
                                 )
                                 DropdownMenuItem(
                                     text = { Text(if (chatPinned) "📌 Unpin chat" else "📌 Pin chat") },
@@ -1491,7 +1557,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                     ) {
                         Column(horizontalAlignment = if (mine) Alignment.End else Alignment.Start) {
                             Surface(
-                                color = if (mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                                color = if (mine) chatTheme.myBubble else chatTheme.otherBubble,
                                 shape = RoundedCornerShape(18.dp),
                                 modifier = Modifier
                                     .then(if (isHighlighted) Modifier.padding(2.dp) else Modifier)
@@ -1851,6 +1917,8 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                     }) { Icon(Icons.Default.Send, "Send") }
                 }
 
+                }
+            }
                 }
             }
         }
