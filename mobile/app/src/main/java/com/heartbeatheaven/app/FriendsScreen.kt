@@ -1008,6 +1008,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                         val bio = chatProfile?.bio.orEmpty()
                         if (bio.isNotBlank()) Text("Bio: $bio")
                         if (chatFriendSince.isNotBlank()) Text("Friends since ${ChatTimeFormatter.dateLabel(chatFriendSince)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        val seen = chatProfile?.lastSeenAt.orEmpty()
                         Text(if (online.any { it.id == chat.id }) "Online now" else if (seen.isBlank()) "Last seen: unknown" else "Last seen: ${ChatTimeFormatter.time(seen)}")
                         Text(if (chatBlocked) "Blocked" else "Not blocked", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
