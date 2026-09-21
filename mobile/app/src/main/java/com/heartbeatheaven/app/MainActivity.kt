@@ -154,7 +154,7 @@ private fun Progress(position: Long, duration: Long, onSeek: (Long) -> Unit, sma
 private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit) {
     val context = LocalContext.current
     var songs by remember { mutableStateOf<List<Song>>(emptyList()) }; var loading by remember { mutableStateOf(true) }; var error by remember { mutableStateOf<String?>(null) }
-    var tab by remember { mutableStateOf(0) }; var search by remember { mutableStateOf("") }; var selected by remember { mutableStateOf<Song?>(null) }
+    var tab by remember { mutableStateOf(0) }; var search by remember { mutableStateOf("") }; var selected by remember { mutableStateOf<Song?>(null) }; var showNotifications by remember { mutableStateOf(false) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
     var refreshing by remember { mutableStateOf(false) }
     val favorites = remember { FavoriteStore(context) }; var favoriteIds by remember { mutableStateOf(favorites.ids()) }
@@ -187,6 +187,11 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
         topBar = { TopAppBar(
         title = { Column { Text("HEARTBEAT HEAVEN", fontWeight = FontWeight.Bold); Text("Original Music by Madushanka", fontSize = 11.sp) } },
         actions = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { showNotifications = true }) {
+                    Icon(Icons.Default.Notifications, "Notifications")
+                }
+            }
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
@@ -231,6 +236,7 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             when {
+                showNotifications -> NotificationsScreen(onBack = { showNotifications = false })
                 tab == 1 -> FriendsScreen(refreshTrigger)
                 tab == 4 -> AccountScreen(refreshTrigger)
                 selected != null -> DetailScreen(selected!!, songId, playing, position, duration, { selected = null }, { target -> if (songId == target.id && playing) onPause() else onPlay(target) }, onSeek, { favoriteIds = favorites.toggle(selected!!.id) }, { shareSong(context, selected!!) })
