@@ -2118,31 +2118,61 @@ async function cleanupStoryStorage() {
       Date.now() - 10 * 24 * 60 * 60 * 1000
     ).toISOString();
 
-    const { data: oldObjects, error: objectsError } = await supabase
+    const { data: userFolders, error: foldersError } = await supabase
       .storage
       .from("stories")
       .list("", {
         limit: 1000,
         offset: 0,
-        sortBy: { column: "created_at", order: "asc" }
+        sortBy: { column: "name", order: "asc" }
       });
 
-    if (objectsError) {
-      console.error("Story orphan cleanup list failed:", objectsError);
+    if (foldersError) {
+      console.error("Story orphan cleanup folder list failed:", foldersError);
       return;
     }
 
-    const files = (oldObjects || []).filter(
-      (item) =>
-        item.id &&
-        item.created_at &&
-        new Date(item.created_at).toISOString() < cutoff
-    );
+    const files = [];
+
+    for (const folder of userFolders || []) {
+      if (!folder.name || folder.id) continue;
+
+      const { data: folderFiles, error: folderError } = await supabase
+        .storage
+        .from("stories")
+        .list(folder.name, {
+          limit: 1000,
+          offset: 0,
+          sortBy: { column: "created_at", order: "asc" }
+        });
+
+      if (folderError) {
+        console.error(
+          "Story orphan cleanup file list failed:",
+          folder.name,
+          folderError
+        );
+        continue;
+      }
+
+      for (const item of folderFiles || []) {
+        if (
+          item.id &&
+          item.created_at &&
+          new Date(item.created_at).toISOString() < cutoff
+        ) {
+          files.push({
+            ...item,
+            path: folder.name + "/" + item.name
+          });
+        }
+      }
+    }
 
     if (files.length === 0) return;
 
     const paths = files
-      .map((item) => item.name)
+      .map((item) => item.path)
       .filter(Boolean);
 
     const { data: referencedStories, error: referenceError } = await supabase
