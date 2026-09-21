@@ -1850,6 +1850,36 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                                     if (m.mediaName.isNotBlank()) {
                                                         Text(m.mediaName, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium, modifier = Modifier.widthIn(max = 280.dp).padding(top = 6.dp))
                                                     }
+                                                } else if (m.messageType == "audio") {
+                                                    Row(
+                                                        Modifier
+                                                            .widthIn(max = 280.dp)
+                                                            .wrapContentWidth(Alignment.Start)
+                                                            .clickable { toggleVoicePlayback(m) },
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Surface(
+                                                            modifier = Modifier.size(44.dp),
+                                                            shape = CircleShape,
+                                                            tonalElevation = 1.dp
+                                                        ) {
+                                                            Box(contentAlignment = Alignment.Center) {
+                                                                Icon(
+                                                                    if (voicePlayingId == m.id) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                                                    contentDescription = if (voicePlayingId == m.id) "Pause voice message" else "Play voice message"
+                                                                )
+                                                            }
+                                                        }
+                                                        Spacer(Modifier.width(9.dp))
+                                                        Column(Modifier.widthIn(max = 210.dp)) {
+                                                            Text("Voice message", fontWeight = FontWeight.Medium)
+                                                            Text(
+                                                                if (voicePlayingId == m.id) "Playing…" else formatAttachmentSize(m.mediaSize),
+                                                                style = MaterialTheme.typography.labelSmall,
+                                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                            )
+                                                        }
+                                                    }
                                                 } else {
                                                     Row(
                                                         Modifier.widthIn(max = 280.dp).wrapContentWidth(Alignment.Start).clickable {
