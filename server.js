@@ -2056,6 +2056,137 @@ app.get(
 security.installErrorHandler(app);
 
 /* =========================================================
+   STORY STORAGE CLEANUP
+   =========================================================
+   Storage objects are removed through the Storage API, never
+   by deleting rows from storage.objects directly.
+   - Expired Story rows are cleaned together with their media.
+   - Orphan Story media older than 10 days is a safety net for
+     Story rows that were already removed by the DB cron.
+   ========================================================= */
+
+let storyCleanupRunning = false;
+
+async function cleanupStoryStorage() {
+  if (storyCleanupRunning) return;
+  storyCleanupRunning = true;
+
+  try {
+    const nowIso = new Date().toISOString();
+
+    const { data: expiredStories, error: expiredError } = await supabase
+      .from("stories")
+      .select("id, storage_path, expires_at")
+      .lte("expires_at", nowIso)
+      .limit(1000);
+
+    if (expiredError) {
+      console.error("Story expiry cleanup query failed:", expiredError);
+    } else {
+      for (const story of expiredStories || []) {
+        try {
+          if (story.storage_path) {
+            const { error: removeError } = await supabase.storage
+              .from("stories")
+              .remove([story.storage_path]);
+
+            if (removeError) {
+              console.error(
+                "Story media delete failed:",
+                story.storage_path,
+                removeError
+              );
+              continue;
+            }
+          }
+
+          const { error: rowError } = await supabase
+            .from("stories")
+            .delete()
+            .eq("id", story.id);
+
+          if (rowError) {
+            console.error("Expired Story row delete failed:", story.id, rowError);
+          }
+        } catch (error) {
+          console.error("Expired Story cleanup failed:", story.id, error);
+        }
+      }
+    }
+
+    const cutoff = new Date(
+      Date.now() - 10 * 24 * 60 * 60 * 1000
+    ).toISOString();
+
+    const { data: oldObjects, error: objectsError } = await supabase
+      .storage
+      .from("stories")
+      .list("", {
+        limit: 1000,
+        offset: 0,
+        sortBy: { column: "created_at", order: "asc" }
+      });
+
+    if (objectsError) {
+      console.error("Story orphan cleanup list failed:", objectsError);
+      return;
+    }
+
+    const files = (oldObjects || []).filter(
+      (item) =>
+        item.id &&
+        item.created_at &&
+        new Date(item.created_at).toISOString() < cutoff
+    );
+
+    if (files.length === 0) return;
+
+    const paths = files
+      .map((item) => item.name)
+      .filter(Boolean);
+
+    const { data: referencedStories, error: referenceError } = await supabase
+      .from("stories")
+      .select("storage_path")
+      .in("storage_path", paths);
+
+    if (referenceError) {
+      console.error("Story orphan reference check failed:", referenceError);
+      return;
+    }
+
+    const referenced = new Set(
+      (referencedStories || [])
+        .map((row) => row.storage_path)
+        .filter(Boolean)
+    );
+
+    const orphanPaths = paths.filter((path) => !referenced.has(path));
+
+    if (orphanPaths.length === 0) return;
+
+    for (let i = 0; i < orphanPaths.length; i += 1000) {
+      const batch = orphanPaths.slice(i, i + 1000);
+      const { error: removeError } = await supabase
+        .storage
+        .from("stories")
+        .remove(batch);
+
+      if (removeError) {
+        console.error("Old Story orphan delete failed:", removeError);
+      }
+    }
+  } catch (error) {
+    console.error("Story storage cleanup failed:", error);
+  } finally {
+    storyCleanupRunning = false;
+  }
+}
+
+cleanupStoryStorage();
+setInterval(cleanupStoryStorage, 15 * 60 * 1000);
+
+/* =========================================================
    SERVER
    ========================================================= */
 
