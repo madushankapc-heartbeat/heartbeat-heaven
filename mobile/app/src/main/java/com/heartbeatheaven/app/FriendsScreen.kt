@@ -693,12 +693,14 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                 }
                 friends = friendList
                 coroutineScope {
+                    val requestsDeferred = async(Dispatchers.IO) { api.requests() }
                     val onlineDeferred = async(Dispatchers.IO) {
                         api.onlineUsers(friendList.mapTo(hashSetOf()) { it.id })
                     }
                     val summariesDeferred = async(Dispatchers.IO) {
                         api.chatSummaries(friendList)
                     }
+                    requests = requestsDeferred.await()
                     online = onlineDeferred.await()
                     chatSummaries = summariesDeferred.await()
                 }
