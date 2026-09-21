@@ -1,7 +1,13 @@
 package com.heartbeatheaven.app
 
+import android.Manifest
 import android.content.Intent
+import android.media.AudioAttributes
+import android.media.MediaPlayer
+import android.media.MediaRecorder
 import android.net.Uri
+import android.os.Build
+import android.os.SystemClock
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -640,6 +646,16 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
     var mediaProgressLabel by remember { mutableStateOf("") }
     var pendingMediaItems by remember { mutableStateOf<List<PendingChatAttachment>>(emptyList()) }
     var mediaUploadJob by remember { mutableStateOf<Job?>(null) }
+    var voiceRecorder by remember { mutableStateOf<MediaRecorder?>(null) }
+    var voiceFile by remember { mutableStateOf<java.io.File?>(null) }
+    var voiceRecording by remember { mutableStateOf(false) }
+    var voiceUploading by remember { mutableStateOf(false) }
+    var voiceElapsedMs by remember { mutableStateOf(0L) }
+    var voiceStartedAt by remember { mutableStateOf(0L) }
+    var voicePermissionPending by remember { mutableStateOf(false) }
+    var startVoiceAfterPermission by remember { mutableStateOf(false) }
+    var voicePlayingId by remember { mutableStateOf<String?>(null) }
+    var voicePlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var showLatestButton by remember { mutableStateOf(false) }
     var pendingLatestScroll by remember { mutableStateOf(false) }
     var fullScreenImage by remember { mutableStateOf<ChatMessage?>(null) }
@@ -666,6 +682,205 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             if (cursor.moveToFirst()) cursor.getLong(cursor.getColumnIndexOrThrow(android.provider.OpenableColumns.SIZE)) else -1L
         } ?: -1L
         return PendingChatAttachment(uri, name, context.contentResolver.getType(uri).orEmpty(), size)
+    }
+
+    fun stopVoicePlayback() {
+        voicePlayer?.runCatching { stop() }
+        voicePlayer?.release()
+        voicePlayer = null
+        voicePlayingId = null
+    }
+
+    fun startVoiceRecordingNow() {
+        val currentChat = selected ?: return
+        if (chatBlocked || mediaBusy || voiceUploading || voiceRecording) return
+        val output = VoiceMessageSupport.newRecordingFile(context)
+        runCatching {
+            val recorder = MediaRecorder()
+            recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
+            recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            recorder.setAudioEncodingBitRate(64000)
+            recorder.setAudioSamplingRate(44100)
+            recorder.setOutputFile(output.absolutePath)
+            recorder.setMaxDuration(5 * 60 * 1000)
+            recorder.setMaxFileSize(10L * 1024L * 1024L)
+            if (Build.VERSION.SDK_INT >= 30) recorder.setPrivacySensitive(true)
+            recorder.prepare()
+            recorder.start()
+            voiceRecorder = recorder
+            voiceFile = output
+            voiceStartedAt = SystemClock.elapsedRealtime()
+            voiceElapsedMs = 0L
+            voiceRecording = true
+            statusMessage = "Recording voice message…"
+        }.onFailure {
+            output.delete()
+            voiceRecorder?.release()
+            voiceRecorder = null
+            voiceFile = null
+            statusMessage = it.message ?: "Could not start voice recording."
+        }
+    }
+
+    fun stopVoiceRecording(send: Boolean) {
+        val recorder = voiceRecorder
+        val file = voiceFile
+        voiceRecorder = null
+        voiceFile = null
+        voiceRecording = false
+        voiceElapsedMs = SystemClock.elapsedRealtime() - voiceStartedAt
+        if (recorder != null) {
+            runCatching { recorder.stop() }
+            recorder.release()
+        }
+        if (!send || file == null) {
+            file?.delete()
+            statusMessage = if (send) "Voice recording was not saved." else "Voice recording cancelled."
+            return
+        }
+        if (voiceElapsedMs < 500L || file.length() <= 0L) {
+            file.delete()
+            statusMessage = "Voice message is too short."
+            return
+        }
+
+        val target = selected ?: run {
+            file.delete()
+            return
+        }
+        val authSession = session ?: run {
+            file.delete()
+            statusMessage = "Please log in again."
+            return
+        }
+        voiceUploading = true
+        mediaProgress = 0
+        mediaProgressLabel = "Uploading voice message…"
+        statusMessage = null
+        scope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    VoiceMessageSupport.upload(context, file, authSession, target.id) { sent, total ->
+                        if (total > 0L) {
+                            mediaProgress = (sent.toDouble() / total.toDouble() * 100.0).toInt().coerceIn(0, 99)
+                        }
+                    }
+                }
+                val media = result.getOrElse { throw it }
+                api.sendMediaMessage(target.id, media)
+                messages = api.messages(target.id)
+                withFrameNanos { }
+                if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+                reactions = api.reactions(target.id)
+                chatSummaries = api.chatSummaries()
+                mediaProgress = 100
+                mediaProgressLabel = "Voice message sent"
+                statusMessage = "Voice message sent."
+            } catch (error: Throwable) {
+                statusMessage = if (isBlockedSendError(error)) null else (error.message ?: "Voice message could not be sent.")
+            } finally {
+                file.delete()
+                voiceUploading = false
+                mediaProgress = 0
+                mediaProgressLabel = ""
+            }
+        }
+    }
+
+    val voicePermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        voicePermissionPending = false
+        if (granted) {
+            startVoiceAfterPermission = true
+        } else {
+            statusMessage = "Microphone permission is required for voice messages."
+        }
+    }
+
+    LaunchedEffect(startVoiceAfterPermission) {
+        if (startVoiceAfterPermission) {
+            startVoiceAfterPermission = false
+            startVoiceRecordingNow()
+        }
+    }
+
+    LaunchedEffect(voiceRecording) {
+        if (voiceRecording) {
+            while (voiceRecording) {
+                voiceElapsedMs = SystemClock.elapsedRealtime() - voiceStartedAt
+                if (voiceElapsedMs >= 5 * 60 * 1000L) {
+                    stopVoiceRecording(send = true)
+                    break
+                }
+                delay(250L)
+            }
+        }
+    }
+
+    DisposableEffect(selected?.id) {
+        onDispose {
+            voiceRecorder?.let { recorder ->
+                runCatching { recorder.stop() }
+                recorder.release()
+            }
+            voiceRecorder = null
+            voiceFile?.delete()
+            voiceFile = null
+            voicePlayer?.release()
+            voicePlayer = null
+            voicePlayingId = null
+        }
+    }
+
+    fun requestVoiceRecording() {
+        if (chatBlocked || mediaBusy || voiceUploading) return
+        if (androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            startVoiceRecordingNow()
+        } else {
+            voicePermissionPending = true
+            voicePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    fun toggleVoicePlayback(message: ChatMessage) {
+        if (voicePlayingId == message.id) {
+            stopVoicePlayback()
+            return
+        }
+        stopVoicePlayback()
+        runCatching {
+            val player = MediaPlayer()
+            voicePlayer = player
+            voicePlayingId = message.id
+            player.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .build()
+            )
+            player.setOnPreparedListener { it.start() }
+            player.setOnCompletionListener {
+                it.release()
+                if (voicePlayer === it) {
+                    voicePlayer = null
+                    voicePlayingId = null
+                }
+            }
+            player.setOnErrorListener { mp, _, _ ->
+                mp.release()
+                if (voicePlayer === mp) {
+                    voicePlayer = null
+                    voicePlayingId = null
+                }
+                statusMessage = "Could not play this voice message."
+                true
+            }
+            player.setDataSource(message.mediaUrl)
+            player.prepareAsync()
+        }.onFailure {
+            stopVoicePlayback()
+            statusMessage = it.message ?: "Could not play this voice message."
+        }
     }
 
     val mediaPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
@@ -750,6 +965,8 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
         messages = emptyList()
         searchResults = null
         pendingMediaItems = emptyList()
+        if (voiceRecording) stopVoiceRecording(send = false)
+        stopVoicePlayback()
         mediaProgress = 0
         mediaProgressLabel = ""
         fullScreenImage = null
@@ -1826,10 +2043,29 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                         maxLines = 4
                     )
                     Spacer(Modifier.width(2.dp))
-                    IconButton(enabled = !mediaBusy, onClick = { mediaPicker.launch(arrayOf("*/*")) }) {
+                    if (voiceRecording) {
+                        Text(
+                            String.format(java.util.Locale.US, "%02d:%02d", voiceElapsedMs / 60000L, (voiceElapsedMs / 1000L) % 60L),
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 12.dp)
+                        )
+                        IconButton(onClick = { stopVoiceRecording(send = false) }) {
+                            Icon(Icons.Default.Delete, "Cancel voice recording")
+                        }
+                        IconButton(onClick = { stopVoiceRecording(send = true) }) {
+                            Icon(Icons.Default.Send, "Send voice message")
+                        }
+                    } else {
+                        IconButton(enabled = !mediaBusy && !voiceUploading, onClick = { requestVoiceRecording() }) {
+                            Icon(Icons.Default.Mic, if (voiceUploading) "Sending voice message" else "Record voice message")
+                        }
+                    }
+                    Spacer(Modifier.width(2.dp))
+                    IconButton(enabled = !mediaBusy && !voiceUploading && !voiceRecording, onClick = { mediaPicker.launch(arrayOf("*/*")) }) {
                         Icon(Icons.Default.AttachFile, if (mediaBusy) "Sending attachment" else "Attach files")
                     }
-                    IconButton(enabled = !mediaBusy && (text.isNotBlank() || pendingMediaItems.isNotEmpty()), onClick = {
+                    IconButton(enabled = !mediaBusy && !voiceUploading && !voiceRecording && (text.isNotBlank() || pendingMediaItems.isNotEmpty()), onClick = {
                         val pendingItems = pendingMediaItems
                         val outgoing = text.trim()
                         val replyId = replyingTo?.id
