@@ -481,6 +481,16 @@ suspend fun unfriend(other: String) = withContext(Dispatchers.IO) {
         request("/rest/v1/messages?sender_id=eq.$other&receiver_id=eq.${userId()}&read_at=is.null", "PATCH", JSONObject().put("read_at", Instant.now().toString()).toString())
     }
 
+    suspend fun forwardMessage(other: String, message: ChatMessage) = withContext(Dispatchers.IO) {
+        if (message.deletedAt.isNotBlank()) error("Deleted messages cannot be forwarded.")
+        if (message.messageType != "text" && message.mediaUrl.isNotBlank()) {
+            val media = UploadedChatMedia(message.messageType, message.mediaUrl, message.mediaName.ifBlank { "attachment" }, message.mediaSize)
+            sendMediaMessage(other, media, message.body.trim())
+        } else {
+            sendMessage(other, message.body)
+        }
+    }
+
     suspend fun sendMediaMessage(other: String, media: UploadedChatMedia, caption: String = "") = withContext(Dispatchers.IO) {
         val payload = JSONObject().put("sender_id", userId()).put("receiver_id", other).put("body", caption.trim()).put("message_type", media.type).put("media_url", media.url).put("media_name", media.name).put("media_size", media.size)
         request("/rest/v1/messages", "POST", payload.toString())
@@ -598,6 +608,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
     var editingMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var editText by remember { mutableStateOf("") }
     var selectedMessage by remember { mutableStateOf<ChatMessage?>(null) }
+    var forwardingMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var replyingTo by remember { mutableStateOf<ChatMessage?>(null) }
     var highlightedMessageId by remember { mutableStateOf<String?>(null) }
     var deleteTarget by remember { mutableStateOf<ChatMessage?>(null) }
@@ -1073,6 +1084,59 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             )
         }
 
+        if (forwardingMessage != null) {
+            val targetMessage = forwardingMessage
+            val forwardFriends = friends.filter { it.id != api.userId() }
+            AlertDialog(
+                onDismissRequest = { if (!busy) forwardingMessage = null },
+                title = { Text("Forward message") },
+                text = {
+                    if (forwardFriends.isEmpty()) {
+                        Text("You don't have any friends to forward this message to.")
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            items(forwardFriends, key = { it.id }) { friend ->
+                                Row(
+                                    Modifier.fillMaxWidth().clickable(enabled = !busy) {
+                                        busy = true
+                                        scope.launch {
+                                            runCatching {
+                                                api.forwardMessage(friend.id, targetMessage)
+                                            }.onSuccess {
+                                                statusMessage = "Forwarded to " + friend.username
+                                                forwardingMessage = null
+                                                selectedMessage = null
+                                            }.onFailure {
+                                                statusMessage = it.message ?: "Message could not be forwarded."
+                                            }
+                                            busy = false
+                                        }
+                                    }.padding(vertical = 8.dp, horizontal = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    val avatar = friend.avatarUrl
+                                    if (avatar.isNotBlank()) {
+                                        AsyncImage(model = avatar, contentDescription = null, modifier = Modifier.size(42.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                                    } else {
+                                        Surface(modifier = Modifier.size(42.dp), tonalElevation = 2.dp) {
+                                            Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Person, "Profile picture") }
+                                        }
+                                    }
+                                    Text(friend.username, Modifier.padding(start = 10.dp), style = MaterialTheme.typography.bodyLarge)
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(enabled = !busy, onClick = { forwardingMessage = null }) { Text("Cancel") }
+                }
+            )
+        }
+
         if (editingMessage != null) {
             AlertDialog(
                 onDismissRequest = { editingMessage = null },
@@ -1235,6 +1299,9 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                             text = ""
                         }) { Icon(Icons.Default.Reply, "Reply") }
                         IconButton(onClick = { deleteTarget = selectedForActions }) { Icon(Icons.Default.Delete, "Delete") }
+                        IconButton(onClick = { forwardingMessage = selectedForActions }) {
+                            Icon(Icons.Default.Share, "Forward")
+                        }
                         IconButton(onClick = {
                             val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
                             clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Message", selectedForActions.body))
