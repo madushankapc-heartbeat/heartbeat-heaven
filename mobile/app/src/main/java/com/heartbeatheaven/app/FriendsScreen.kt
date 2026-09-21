@@ -212,7 +212,15 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
         request("/rest/v1/friendships?id=eq.$id", "PATCH", JSONObject().put("status", "accepted").toString())
     }
 
-    suspend fun unfriend(other: String) = withContext(Dispatchers.IO) {
+    suspend fun decline(id: String) = withContext(Dispatchers.IO) {
+        request("/rest/v1/friendships?id=eq.$id&status=eq.pending", "DELETE")
+    }
+
+    suspend fun cancel(id: String) = withContext(Dispatchers.IO) {
+        request("/rest/v1/friendships?id=eq.$id&status=eq.pending", "DELETE")
+    }
+
+suspend fun unfriend(other: String) = withContext(Dispatchers.IO) {
         val mine = userId()
         request(
             "/rest/v1/friendships?status=eq.accepted&or=(and(requester_id.eq.$mine,addressee_id.eq.$other),and(requester_id.eq.$other,addressee_id.eq.$mine))",
@@ -1871,14 +1879,27 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                         },
                         trailingContent = {
                             if (r.incoming) {
-                                Button(onClick = {
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Button(onClick = {
+                                        scope.launch {
+                                            runCatching { api.accept(r.id); reload() }
+                                                .onFailure { statusMessage = it.message }
+                                        }
+                                    }) { Text("Accept") }
+                                    OutlinedButton(onClick = {
+                                        scope.launch {
+                                            runCatching { api.decline(r.id); reload() }
+                                                .onFailure { statusMessage = it.message }
+                                        }
+                                    }) { Text("Decline") }
+                                }
+                            } else {
+                                OutlinedButton(onClick = {
                                     scope.launch {
-                                        runCatching { api.accept(r.id); reload() }
+                                        runCatching { api.cancel(r.id); reload() }
                                             .onFailure { statusMessage = it.message }
                                     }
-                                }) { Text("Accept") }
-                            } else {
-                                Text("Pending", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }) { Text("Cancel") }
                             }
                         }
                     )
