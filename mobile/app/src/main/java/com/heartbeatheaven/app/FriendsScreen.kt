@@ -677,23 +677,6 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
         }
     }
 
-    val chatWallpaperPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        val chat = selected
-        if (uri != null && chat != null) {
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            }
-            ChatThemeStore(context).setWallpaper(chat.id, uri.toString())
-            chatWallpaperUri = uri.toString()
-        }
-        if (uri != null && chat != null) {
-            statusMessage = "Chat wallpaper updated."
-        }
-    }
-
     val saveAttachmentLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { destination ->
         val target = saveTarget
         saveTarget = null
@@ -958,6 +941,19 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
         var chatThemeId by remember(chat.id) { mutableStateOf(chatThemeStore.themeId(chat.id)) }
         var chatWallpaperUri by remember(chat.id) { mutableStateOf(chatThemeStore.wallpaperUri(chat.id)) }
         val chatTheme = chatThemeOption(chatThemeId)
+        val chatWallpaperPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) {
+                runCatching {
+                    context.contentResolver.takePersistableUriPermission(
+                        uri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                }
+                chatThemeStore.setWallpaper(chat.id, uri.toString())
+                chatWallpaperUri = uri.toString()
+                statusMessage = "Chat wallpaper updated."
+            }
+        }
         val typingClient = remember(api, chat.id) {
             api?.let { a ->
                 RealtimeTypingClient(
