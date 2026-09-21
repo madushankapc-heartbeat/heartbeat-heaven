@@ -1001,7 +1001,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                             val avatar = chatProfile?.avatarUrl.orEmpty().ifBlank { chat.avatarUrl }
                             if (avatar.isNotBlank()) AsyncImage(model = avatar, contentDescription = "Profile picture", modifier = Modifier.size(168.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
-                            else Surface(modifier = Modifier.size(92.dp).clip(CircleShape)) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Person, "Profile picture", Modifier.size(48.dp)) } }
+                            else Surface(modifier = Modifier.size(168.dp).clip(CircleShape)) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Person, "Profile picture", Modifier.size(72.dp)) } }
                         }
                         Text("Username: ${chatProfile?.username ?: chat.username}")
                         Text("Gender: ${chatProfile?.gender ?: "—"}")
