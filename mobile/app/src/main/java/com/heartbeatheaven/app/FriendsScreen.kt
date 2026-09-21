@@ -867,7 +867,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
     if (session == null || api == null) {
         Column(Modifier.fillMaxSize().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Spacer(Modifier.height(60.dp))
-            Icon(Icons.Default.Lock, null, Modifier.size(48.dp))
+            Icon(Icons.Default.Lock, null, Modifier.size(72.dp))
             Text("Login required", style = MaterialTheme.typography.headlineSmall)
             Text("Please log in from the Profile tab first.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -987,31 +987,37 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                             val avatar = chatProfile?.avatarUrl.orEmpty().ifBlank { chat.avatarUrl }
-                            if (avatar.isNotBlank()) AsyncImage(model = avatar, contentDescription = "Profile picture", modifier = Modifier.size(92.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                            if (avatar.isNotBlank()) AsyncImage(model = avatar, contentDescription = "Profile picture", modifier = Modifier.size(168.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
                             else Surface(modifier = Modifier.size(92.dp).clip(CircleShape)) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Person, "Profile picture", Modifier.size(48.dp)) } }
                         }
                         Text("Username: ${chatProfile?.username ?: chat.username}")
                         Text("Gender: ${chatProfile?.gender ?: "—"}")
                         val bio = chatProfile?.bio.orEmpty()
                         if (bio.isNotBlank()) Text("Bio: $bio")
-                        val seen = chatProfile?.lastSeenAt.orEmpty()
+                        if (chatFriendSince.isNotBlank()) Text("Friends since ${ChatTimeFormatter.dateLabel(chatFriendSince)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(if (online.any { it.id == chat.id }) "Online now" else if (seen.isBlank()) "Last seen: unknown" else "Last seen: ${ChatTimeFormatter.time(seen)}")
                         Text(if (chatBlocked) "Blocked" else "Not blocked", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = {
-                        scope.launch {
-                            runCatching {
-                                api.setBlocked(chat.id, !chatBlocked)
-                                chatBlocked = !chatBlocked
-                                statusMessage = if (chatBlocked) "User blocked" else "User unblocked"
-                            }.onFailure { statusMessage = it.message ?: "Could not update block status." }
-                        }
-                    }) { Text(if (chatBlocked) "Unblock" else "Block") }
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(onClick = { showChatProfile = false }) { Text("Message") }
+                        TextButton(onClick = { showChatProfile = false; unfriendTarget = chat }) { Text("Unfriend") }
+                    }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showReportDialog = true; showChatProfile = false }) { Text("Report") }
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(onClick = {
+                            scope.launch {
+                                runCatching {
+                                    api.setBlocked(chat.id, !chatBlocked)
+                                    chatBlocked = !chatBlocked
+                                    statusMessage = if (chatBlocked) "User blocked" else "User unblocked"
+                                }.onFailure { statusMessage = it.message ?: "Could not update block status." }
+                            }
+                        }) { Text(if (chatBlocked) "Unblock" else "Block") }
+                        TextButton(onClick = { showReportDialog = true; showChatProfile = false }) { Text("Report") }
+                    }
                 }
             )
         }
