@@ -1625,8 +1625,11 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                 }
             }
 
-            replyTarget?.let { target ->
-                Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
+            // Keep the entire composer (reply/status/attachments/input) immediately above the IME.
+            // The message list remains the flexible area, so opening the keyboard does not pan the whole chat.
+            Column(Modifier.imePadding()) {
+                replyTarget?.let { target ->
+                    Surface(tonalElevation = 2.dp, modifier = Modifier.fillMaxWidth()) {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("Replying to", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
@@ -1773,6 +1776,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                     }) { Icon(Icons.Default.Send, "Send") }
                 }
 
+                }
             }
         }
         return
