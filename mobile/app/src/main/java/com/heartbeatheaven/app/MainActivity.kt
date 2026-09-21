@@ -92,16 +92,18 @@ private suspend fun fetchUnreadActivityCount(context: Context): Int = withContex
     val session = AuthApi(context).currentSession() ?: return@withContext 0
     fun request(path: String): Int {
         val connection = java.net.URL("https://fafvhyeesenpimxncupp.supabase.co" + path).openConnection() as java.net.HttpURLConnection
-        try {
+        return try {
             connection.requestMethod = "GET"
             connection.connectTimeout = 10000
             connection.readTimeout = 15000
             connection.setRequestProperty("apikey", "sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs")
             connection.setRequestProperty("Authorization", "Bearer ${session.accessToken}")
             connection.setRequestProperty("Accept", "application/json")
-            if (connection.responseCode !in 200..299) return 0
-            val array = JSONArray(connection.inputStream.bufferedReader().use { it.readText() })
-            array.length()
+            if (connection.responseCode !in 200..299) 0
+            else {
+                val array = JSONArray(connection.inputStream.bufferedReader().use { it.readText() })
+                array.length()
+            }
         } finally {
             connection.disconnect()
         }
