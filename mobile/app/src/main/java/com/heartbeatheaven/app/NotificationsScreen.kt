@@ -22,6 +22,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.time.Instant
 
 private data class AppNotification(
     val id: String,
@@ -80,12 +81,12 @@ private class NotificationsApi(private val auth: AuthApi) {
     }
 
     suspend fun markRead(id: String) = withContext(Dispatchers.IO) {
-        request("/rest/v1/notifications?id=eq.${URLEncoder.encode(id, "UTF-8")}", "PATCH", JSONObject().put("read_at", "now()").toString())
+        request("/rest/v1/notifications?id=eq.${URLEncoder.encode(id, "UTF-8")}", "PATCH", JSONObject().put("read_at", Instant.now().toString()).toString())
     }
 
     suspend fun markAllRead() = withContext(Dispatchers.IO) {
         val session = auth.currentSession() ?: return@withContext
-        request("/rest/v1/notifications?recipient_id=eq.${URLEncoder.encode(session.profile.id, "UTF-8")}&read_at=is.null", "PATCH", JSONObject().put("read_at", "now()").toString())
+        request("/rest/v1/notifications?recipient_id=eq.${URLEncoder.encode(session.profile.id, "UTF-8")}&read_at=is.null", "PATCH", JSONObject().put("read_at", Instant.now().toString()).toString())
     }
 }
 
