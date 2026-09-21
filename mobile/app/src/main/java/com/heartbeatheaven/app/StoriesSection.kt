@@ -361,18 +361,37 @@ private class StoriesApi(private val auth: AuthApi, initial: AuthSession) {
     }
 
     suspend fun delete(story: StoryItem) = withContext(Dispatchers.IO) {
-        request("/rest/v1/stories?id=eq." + story.id + "&user_id=eq." + userId(), "DELETE")
         if (story.storagePath.isNotBlank()) {
             val c = URL(STORIES_URL + "/storage/v1/object/" + STORY_BUCKET).openConnection() as HttpURLConnection
             try {
-                c.requestMethod = "DELETE"; c.doOutput = true
+                c.requestMethod = "DELETE"
+                c.doOutput = true
+                c.connectTimeout = 15000
+                c.readTimeout = 30000
                 c.setRequestProperty("apikey", STORIES_KEY)
                 c.setRequestProperty("Authorization", "Bearer " + session.accessToken)
                 c.setRequestProperty("Content-Type", "application/json")
-                c.outputStream.use { it.write(JSONObject().put("prefixes", JSONArray().put(story.storagePath)).toString().toByteArray()) }
-                c.inputStream.close()
-            } catch (_: Throwable) {} finally { c.disconnect() }
+                c.outputStream.use {
+                    it.write(
+                        JSONObject()
+                            .put("prefixes", JSONArray().put(story.storagePath))
+                            .toString()
+                            .toByteArray()
+                    )
+                }
+                val code = c.responseCode
+                if (code !in 200..299) {
+                    val detail = c.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    throw IllegalStateException(
+                        if (detail.isBlank()) "Could not remove Story media from Storage." else "Could not remove Story media from Storage ($code)."
+                    )
+                }
+            } finally {
+                c.disconnect()
+            }
         }
+
+        request("/rest/v1/stories?id=eq." + story.id + "&user_id=eq." + userId(), "DELETE")
     }
 
     suspend fun view(id: String) = withContext(Dispatchers.IO) {
