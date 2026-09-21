@@ -1552,12 +1552,12 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                    alpha = 0.18f
+                    alpha = 1f
                 )
             }
             Surface(
                 modifier = Modifier.fillMaxSize(),
-                color = chatTheme.background.copy(alpha = if (chatWallpaperUri.isBlank()) 1f else 0.90f)
+                color = if (chatWallpaperUri.isBlank()) chatTheme.background else androidx.compose.ui.graphics.Color.Transparent
             ) {
                 Column(Modifier.fillMaxSize()) {
                     Surface(shadowElevation = 2.dp) {
