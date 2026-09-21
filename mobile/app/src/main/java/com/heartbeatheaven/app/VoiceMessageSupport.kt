@@ -12,10 +12,13 @@ internal object VoiceMessageSupport {
     private const val BUCKET = "chat-media"
     private const val MAX_BYTES = 10L * 1024L * 1024L
 
-    fun newRecordingFile(context: Context): File {
+    fun newRecordingFile(context: Context, extension: String = "m4a"): File {
         val dir = File(context.cacheDir, "voice_messages").apply { mkdirs() }
-        return File(dir, "voice-${UUID.randomUUID()}.m4a")
+        return File(dir, "voice-${UUID.randomUUID()}.$extension")
     }
+
+    fun mimeTypeFor(file: File): String =
+        if (file.extension.equals("3gp", ignoreCase = true)) "audio/3gpp" else "audio/mp4"
 
     fun upload(
         context: Context,
@@ -40,7 +43,7 @@ internal object VoiceMessageSupport {
             connection.doOutput = true
             connection.setRequestProperty("apikey", KEY)
             connection.setRequestProperty("Authorization", "Bearer " + session.accessToken)
-            connection.setRequestProperty("Content-Type", "audio/mp4")
+            connection.setRequestProperty("Content-Type", mimeTypeFor(file))
             connection.setRequestProperty("x-upsert", "false")
 
             file.inputStream().use { input ->
@@ -67,7 +70,7 @@ internal object VoiceMessageSupport {
         UploadedChatMedia(
             type = "audio",
             url = SUPABASE_URL + "/storage/v1/object/public/" + BUCKET + "/" + path,
-            name = "Voice message.m4a",
+            name = "Voice message.${file.extension.ifBlank { "m4a" }}",
             size = if (size > 0L) size else uploadedBytes
         )
     }
