@@ -380,6 +380,17 @@ suspend fun unfriend(other: String) = withContext(Dispatchers.IO) {
         JSONArray(request("/rest/v1/chat_mutes?user_id=eq.${userId()}&other_user_id=eq.${other}&select=other_user_id&limit=1", "GET")).length() > 0
     }
 
+    suspend fun friendshipSince(other: String): String = withContext(Dispatchers.IO) {
+        val mine = userId()
+        val rows = runCatching {
+            JSONArray(request("/rest/v1/friendships?status=eq.accepted&or=(and(requester_id.eq.$mine,addressee_id.eq.$other),and(requester_id.eq.$other,addressee_id.eq.$mine))&select=updated_at,created_at&limit=1", "GET"))
+        }.getOrDefault(JSONArray())
+        if (rows.length() == 0) return@withContext ""
+        val row = rows.getJSONObject(0)
+        row.optString("updated_at").takeUnless { it == "null" }.orEmpty()
+            .ifBlank { row.optString("created_at").takeUnless { it == "null" }.orEmpty() }
+    }
+
     suspend fun setMuted(other: String, muted: Boolean) = withContext(Dispatchers.IO) {
         val mine = userId()
         if (muted) {
@@ -595,6 +606,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
     var busy by remember { mutableStateOf(false) }
     var chatProfile by remember { mutableStateOf<FriendProfile?>(null) }
     var showChatProfile by remember { mutableStateOf(false) }
+    var chatFriendSince by remember { mutableStateOf("") }
     var showChatMenu by remember { mutableStateOf(false) }
     var showChatSearch by remember { mutableStateOf(false) }
     var chatSearch by remember { mutableStateOf("") }
@@ -971,6 +983,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
 
         LaunchedEffect(chat.id) {
             chatProfile = runCatching { api.profile(chat.id) }.getOrNull()
+            chatFriendSince = runCatching { api.friendshipSince(chat.id) }.getOrDefault("")
             chatMuted = runCatching { api.isMuted(chat.id) }.getOrDefault(false)
             chatPinned = runCatching { api.isPinned(chat.id) }.getOrDefault(false)
             chatBlocked = runCatching { api.isBlocked(chat.id) }.getOrDefault(false)
@@ -1242,7 +1255,8 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                             )
                             val isOnline = online.any { it.id == chat.id }
-                            val seen = chatProfile?.lastSeenAt.orEmpty()
+                            if (chatFriendSince.isNotBlank()) Text("Friends since ${ChatTimeFormatter.dateLabel(chatFriendSince)}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        val seen = chatProfile?.lastSeenAt.orEmpty()
                             Text(
                                 when {
                                     chatBlocked -> "Blocked"
