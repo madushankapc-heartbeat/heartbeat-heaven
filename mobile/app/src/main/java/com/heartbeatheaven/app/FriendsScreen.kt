@@ -694,33 +694,65 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
     fun startVoiceRecordingNow() {
         val currentChat = selected ?: return
         if (chatBlocked || mediaBusy || voiceUploading || voiceRecording) return
-        val output = VoiceMessageSupport.newRecordingFile(context)
-        runCatching {
+
+        fun tryCreateRecorder(
+            file: File,
+            outputFormat: Int,
+            audioEncoder: Int,
+            configure: (MediaRecorder) -> Unit = {}
+        ): MediaRecorder? {
             val recorder = MediaRecorder()
-            recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
-            recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            recorder.setAudioEncodingBitRate(64000)
-            recorder.setAudioSamplingRate(44100)
-            recorder.setOutputFile(output.absolutePath)
-            recorder.setMaxDuration(5 * 60 * 1000)
-            recorder.setMaxFileSize(10L * 1024L * 1024L)
-            if (Build.VERSION.SDK_INT >= 30) recorder.setPrivacySensitive(true)
-            recorder.prepare()
-            recorder.start()
-            voiceRecorder = recorder
-            voiceFile = output
-            voiceStartedAt = SystemClock.elapsedRealtime()
-            voiceElapsedMs = 0L
-            voiceRecording = true
-            statusMessage = "Recording voice message…"
-        }.onFailure {
-            output.delete()
-            voiceRecorder?.release()
-            voiceRecorder = null
-            voiceFile = null
-            statusMessage = it.message ?: "Could not start voice recording."
+            return try {
+                recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
+                recorder.setOutputFormat(outputFormat)
+                recorder.setAudioEncoder(audioEncoder)
+                recorder.setOutputFile(file.absolutePath)
+                recorder.setMaxDuration(5 * 60 * 1000)
+                recorder.setMaxFileSize(10L * 1024L * 1024L)
+                configure(recorder)
+                recorder.prepare()
+                recorder.start()
+                recorder
+            } catch (_: Throwable) {
+                runCatching { recorder.reset() }
+                recorder.release()
+                file.delete()
+                null
+            }
         }
+
+        val primaryFile = VoiceMessageSupport.newRecordingFile(context, "m4a")
+        val recorder = tryCreateRecorder(
+            file = primaryFile,
+            outputFormat = MediaRecorder.OutputFormat.MPEG_4,
+            audioEncoder = MediaRecorder.AudioEncoder.AAC,
+            configure = { recorder ->
+                recorder.setAudioEncodingBitRate(64000)
+            }
+        ) ?: run {
+            // Some Android/Samsung devices reject AAC/MPEG-4 at runtime.
+            // Fall back to the broadly supported 3GP/AMR-NB voice format.
+            val fallbackFile = VoiceMessageSupport.newRecordingFile(context, "3gp")
+            tryCreateRecorder(
+                file = fallbackFile,
+                outputFormat = MediaRecorder.OutputFormat.THREE_GPP,
+                audioEncoder = MediaRecorder.AudioEncoder.AMR_NB,
+                configure = { }
+            )?.also {
+                voiceFile = fallbackFile
+            } ?: run {
+                fallbackFile.delete()
+                statusMessage = "Microphone recording could not be started. Please close other apps using the microphone and try again."
+                return
+            }
+        }
+
+        if (voiceFile == null) voiceFile = primaryFile
+        voiceRecorder = recorder
+        voiceStartedAt = SystemClock.elapsedRealtime()
+        voiceElapsedMs = 0L
+        voiceRecording = true
+        statusMessage = "Recording voice message…"
     }
 
     fun stopVoiceRecording(send: Boolean) {
