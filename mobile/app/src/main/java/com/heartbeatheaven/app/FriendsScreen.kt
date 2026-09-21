@@ -754,6 +754,11 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             statusMessage = "Please log in again."
             return
         }
+        val chatApi = api ?: run {
+            file.delete()
+            statusMessage = "Chat is not ready yet."
+            return
+        }
         voiceUploading = true
         mediaProgress = 0
         mediaProgressLabel = "Uploading voice message…"
@@ -768,12 +773,10 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                     }
                 }
                 val media = result.getOrElse { throw it }
-                api.sendMediaMessage(target.id, media)
-                messages = api.messages(target.id)
-                withFrameNanos { }
-                if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
-                reactions = api.reactions(target.id)
-                chatSummaries = api.chatSummaries()
+                chatApi.sendMediaMessage(target.id, media)
+                messages = chatApi.messages(target.id)
+                reactions = chatApi.reactions(target.id)
+                chatSummaries = chatApi.chatSummaries()
                 mediaProgress = 100
                 mediaProgressLabel = "Voice message sent"
                 statusMessage = "Voice message sent."
