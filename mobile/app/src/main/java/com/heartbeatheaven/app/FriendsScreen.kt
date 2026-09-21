@@ -49,7 +49,7 @@ import java.time.temporal.ChronoUnit
 private const val FRIENDS_SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.co"
 private const val FRIENDS_KEY = "sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
 private data class FriendUser(val id: String, val username: String, val gender: String, val avatarUrl: String = "", val lastSeenAt: String = "", val lastSeenVisibility: String = "everyone")
-private data class FriendProfile(val id: String, val username: String, val gender: String, val lastSeenAt: String, val avatarUrl: String = "", val lastSeenVisibility: String = "everyone")
+private data class FriendProfile(val id: String, val username: String, val gender: String, val bio: String = "", val lastSeenAt: String, val avatarUrl: String = "", val lastSeenVisibility: String = "everyone")
 private data class FriendRequest(val id: String, val user: FriendUser, val incoming: Boolean)
 private data class ChatSummary(val user: FriendUser, val lastMessage: String, val lastMessageAt: String, val unreadCount: Int, val pinned: Boolean, val muted: Boolean)
 private data class ChatMessage(val id: String, val senderId: String, val body: String, val createdAt: String, val deliveredAt: String = "", val readAt: String = "", val editedAt: String = "", val deletedAt: String = "", val replyToId: String = "", val messageType: String = "text", val mediaUrl: String = "", val mediaName: String = "", val mediaSize: Long = 0L)
@@ -350,9 +350,9 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
 
     suspend fun profile(other: String): FriendProfile? = withContext(Dispatchers.IO) {
         val a = runCatching {
-            JSONArray(request("/rest/v1/public_profiles?id=eq." + other + "&select=id,username,gender,last_seen_at,last_seen_visibility,avatar_url&limit=1", "GET"))
+            JSONArray(request("/rest/v1/public_profiles?id=eq." + other + "&select=id,username,gender,bio,last_seen_at,last_seen_visibility,avatar_url&limit=1", "GET"))
         }.getOrElse {
-            JSONArray(request("/rest/v1/public_profiles?id=eq." + other + "&select=id,username,gender,last_seen_at,avatar_url&limit=1", "GET"))
+            JSONArray(request("/rest/v1/public_profiles?id=eq." + other + "&select=id,username,gender,bio,last_seen_at,avatar_url&limit=1", "GET"))
         }
         if (a.length() == 0) return@withContext null
         val o = a.getJSONObject(0)
@@ -360,6 +360,7 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
             o.optString("id"),
             o.optString("username"),
             o.optString("gender"),
+            o.optString("bio").takeUnless { it == "null" }.orEmpty(),
             o.optString("last_seen_at").takeUnless { it == "null" }.orEmpty(),
             o.optString("avatar_url").takeUnless { it == "null" }.orEmpty(),
             o.optString("last_seen_visibility").ifBlank { "everyone" }
@@ -959,6 +960,8 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                         }
                         Text("Username: ${chatProfile?.username ?: chat.username}")
                         Text("Gender: ${chatProfile?.gender ?: "—"}")
+                        val bio = chatProfile?.bio.orEmpty()
+                        if (bio.isNotBlank()) Text("Bio: $bio")
                         val seen = chatProfile?.lastSeenAt.orEmpty()
                         Text(if (online.any { it.id == chat.id }) "Online now" else if (seen.isBlank()) "Last seen: unknown" else "Last seen: ${ChatTimeFormatter.time(seen)}")
                         Text(if (chatBlocked) "Blocked" else "Not blocked", color = MaterialTheme.colorScheme.onSurfaceVariant)
