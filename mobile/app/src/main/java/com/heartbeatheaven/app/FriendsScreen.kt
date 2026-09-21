@@ -1101,7 +1101,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                             items(forwardFriends, key = { it.id }) { friend ->
                                 Row(
                                     Modifier.fillMaxWidth().clickable(enabled = !busy) {
-                                        val target = targetMessage
+                                        val target = targetMessage ?: return@clickable
                                         busy = true
                                         scope.launch {
                                             runCatching {
