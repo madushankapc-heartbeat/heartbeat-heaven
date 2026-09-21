@@ -837,6 +837,25 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
         onDispose { realtime?.stop() }
     }
 
+    DisposableEffect(api) {
+        val currentApi = api
+        val realtime = currentApi?.let { a ->
+            RealtimeFriendshipsClient(
+                accessTokenProvider = { a.token() },
+                userId = a.userId(),
+                apiKey = FRIENDS_KEY,
+                onFriendshipChange = {
+                    scope.launch(Dispatchers.Main) {
+                        if (api === a) reload()
+                    }
+                }
+            )
+        }
+        realtime?.start()
+        onDispose { realtime?.stop() }
+    }
+
+
     if (checkingSession) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         return
