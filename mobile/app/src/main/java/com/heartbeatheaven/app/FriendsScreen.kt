@@ -1101,10 +1101,11 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                             items(forwardFriends, key = { it.id }) { friend ->
                                 Row(
                                     Modifier.fillMaxWidth().clickable(enabled = !busy) {
+                                        val target = targetMessage
                                         busy = true
                                         scope.launch {
                                             runCatching {
-                                                api.forwardMessage(friend.id, targetMessage)
+                                                api.forwardMessage(friend.id, target)
                                             }.onSuccess {
                                                 statusMessage = "Forwarded to " + friend.username
                                                 forwardingMessage = null
