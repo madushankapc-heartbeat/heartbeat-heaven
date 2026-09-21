@@ -88,6 +88,35 @@ private fun thumbnailUrl(url: String): String {
     return if (clean.contains("/storage/v1/object/public/")) clean.replace("/storage/v1/object/public/", "/storage/v1/render/image/public/") + "?width=144&height=144&resize=cover&quality=55" else clean
 }
 
+private suspend fun fetchUnreadActivityCount(context: Context): Int = withContext(Dispatchers.IO) {
+    val session = AuthApi(context).currentSession() ?: return@withContext 0
+    fun request(path: String): Int {
+        val connection = java.net.URL("https://fafvhyeesenpimxncupp.supabase.co" + path).openConnection() as java.net.HttpURLConnection
+        try {
+            connection.requestMethod = "GET"
+            connection.connectTimeout = 10000
+            connection.readTimeout = 15000
+            connection.setRequestProperty("apikey", "sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs")
+            connection.setRequestProperty("Authorization", "Bearer ${session.accessToken}")
+            connection.setRequestProperty("Accept", "application/json")
+            if (connection.responseCode !in 200..299) return 0
+            val array = JSONArray(connection.inputStream.bufferedReader().use { it.readText() })
+            array.length()
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    val userId = session.profile.id
+    val unreadMessages = request(
+        "/rest/v1/messages?receiver_id=eq.$userId&read_at=is.null&select=id&limit=1000"
+    )
+    val unreadNotifications = request(
+        "/rest/v1/notifications?recipient_id=eq.$userId&read_at=is.null&select=id&limit=1000"
+    )
+    unreadMessages + unreadNotifications
+}
+
 class MainActivity : ComponentActivity() {
     private var player: ExoPlayer? = null
     private var currentSong by mutableStateOf<Song?>(null)
@@ -155,6 +184,7 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
     val context = LocalContext.current
     var songs by remember { mutableStateOf<List<Song>>(emptyList()) }; var loading by remember { mutableStateOf(true) }; var error by remember { mutableStateOf<String?>(null) }
     var tab by remember { mutableStateOf(0) }; var search by remember { mutableStateOf("") }; var selected by remember { mutableStateOf<Song?>(null) }; var showNotifications by remember { mutableStateOf(false) }
+    var unreadActivityCount by remember { mutableIntStateOf(0) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
     var refreshing by remember { mutableStateOf(false) }
     val favorites = remember { FavoriteStore(context) }; var favoriteIds by remember { mutableStateOf(favorites.ids()) }
@@ -174,6 +204,15 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
         loading = false
     }
 
+    LaunchedEffect(Unit) {
+        while (true) {
+            unreadActivityCount = runCatching { fetchUnreadActivityCount(context) }
+                .getOrDefault(unreadActivityCount)
+            delay(3000L)
+        }
+    }
+
+
     LaunchedEffect(refreshTrigger) {
         if (refreshTrigger > 0) {
             refreshing = true
@@ -189,7 +228,17 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
         actions = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { showNotifications = true }) {
-                    Icon(Icons.Default.Notifications, "Notifications")
+                    BadgedBox(
+                        badge = {
+                            if (unreadActivityCount > 0) {
+                                Badge {
+                                    Text(if (unreadActivityCount > 99) "99+" else unreadActivityCount.toString())
+                                }
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Default.Notifications, "Notifications")
+                    }
                 }
             }
             Column(
