@@ -1812,22 +1812,57 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                 )
             }
         }
+        if (query.isNotBlank() && results.isEmpty()) {
+            item {
+                Text("No users found.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
         if (results.isNotEmpty()) {
             item { Text("Search results", style = MaterialTheme.typography.titleMedium) }
             items(results, key = { "result-${it.id}" }) { u ->
+                val isFriend = friends.any { it.id == u.id }
+                val pendingRequest = requests.firstOrNull { it.user.id == u.id }
+                val relationshipLabel = when {
+                    isFriend -> "Friend"
+                    pendingRequest?.incoming == true -> "Accept"
+                    pendingRequest != null -> "Pending"
+                    else -> "Add"
+                }
                 ListItem(
                     headlineContent = { Text(u.username) },
+                    supportingContent = {
+                        Text(
+                            when {
+                                isFriend -> "Already your friend"
+                                pendingRequest?.incoming == true -> "Sent you a friend request"
+                                pendingRequest != null -> "Friend request pending"
+                                else -> "Not connected"
+                            }
+                        )
+                    },
                     leadingContent = {
                         if (u.avatarUrl.isNotBlank()) AsyncImage(model = u.avatarUrl, contentDescription = "Profile picture", modifier = Modifier.size(44.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
                         else Icon(Icons.Default.PersonAdd, "Add friend")
                     },
                     trailingContent = {
-                        Button(onClick = {
-                            scope.launch {
-                                runCatching { statusMessage = api.send(u.id); reload() }
-                                    .onFailure { statusMessage = it.message }
+                        Button(
+                            enabled = !isFriend && relationshipLabel != "Pending",
+                            onClick = {
+                                scope.launch {
+                                    runCatching {
+                                        if (pendingRequest?.incoming == true) {
+                                            api.accept(pendingRequest.id)
+                                            "Friend request accepted."
+                                        } else {
+                                            api.send(u.id)
+                                        }
+                                    }.onSuccess {
+                                        statusMessage = it
+                                        reload()
+                                    }.onFailure { statusMessage = it.message }
+                                }
                             }
-                        }) { Text("Add") }
+                        ) { Text(relationshipLabel) }
                     }
                 )
             }
