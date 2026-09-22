@@ -116,6 +116,9 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
         return text
     }
 
+    private fun publicProfiles(payload: JSONObject): JSONArray =
+        JSONArray(request("/functions/v1/public-profiles", "POST", payload.toString()))
+
     suspend fun touchPresence() = withContext(Dispatchers.IO) {
         auth.touchLastSeen(session.accessToken).getOrThrow()
     }
@@ -133,7 +136,7 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
                 }
             }
         }.getOrDefault(emptySet())
-        val a = JSONArray(request("/rest/v1/public_profiles?last_seen_at=gte." + encoded + "&select=id,username,gender,avatar_url,last_seen_at,last_seen_visibility&limit=100", "GET"))
+        val a = publicProfiles(JSONObject().put("mode", "online").put("since", since))
         buildList {
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
@@ -146,8 +149,7 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
     }
 
     suspend fun search(username: String): List<FriendUser> = withContext(Dispatchers.IO) {
-        val q = URLEncoder.encode(username.trim(), "UTF-8")
-        val a = runCatching { JSONArray(request("/rest/v1/public_profiles?username=ilike.*$q*&select=id,username,gender,avatar_url&limit=20", "GET")) }.getOrElse { JSONArray(request("/rest/v1/public_profiles?username=ilike.*$q*&select=id,username,gender&limit=20", "GET")) }
+        val a = publicProfiles(JSONObject().put("mode", "search").put("q", username.trim()))
         buildList {
             for (i in 0 until a.length()) {
                 val o = a.getJSONObject(i)
@@ -175,12 +177,7 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
         }.filter { it.isNotBlank() }.distinct()
         val profileMap = HashMap<String, FriendUser>()
         if (ids.isNotEmpty()) {
-            val filter = ids.joinToString(",")
-            val profiles = runCatching {
-                JSONArray(request("/rest/v1/public_profiles?id=in.($filter)&select=id,username,gender,avatar_url", "GET"))
-            }.getOrElse {
-                JSONArray(request("/rest/v1/public_profiles?id=in.($filter)&select=id,username,gender", "GET"))
-            }
+            val profiles = publicProfiles(JSONObject().put("mode", "ids").put("ids", JSONArray(ids)))
             for (i in 0 until profiles.length()) {
                 val u = profiles.getJSONObject(i)
                 val id = u.optString("id")
@@ -246,12 +243,7 @@ suspend fun unfriend(other: String) = withContext(Dispatchers.IO) {
                 add(if (o.optString("requester_id") == mine) o.optString("addressee_id") else o.optString("requester_id"))
             }
         }.filter { it.isNotBlank() }.distinct()
-        val filter = ids.joinToString(",")
-        val profiles = runCatching {
-            JSONArray(request("/rest/v1/public_profiles?id=in.($filter)&select=id,username,gender,avatar_url,last_seen_at,last_seen_visibility", "GET"))
-        }.getOrElse {
-            JSONArray(request("/rest/v1/public_profiles?id=in.($filter)&select=id,username,gender,avatar_url", "GET"))
-        }
+        val profiles = publicProfiles(JSONObject().put("mode", "ids").put("ids", JSONArray(ids)))
         val profileMap = HashMap<String, FriendUser>()
         for (i in 0 until profiles.length()) {
             val u = profiles.getJSONObject(i)
@@ -365,11 +357,7 @@ suspend fun unfriend(other: String) = withContext(Dispatchers.IO) {
     }
 
     suspend fun profile(other: String): FriendProfile? = withContext(Dispatchers.IO) {
-        val a = runCatching {
-            JSONArray(request("/rest/v1/public_profiles?id=eq." + other + "&select=id,username,gender,bio,last_seen_at,last_seen_visibility,avatar_url&limit=1", "GET"))
-        }.getOrElse {
-            JSONArray(request("/rest/v1/public_profiles?id=eq." + other + "&select=id,username,gender,bio,last_seen_at,avatar_url&limit=1", "GET"))
-        }
+        val a = publicProfiles(JSONObject().put("mode", "ids").put("ids", JSONArray(listOf(other))))
         if (a.length() == 0) return@withContext null
         val o = a.getJSONObject(0)
         FriendProfile(
