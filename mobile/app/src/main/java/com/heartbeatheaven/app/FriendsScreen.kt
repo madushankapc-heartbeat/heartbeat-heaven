@@ -888,7 +888,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
         scope.launch {
             try {
                 val currentApi = api ?: error("Your session has expired. Please log in again.")
-                val secureUrl = currentApi.secureMediaUrl(message.id, message.mediaUrl).url
+                val secureUrl = currentApi.secureMediaUrl(message.id, message.mediaUrl, message.mediaPath).url
                 val player = MediaPlayer()
                 voicePlayer = player
                 voicePlayingId = message.id
@@ -940,7 +940,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             scope.launch {
                 runCatching {
                     val currentApi = api ?: error("Your session has expired. Please log in again.")
-                    val secureUrl = currentApi.secureMediaUrl(target.id, target.mediaUrl).url
+                    val secureUrl = currentApi.secureMediaUrl(target.id, target.mediaUrl, target.mediaPath).url
                     withContext(Dispatchers.IO) { saveRemoteAttachment(context, secureUrl, destination) }
                 }.onSuccess { statusMessage = "Saved to the selected location." }
                  .onFailure { statusMessage = it.message ?: "Could not save attachment." }
@@ -1259,7 +1259,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             for (message in targets) {
                 val cached = updated[message.id]
                 if (cached != null && cached.expiresAtMs > now + 60_000L) continue
-                runCatching { currentApi.secureMediaUrl(message.id, message.mediaUrl) }
+                runCatching { currentApi.secureMediaUrl(message.id, message.mediaUrl, message.mediaPath) }
                     .onSuccess { updated[message.id] = it }
             }
             secureMediaLinks = updated
@@ -1945,7 +1945,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                                             scope.launch {
                                                                 runCatching {
                                                                     val currentApi = api ?: error("Your session has expired. Please log in again.")
-                                                                    val secureUrl = currentApi.secureMediaUrl(m.id, m.mediaUrl).url
+                                                                    val secureUrl = currentApi.secureMediaUrl(m.id, m.mediaUrl, m.mediaPath).url
                                                                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(secureUrl)))
                                                                 }.onFailure { statusMessage = it.message ?: "No app is available to open this attachment." }
                                                             }
@@ -2012,7 +2012,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                                         scope.launch {
                                                             runCatching {
                                                                 val currentApi = api ?: error("Your session has expired. Please log in again.")
-                                                                val secureUrl = currentApi.secureMediaUrl(m.id, m.mediaUrl).url
+                                                                val secureUrl = currentApi.secureMediaUrl(m.id, m.mediaUrl, m.mediaPath).url
                                                                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                                                                     type = when (m.messageType) {
                                                                         "image" -> "image/*"
