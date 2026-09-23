@@ -96,6 +96,17 @@ internal fun StudioScreen() {
             }
         }
 
+        Card(onClick = { context.startActivity(Intent(context, AdminHistoryActivity::class.java)) }, modifier = Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.People, null)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("21-Day Message History", style = MaterialTheme.typography.titleLarge)
+                    Text("Review all users' messages and shared media when necessary.")
+                }
+            }
+        }
+
         OutlinedButton(onClick = { finishActivity(context) }) { Text("Back") }
     }
 }
