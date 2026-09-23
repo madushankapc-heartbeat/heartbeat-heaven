@@ -34,7 +34,7 @@ private const val ADMIN_HISTORY_KEY = "sb_" + "publishable_MlBmbt3bdFDjMkikjxrdw
 
 private data class AdminHistoryItem(
     val id: String, val sender: String, val receiver: String, val body: String,
-    val type: String, val mediaUrl: String, val mediaName: String,
+    val type: String, val mediaUrl: String, val mediaPath: String, val mediaName: String,
     val createdAt: String, val deletedAt: String?
 )
 
@@ -60,7 +60,7 @@ private fun adminHistoryRequest(context: Context, reason: String, type: String, 
 private fun adminMediaRequest(context: Context, item: AdminHistoryItem, reason: String): String {
     val session = AuthApi(context).currentSession() ?: error("Please log in again.")
     if (!session.profile.isAdmin) error("Admin access required.")
-    val body = JSONObject().put("message_id", item.id).put("media_url", item.mediaUrl).put("mode", "admin").put("reason", reason)
+    val body = JSONObject().put("message_id", item.id).put("media_url", item.mediaUrl).put("media_path", item.mediaPath).put("mode", "admin").put("reason", reason)
     val c = URL(ADMIN_MEDIA_URL).openConnection() as HttpURLConnection
     try {
         c.requestMethod = "POST"; c.connectTimeout = 15000; c.readTimeout = 30000; c.doOutput = true
@@ -88,6 +88,7 @@ private fun parseHistory(json: JSONObject): List<AdminHistoryItem> {
                 body = o.optString("body"),
                 type = o.optString("message_type", "text"),
                 mediaUrl = o.optString("media_url"),
+                mediaPath = o.optString("media_path"),
                 mediaName = o.optString("media_name"),
                 createdAt = o.optString("created_at"),
                 deletedAt = o.optString("deleted_at").takeIf { it.isNotBlank() && it != "null" }
