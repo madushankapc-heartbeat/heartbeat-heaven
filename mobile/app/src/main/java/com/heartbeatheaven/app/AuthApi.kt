@@ -176,25 +176,28 @@ internal class AuthApi(context: Context) {
     }
     private fun requestUser(accessToken: String) = JSONObject(request("/auth/v1/user", "GET", null, null, accessToken).body)
     private fun fetchProfile(accessToken: String, userId: String, user: JSONObject): AccountProfile {
-        val a = org.json.JSONArray(
-            request("/rest/v1/rpc/get_my_profile", "POST", "{}", "application/json", accessToken).body
-        )
-        if (a.length() == 0) error("Profile is not ready yet. Please try again.")
-        val row = a.getJSONObject(0)
+        val body = request(
+            "/functions/v1/my-profile",
+            "POST",
+            "{}",
+            "application/json",
+            accessToken
+        ).body
+        val row = JSONObject(body)
+        if (row.optString("id").isBlank()) error("Profile is not ready yet. Please try again.")
         val metadata = user.optJSONObject("user_metadata")
         val phone = row.optString("phone").takeIf { it.isNotBlank() }
             ?: user.optString("phone").takeIf { it.isNotBlank() }
             ?: metadata?.optString("phone")?.takeIf { !it.isNullOrBlank() }
         val age = row.optInt("age", 0).takeIf { it > 0 }
-        val isAdmin = request("/rest/v1/rpc/is_admin", "POST", "{}", "application/json", accessToken).body.trim().equals("true", ignoreCase = true)
         return AccountProfile(
             row.optString("id", userId),
             row.optString("username", "User"),
             row.optString("gender", "male"),
-            user.optString("email").takeIf { it.isNotBlank() },
+            row.optString("email").takeIf { it.isNotBlank() } ?: user.optString("email").takeIf { it.isNotBlank() },
             phone,
             age,
-            isAdmin,
+            row.optBoolean("is_admin", false),
             row.optString("avatar_url").takeUnless { it == "null" }.orEmpty(),
             row.optString("bio").takeUnless { it == "null" }.orEmpty(),
             row.optString("last_seen_at").takeUnless { it == "null" || it.isBlank() },
