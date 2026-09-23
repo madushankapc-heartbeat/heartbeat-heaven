@@ -119,6 +119,16 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
     private fun publicProfiles(payload: JSONObject): JSONArray =
         JSONArray(request("/functions/v1/public-profiles", "POST", payload.toString()))
 
+    suspend fun secureMediaUrl(messageId: String, mediaUrl: String, mode: String = "user", reason: String = ""): SecureMediaLink =
+        withContext(Dispatchers.IO) {
+            val payload = JSONObject()
+                .put("message_id", messageId)
+                .put("media_url", mediaUrl)
+                .put("mode", mode)
+            if (reason.isNotBlank()) payload.put("reason", reason)
+            SecureMediaSupport.parse(request("/functions/v1/secure-media-access", "POST", payload.toString()))
+        }
+
     suspend fun touchPresence() = withContext(Dispatchers.IO) {
         auth.touchLastSeen(session.accessToken).getOrThrow()
     }
@@ -599,6 +609,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
     var requests by remember { mutableStateOf<List<FriendRequest>>(emptyList()) }
     var selected by remember { mutableStateOf<FriendUser?>(null) }
     var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
+    var secureMediaLinks by remember { mutableStateOf<Map<String, SecureMediaLink>>(emptyMap()) }
     var text by remember { mutableStateOf("") }
     var editingMessage by remember { mutableStateOf<ChatMessage?>(null) }
     var editText by remember { mutableStateOf("") }
@@ -872,38 +883,42 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             return
         }
         stopVoicePlayback()
-        runCatching {
-            val player = MediaPlayer()
-            voicePlayer = player
-            voicePlayingId = message.id
-            player.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .build()
-            )
-            player.setOnPreparedListener { it.start() }
-            player.setOnCompletionListener {
-                it.release()
-                if (voicePlayer === it) {
-                    voicePlayer = null
-                    voicePlayingId = null
+        scope.launch {
+            try {
+                val currentApi = api ?: error("Your session has expired. Please log in again.")
+                val secureUrl = currentApi.secureMediaUrl(message.id, message.mediaUrl).url
+                val player = MediaPlayer()
+                voicePlayer = player
+                voicePlayingId = message.id
+                player.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .build()
+                )
+                player.setOnPreparedListener { it.start() }
+                player.setOnCompletionListener {
+                    it.release()
+                    if (voicePlayer === it) {
+                        voicePlayer = null
+                        voicePlayingId = null
+                    }
                 }
-            }
-            player.setOnErrorListener { mp, _, _ ->
-                mp.release()
-                if (voicePlayer === mp) {
-                    voicePlayer = null
-                    voicePlayingId = null
+                player.setOnErrorListener { mp, _, _ ->
+                    mp.release()
+                    if (voicePlayer === mp) {
+                        voicePlayer = null
+                        voicePlayingId = null
+                    }
+                    statusMessage = "Could not play this voice message."
+                    true
                 }
-                statusMessage = "Could not play this voice message."
-                true
+                player.setDataSource(secureUrl)
+                player.prepareAsync()
+            } catch (e: Exception) {
+                stopVoicePlayback()
+                statusMessage = e.message ?: "Could not play this voice message."
             }
-            player.setDataSource(message.mediaUrl)
-            player.prepareAsync()
-        }.onFailure {
-            stopVoicePlayback()
-            statusMessage = it.message ?: "Could not play this voice message."
         }
     }
 
@@ -921,9 +936,12 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
         saveTarget = null
         if (destination != null && target != null) {
             scope.launch {
-                runCatching { withContext(Dispatchers.IO) { saveRemoteAttachment(context, target.mediaUrl, destination) }.getOrThrow() }
-                    .onSuccess { statusMessage = "Saved to the selected location." }
-                    .onFailure { statusMessage = it.message ?: "Could not save attachment." }
+                runCatching {
+                    val currentApi = api ?: error("Your session has expired. Please log in again.")
+                    val secureUrl = currentApi.secureMediaUrl(target.id, target.mediaUrl).url
+                    withContext(Dispatchers.IO) { saveRemoteAttachment(context, secureUrl, destination) }
+                }.onSuccess { statusMessage = "Saved to the selected location." }
+                 .onFailure { statusMessage = it.message ?: "Could not save attachment." }
             }
         }
     }
@@ -1229,6 +1247,21 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
         val selectedForActions = selectedMessage
         val replyTarget = replyingTo
         val visibleMessages = searchResults ?: messages
+
+        LaunchedEffect(messages, selected?.id, searchResults) {
+            val currentApi = api ?: return@LaunchedEffect
+            val now = System.currentTimeMillis()
+            val targets = visibleMessages.filter { it.messageType != "text" && it.mediaUrl.isNotBlank() }.takeLast(100)
+            val ids = targets.map { it.id }.toSet()
+            val updated = secureMediaLinks.filterKeys { it in ids }.toMutableMap()
+            for (message in targets) {
+                val cached = updated[message.id]
+                if (cached != null && cached.expiresAtMs > now + 60_000L) continue
+                runCatching { currentApi.secureMediaUrl(message.id, message.mediaUrl) }
+                    .onSuccess { updated[message.id] = it }
+            }
+            secureMediaLinks = updated
+        }
 
         LaunchedEffect(chat.id) {
             snapshotFlow {
@@ -1555,7 +1588,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                         }
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             AsyncImage(
-                                model = image.mediaUrl,
+                                model = secureMediaLinks[image.id]?.url ?: image.mediaUrl,
                                 contentDescription = image.mediaName.ifBlank { "Image" },
                                 modifier = Modifier.fillMaxWidth().fillMaxHeight(),
                                 contentScale = androidx.compose.ui.layout.ContentScale.Fit
@@ -1866,7 +1899,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                             Column(Modifier.widthIn(max = 300.dp).wrapContentWidth(Alignment.Start).padding(8.dp)) {
                                                 if (m.messageType == "image") {
                                                     AsyncImage(
-                                                        model = m.mediaUrl,
+                                                        model = secureMediaLinks[m.id]?.url ?: m.mediaUrl,
                                                         contentDescription = m.mediaName.ifBlank { "Image" },
                                                         modifier = Modifier.widthIn(max = 280.dp).heightIn(max = 180.dp).clip(RoundedCornerShape(8.dp)).clickable { fullScreenImage = m },
                                                         contentScale = androidx.compose.ui.layout.ContentScale.Crop
@@ -1907,8 +1940,13 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                                 } else {
                                                     Row(
                                                         Modifier.widthIn(max = 280.dp).wrapContentWidth(Alignment.Start).clickable {
-                                                            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(m.mediaUrl))) }
-                                                                .onFailure { statusMessage = "No app is available to open this attachment." }
+                                                            scope.launch {
+                                                                runCatching {
+                                                                    val currentApi = api ?: error("Your session has expired. Please log in again.")
+                                                                    val secureUrl = currentApi.secureMediaUrl(m.id, m.mediaUrl).url
+                                                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(secureUrl)))
+                                                                }.onFailure { statusMessage = it.message ?: "No app is available to open this attachment." }
+                                                            }
                                                         },
                                                         verticalAlignment = Alignment.CenterVertically
                                                     ) {
@@ -1969,16 +2007,22 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                                                         Icon(Icons.Default.Download, "Save attachment", modifier = Modifier.size(20.dp))
                                                     }
                                                     IconButton(onClick = {
-                                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                                            type = when (m.messageType) {
-                                                                "image" -> "image/*"
-                                                                "video" -> "video/*"
-                                                                "audio" -> "audio/*"
-                                                                else -> "*/*"
-                                                            }
-                                                            putExtra(Intent.EXTRA_TEXT, m.mediaUrl)
+                                                        scope.launch {
+                                                            runCatching {
+                                                                val currentApi = api ?: error("Your session has expired. Please log in again.")
+                                                                val secureUrl = currentApi.secureMediaUrl(m.id, m.mediaUrl).url
+                                                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                                    type = when (m.messageType) {
+                                                                        "image" -> "image/*"
+                                                                        "video" -> "video/*"
+                                                                        "audio" -> "audio/*"
+                                                                        else -> "*/*"
+                                                                    }
+                                                                    putExtra(Intent.EXTRA_TEXT, secureUrl)
+                                                                }
+                                                                context.startActivity(Intent.createChooser(shareIntent, "Share attachment"))
+                                                            }.onFailure { statusMessage = it.message ?: "Could not share attachment." }
                                                         }
-                                                        context.startActivity(Intent.createChooser(shareIntent, "Share attachment"))
                                                     }, modifier = Modifier.size(36.dp)) {
                                                         Icon(Icons.Default.Share, "Share attachment", modifier = Modifier.size(20.dp))
                                                     }
