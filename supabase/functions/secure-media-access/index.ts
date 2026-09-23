@@ -92,8 +92,28 @@ Deno.serve(async (req) => {
     const { data: messages, error: messageError } = await messageQuery;
     if (messageError) return json({ error: "Could not verify media." }, 500);
 
-    const message = messages?.[0];
-    if (!message?.media_url || message.deleted_at) return json({ error: "Media not found." }, 404);
+    let message = messages?.[0];
+
+    if ((!message?.media_url || message.deleted_at) && mode === "admin") {
+      const { data: historyRows, error: historyError } = await admin.rpc("admin_message_history", {
+        p_since: null, p_until: null, p_user_id: null,
+        p_message_id: requestedMessageId || null, p_message_type: null,
+        p_limit: 1, p_offset: 0,
+      });
+      if (historyError) return json({ error: "Could not verify media history." }, 500);
+      const history = historyRows?.[0];
+      if (history?.media_url) {
+        message = {
+          id: history.message_id,
+          sender_id: history.sender_id,
+          receiver_id: history.receiver_id,
+          media_url: history.media_url,
+          deleted_at: history.deleted_at,
+        };
+      }
+    }
+
+    if (!message?.media_url) return json({ error: "Media not found." }, 404);
 
     const parsed = parseObjectUrl(String(message.media_url));
     if (!parsed || parsed.bucket !== "chat-media") {
