@@ -111,18 +111,15 @@ Deno.serve(async (req) => {
     if (signError || !signed?.signedUrl) return json({ error: "Could not create secure media access." }, 500);
 
     const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
-    const { error: auditError } = await admin
-      .schema("private")
-      .from("storage_access_audit")
-      .insert({
-        accessor_id: user.id,
-        access_mode: mode,
-        bucket_id: parsed.bucket,
-        object_path: parsed.path,
-        message_id: message.id,
-        reason: mode === "admin" ? reason.slice(0, 500) : null,
-        expires_at: expiresAt,
-      });
+    const { error: auditError } = await admin.rpc("log_storage_access", {
+      p_accessor_id: user.id,
+      p_access_mode: mode,
+      p_bucket_id: parsed.bucket,
+      p_object_path: parsed.path,
+      p_message_id: message.id,
+      p_reason: mode === "admin" ? reason.slice(0, 500) : null,
+      p_expires_at: expiresAt,
+    });
     if (auditError) return json({ error: "Could not record media access." }, 500);
 
     return json({
