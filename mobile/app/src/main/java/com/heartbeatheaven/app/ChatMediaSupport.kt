@@ -7,7 +7,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.UUID
 
-internal data class UploadedChatMedia(val type: String, val url: String, val name: String, val size: Long)
+internal data class UploadedChatMedia(val type: String, val url: String, val path: String, val name: String, val size: Long)
 
 internal object ChatMediaSupport {
     private const val SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.co"
@@ -72,7 +72,7 @@ internal object ChatMediaSupport {
             }
             if (c.responseCode !in 200..299) error("Attachment upload failed (${c.responseCode}).")
         } finally { c.disconnect() }
-        val publicUrl = SUPABASE_URL + "/storage/v1/object/public/" + BUCKET + "/" + path
-        UploadedChatMedia(type, publicUrl, name, if (size >= 0) size else uploadedBytes)
+        val legacyUrl = SUPABASE_URL + "/storage/v1/object/public/" + BUCKET + "/" + path
+        UploadedChatMedia(type, legacyUrl, path, name, if (size >= 0) size else uploadedBytes)
     }
 }
