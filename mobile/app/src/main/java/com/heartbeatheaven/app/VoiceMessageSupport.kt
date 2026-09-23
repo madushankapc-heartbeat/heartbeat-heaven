@@ -70,6 +70,7 @@ internal object VoiceMessageSupport {
         UploadedChatMedia(
             type = "audio",
             url = SUPABASE_URL + "/storage/v1/object/public/" + BUCKET + "/" + path,
+            path = path,
             name = "Voice message.${file.extension.ifBlank { "m4a" }}",
             size = if (size > 0L) size else uploadedBytes
         )
