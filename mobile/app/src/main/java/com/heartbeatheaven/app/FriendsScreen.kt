@@ -60,7 +60,7 @@ private enum class FriendSearchState { Idle, Loading, Results, Empty, Error }
 private data class FriendProfile(val id: String, val username: String, val gender: String, val bio: String = "", val lastSeenAt: String, val avatarUrl: String = "", val lastSeenVisibility: String = "everyone")
 private data class FriendRequest(val id: String, val user: FriendUser, val incoming: Boolean)
 private data class ChatSummary(val user: FriendUser, val lastMessage: String, val lastMessageAt: String, val unreadCount: Int, val pinned: Boolean, val muted: Boolean)
-private data class ChatMessage(val id: String, val senderId: String, val body: String, val createdAt: String, val deliveredAt: String = "", val readAt: String = "", val editedAt: String = "", val deletedAt: String = "", val replyToId: String = "", val messageType: String = "text", val mediaUrl: String = "", val mediaName: String = "", val mediaSize: Long = 0L)
+private data class ChatMessage(val id: String, val senderId: String, val body: String, val createdAt: String, val deliveredAt: String = "", val readAt: String = "", val editedAt: String = "", val deletedAt: String = "", val replyToId: String = "", val messageType: String = "text", val mediaUrl: String = "", val mediaPath: String = "", val mediaName: String = "", val mediaSize: Long = 0L)
 private data class MessageReaction(val messageId: String, val userId: String, val reaction: String)
 private data class PendingChatAttachment(val uri: Uri, val name: String, val mime: String, val size: Long)
 private fun formatAttachmentSize(bytes: Long): String {
@@ -119,11 +119,12 @@ private class FriendsApi(private val auth: AuthApi, initialSession: AuthSession)
     private fun publicProfiles(payload: JSONObject): JSONArray =
         JSONArray(request("/functions/v1/public-profiles", "POST", payload.toString()))
 
-    suspend fun secureMediaUrl(messageId: String, mediaUrl: String, mode: String = "user", reason: String = ""): SecureMediaLink =
+    suspend fun secureMediaUrl(messageId: String, mediaUrl: String, mediaPath: String = "", mode: String = "user", reason: String = ""): SecureMediaLink =
         withContext(Dispatchers.IO) {
             val payload = JSONObject()
                 .put("message_id", messageId)
                 .put("media_url", mediaUrl)
+                .put("media_path", mediaPath)
                 .put("mode", mode)
             if (reason.isNotBlank()) payload.put("reason", reason)
             SecureMediaSupport.parse(request("/functions/v1/secure-media-access", "POST", payload.toString()))
@@ -445,6 +446,7 @@ suspend fun unfriend(other: String) = withContext(Dispatchers.IO) {
                 o.optString("reply_to_id").takeUnless { it == "null" }.orEmpty(),
                 o.optString("message_type").ifBlank { "text" },
                 o.optString("media_url").takeUnless { it == "null" }.orEmpty(),
+                o.optString("media_path").takeUnless { it == "null" }.orEmpty(),
                 o.optString("media_name").takeUnless { it == "null" }.orEmpty(),
                 o.optLong("media_size", 0L)
             ))
@@ -454,7 +456,7 @@ suspend fun unfriend(other: String) = withContext(Dispatchers.IO) {
     suspend fun messagesPage(other: String, beforeCreatedAt: String? = null): Pair<List<ChatMessage>, Boolean> = withContext(Dispatchers.IO) {
         val mine = userId()
         val cursor = beforeCreatedAt?.let { "&created_at=lt.${URLEncoder.encode(it, "UTF-8")}" }.orEmpty()
-        val a = JSONArray(request("/rest/v1/messages?or=(and(sender_id.eq.${mine},receiver_id.eq.${other}),and(sender_id.eq.${other},receiver_id.eq.${mine}))${cursor}&select=id,sender_id,body,created_at,delivered_at,read_at,edited_at,deleted_at,reply_to_id,message_type,media_url,media_name,media_size&order=created_at.desc&limit=101", "GET"))
+        val a = JSONArray(request("/rest/v1/messages?or=(and(sender_id.eq.${mine},receiver_id.eq.${other}),and(sender_id.eq.${other},receiver_id.eq.${mine}))${cursor}&select=id,sender_id,body,created_at,delivered_at,read_at,edited_at,deleted_at,reply_to_id,message_type,media_url,media_path,media_name,media_size&order=created_at.desc&limit=101", "GET"))
         val hidden = runCatching {
             val d = JSONArray(request("/rest/v1/message_deletions?user_id=eq.${mine}&select=message_id&limit=2000", "GET"))
             buildSet { for (i in 0 until d.length()) add(d.getJSONObject(i).optString("message_id")) }
@@ -470,7 +472,7 @@ suspend fun unfriend(other: String) = withContext(Dispatchers.IO) {
         if (q.isBlank()) return@withContext emptyList()
         val mine = userId()
         val encoded = URLEncoder.encode(q, "UTF-8")
-        val a = JSONArray(request("/rest/v1/messages?or=(and(sender_id.eq.${mine},receiver_id.eq.${other}),and(sender_id.eq.${other},receiver_id.eq.${mine}))&body=ilike.*${encoded}*&select=id,sender_id,body,created_at,delivered_at,read_at,edited_at,deleted_at,reply_to_id,message_type,media_url,media_name,media_size&order=created_at.asc&limit=1000", "GET"))
+        val a = JSONArray(request("/rest/v1/messages?or=(and(sender_id.eq.${mine},receiver_id.eq.${other}),and(sender_id.eq.${other},receiver_id.eq.${mine}))&body=ilike.*${encoded}*&select=id,sender_id,body,created_at,delivered_at,read_at,edited_at,deleted_at,reply_to_id,message_type,media_url,media_path,media_name,media_size&order=created_at.asc&limit=1000", "GET"))
         val hidden = runCatching {
             val d = JSONArray(request("/rest/v1/message_deletions?user_id=eq.${mine}&select=message_id&limit=2000", "GET"))
             buildSet { for (i in 0 until d.length()) add(d.getJSONObject(i).optString("message_id")) }
@@ -489,7 +491,7 @@ suspend fun unfriend(other: String) = withContext(Dispatchers.IO) {
     suspend fun forwardMessage(other: String, message: ChatMessage) = withContext(Dispatchers.IO) {
         if (message.deletedAt.isNotBlank()) error("Deleted messages cannot be forwarded.")
         if (message.messageType != "text" && message.mediaUrl.isNotBlank()) {
-            val media = UploadedChatMedia(message.messageType, message.mediaUrl, message.mediaName.ifBlank { "attachment" }, message.mediaSize)
+            val media = UploadedChatMedia(message.messageType, message.mediaUrl, message.mediaPath, message.mediaName.ifBlank { "attachment" }, message.mediaSize)
             sendMediaMessage(other, media, message.body.trim())
         } else {
             sendMessage(other, message.body)
@@ -497,7 +499,7 @@ suspend fun unfriend(other: String) = withContext(Dispatchers.IO) {
     }
 
     suspend fun sendMediaMessage(other: String, media: UploadedChatMedia, caption: String = "") = withContext(Dispatchers.IO) {
-        val payload = JSONObject().put("sender_id", userId()).put("receiver_id", other).put("body", caption.trim()).put("message_type", media.type).put("media_url", media.url).put("media_name", media.name).put("media_size", media.size)
+        val payload = JSONObject().put("sender_id", userId()).put("receiver_id", other).put("body", caption.trim()).put("message_type", media.type).put("media_url", media.url).put("media_path", media.path).put("media_name", media.name).put("media_size", media.size)
         request("/rest/v1/messages", "POST", payload.toString())
     }
     suspend fun sendMessage(other: String, body: String, replyToId: String? = null): ChatMessage? = withContext(Dispatchers.IO) {
