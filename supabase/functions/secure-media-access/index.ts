@@ -58,12 +58,13 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const requestedUrl = String(body.media_url ?? "").trim();
+    const requestedPath = String(body.media_path ?? "").trim();
     const requestedMessageId = String(body.message_id ?? "").trim();
     const mode = String(body.mode ?? "user");
     const reason = String(body.reason ?? "").trim();
 
     if (mode !== "user" && mode !== "admin") return json({ error: "Invalid access mode." }, 400);
-    if (!requestedUrl && !requestedMessageId) return json({ error: "Media reference is required." }, 400);
+    if (!requestedUrl && !requestedPath && !requestedMessageId) return json({ error: "Media reference is required." }, 400);
     if (mode === "admin" && reason.length < 5) return json({ error: "A reason is required for admin media access." }, 400);
     if (requestedMessageId && !isValidUuid(requestedMessageId)) return json({ error: "Invalid message id." }, 400);
 
@@ -79,7 +80,7 @@ Deno.serve(async (req) => {
 
     let messageQuery = admin
       .from("messages")
-      .select("id,sender_id,receiver_id,media_url,deleted_at")
+      .select("id,sender_id,receiver_id,media_url,media_path,deleted_at")
       .not("media_url", "is", null)
       .limit(1);
 
@@ -108,14 +109,17 @@ Deno.serve(async (req) => {
           sender_id: history.sender_id,
           receiver_id: history.receiver_id,
           media_url: history.media_url,
+          media_path: history.media_path,
           deleted_at: history.deleted_at,
         };
       }
     }
 
-    if (!message?.media_url) return json({ error: "Media not found." }, 404);
+    if (!message?.media_url && !message?.media_path) return json({ error: "Media not found." }, 404);
 
-    const parsed = parseObjectUrl(String(message.media_url));
+    const parsed = message?.media_path
+      ? { bucket: "chat-media", path: String(message.media_path) }
+      : parseObjectUrl(String(message.media_url));
     if (!parsed || parsed.bucket !== "chat-media") {
       return json({ error: "Unsupported media reference." }, 400);
     }
