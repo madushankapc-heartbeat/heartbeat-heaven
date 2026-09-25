@@ -87,7 +87,7 @@ class PasswordResetActivity : ComponentActivity() {
                             modifier = Modifier.fillMaxWidth()
                         )
                         Button(
-                            enabled = !busy && password.length >= 6 && password == confirmPassword,
+                            enabled = !busy && password.length >= 8 && password == confirmPassword,
                             onClick = {
                                 busy = true
                                 message = null
