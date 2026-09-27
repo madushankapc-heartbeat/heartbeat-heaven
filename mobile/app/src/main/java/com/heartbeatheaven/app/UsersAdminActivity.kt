@@ -12,6 +12,10 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material3.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,7 +48,8 @@ private data class AdminUser(
     val age: String,
     val gender: String,
     val role: String,
-    val lastSeen: String
+    val lastSeen: String,
+    val avatarUrl: String
 )
 
 private data class OwnerConversation(
@@ -139,7 +144,7 @@ private fun UsersAdminScreen(onBack: () -> Unit) {
                     buildList {
                         for (i in 0 until json.length()) {
                             val o = json.getJSONObject(i)
-                            add(AdminUser(o.optString("id"), o.optString("username", "User"), o.optString("email", "Not available"), o.optString("phone", "Not available"), o.optInt("age", 0).takeIf { it > 0 }?.toString() ?: "Not available", o.optString("gender", "Not available"), if (o.optString("role") == "admin") "Admin" else "User", o.optString("last_seen_at", "Not available")))
+                            add(AdminUser(o.optString("id"), o.optString("username", "User"), o.optString("email", "Not available"), o.optString("phone", "Not available"), o.optInt("age", 0).takeIf { it > 0 }?.toString() ?: "Not available", o.optString("gender", "Not available"), if (o.optString("role") == "admin") "Admin" else "User", o.optString("last_seen_at", "Not available"), o.optString("avatar_url", "")))
                         }
                     }
                 } finally { connection.disconnect() }
@@ -213,6 +218,33 @@ private fun UsersAdminScreen(onBack: () -> Unit) {
             title = { Text(user.username, style = MaterialTheme.typography.headlineSmall) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (user.avatarUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = user.avatarUrl,
+                            contentDescription = "Profile picture",
+                            modifier = Modifier
+                                .size(96.dp)
+                                .clip(CircleShape)
+                                .align(Alignment.CenterHorizontally),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Surface(
+                            modifier = Modifier
+                                .size(96.dp)
+                                .clip(CircleShape)
+                                .align(Alignment.CenterHorizontally),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    user.username.firstOrNull()?.uppercase() ?: "?",
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                        }
+                    }
                     Text("Email", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Text(user.email)
                     Text("Mobile", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -307,17 +339,28 @@ private fun UsersAdminScreen(onBack: () -> Unit) {
                                     .padding(horizontal = 16.dp, vertical = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Surface(
-                                    modifier = Modifier.size(44.dp),
-                                    shape = MaterialTheme.shapes.extraLarge,
-                                    color = MaterialTheme.colorScheme.primaryContainer
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Text(
-                                            user.username.firstOrNull()?.uppercase() ?: "?",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
+                                if (user.avatarUrl.isNotBlank()) {
+                                    AsyncImage(
+                                        model = user.avatarUrl,
+                                        contentDescription = "Profile picture",
+                                        modifier = Modifier
+                                            .size(44.dp)
+                                            .clip(CircleShape),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    Surface(
+                                        modifier = Modifier.size(44.dp),
+                                        shape = CircleShape,
+                                        color = MaterialTheme.colorScheme.primaryContainer
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(
+                                                user.username.firstOrNull()?.uppercase() ?: "?",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                            )
+                                        }
                                     }
                                 }
                                 Spacer(Modifier.width(14.dp))
