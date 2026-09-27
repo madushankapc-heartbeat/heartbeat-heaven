@@ -655,7 +655,6 @@ private fun GroupChatsSection(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("Group Chats", style = MaterialTheme.typography.titleMedium)
-            TextButton(onClick = { loading = true }) { Text("Refresh") }
         }
         if (loading) {
             Row(
