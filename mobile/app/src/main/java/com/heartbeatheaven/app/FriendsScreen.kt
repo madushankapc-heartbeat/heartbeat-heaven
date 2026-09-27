@@ -579,6 +579,132 @@ suspend fun unfriend(other: String) = withContext(Dispatchers.IO) {
     }
 }
 
+private data class GroupSummary(
+    val id: String,
+    val name: String,
+    val description: String,
+    val groupType: String,
+    val autoDeleteDays: Int
+)
+
+@Composable
+private fun GroupChatsSection(
+    session: AuthSession?,
+    onStatus: (String) -> Unit
+) {
+    var groups by remember { mutableStateOf<List<GroupSummary>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(session?.profile?.id) {
+        val current = session ?: run {
+            groups = emptyList()
+            loading = false
+            return@LaunchedEffect
+        }
+        loading = true
+        runCatching {
+            val connection = (URL("$FRIENDS_SUPABASE_URL/rest/v1/groups?select=id,name,description,group_type,auto_delete_days&order=updated_at.desc&limit=100")
+                .openConnection() as HttpURLConnection)
+            try {
+                connection.requestMethod = "GET"
+                connection.connectTimeout = 15000
+                connection.readTimeout = 20000
+                connection.setRequestProperty("apikey", FRIENDS_KEY)
+                connection.setRequestProperty("Authorization", "Bearer ${current.accessToken}")
+                connection.setRequestProperty("Accept", "application/json")
+                val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
+                val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                if (connection.responseCode !in 200..299) {
+                    throw IllegalStateException("Could not load group chats.")
+                }
+                val rows = JSONArray(body)
+                buildList {
+                    for (i in 0 until rows.length()) {
+                        val row = rows.getJSONObject(i)
+                        add(
+                            GroupSummary(
+                                id = row.optString("id"),
+                                name = row.optString("name"),
+                                description = row.optString("description").takeUnless { it == "null" }.orEmpty(),
+                                groupType = row.optString("group_type"),
+                                autoDeleteDays = row.optInt("auto_delete_days", 7)
+                            )
+                        )
+                    }
+                }
+            } finally {
+                connection.disconnect()
+            }
+        }.onSuccess {
+            groups = it
+            onStatus("")
+        }.onFailure {
+            groups = emptyList()
+            onStatus(it.message ?: "Could not load group chats.")
+        }
+        loading = false
+    }
+
+    item {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Group Chats", style = MaterialTheme.typography.titleMedium)
+            TextButton(onClick = { loading = true }) { Text("Refresh") }
+        }
+    }
+    item {
+        if (loading) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+            }
+        } else if (groups.isEmpty()) {
+            Text(
+                "No group chats yet.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+    items(groups, key = { "group-${it.id}" }) { group ->
+        ListItem(
+            headlineContent = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(group.name, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        if (group.groupType == "public") "Public" else "Private",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            supportingContent = {
+                Text(
+                    group.description.ifBlank { "Group chat • Auto-delete: ${group.autoDeleteDays} days" },
+                    maxLines = 2,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+            },
+            leadingContent = {
+                Surface(modifier = Modifier.size(48.dp).clip(CircleShape), tonalElevation = 2.dp) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.Groups, "Group")
+                    }
+                }
+            },
+            trailingContent = {
+                Icon(Icons.Default.ChevronRight, "Open group")
+            }
+        )
+        HorizontalDivider()
+    }
+}
+
 private fun targetIsMine(message: ChatMessage?, userId: String): Boolean = message?.senderId == userId
 
 private fun saveRemoteAttachment(context: android.content.Context, sourceUrl: String, destination: Uri): Result<Unit> = runCatching {
