@@ -117,6 +117,7 @@ private fun UsersAdminScreen(onBack: () -> Unit) {
     var users by remember { mutableStateOf<List<AdminUser>>(emptyList()) }
     var deletingId by remember { mutableStateOf<String?>(null) }
     var deleteTarget by remember { mutableStateOf<AdminUser?>(null) }
+    var selectedUser by remember { mutableStateOf<AdminUser?>(null) }
 
     suspend fun loadUsers() {
         withContext(Dispatchers.IO) {
@@ -206,6 +207,43 @@ private fun UsersAdminScreen(onBack: () -> Unit) {
     LaunchedEffect(Unit) { loadUsers() }
     LaunchedEffect(showMessages) { if (showMessages) refreshConversations() }
 
+    selectedUser?.let { user ->
+        AlertDialog(
+            onDismissRequest = { selectedUser = null },
+            title = { Text(user.username, style = MaterialTheme.typography.headlineSmall) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Email", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(user.email)
+                    Text("Mobile", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(user.phone)
+                    Text("Age & gender", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("${user.age} • ${user.gender.replaceFirstChar { it.uppercase() }}")
+                    Text("Role", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(user.role, color = MaterialTheme.colorScheme.primary)
+                    if (user.lastSeen != "Not available") {
+                        Text("Last seen", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(user.lastSeen)
+                    }
+                }
+            },
+            confirmButton = {
+                Row {
+                    if (user.role != "Admin") {
+                        TextButton(
+                            enabled = deletingId == null,
+                            onClick = {
+                                selectedUser = null
+                                deleteTarget = user
+                            }
+                        ) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                    }
+                    TextButton(onClick = { selectedUser = null }) { Text("Close") }
+                }
+            }
+        )
+    }
+
     deleteTarget?.let { target ->
         AlertDialog(onDismissRequest = { if (deletingId == null) deleteTarget = null }, title = { Text("Delete account?") }, text = { Text("This permanently deletes ${target.username}'s account and related profile data. This cannot be undone.") },
             confirmButton = { TextButton(enabled = deletingId == null, onClick = { deleteTarget = null; scope.launch { deleteUser(target) } }) { Text("Delete", color = MaterialTheme.colorScheme.error) } },
@@ -257,11 +295,51 @@ private fun UsersAdminScreen(onBack: () -> Unit) {
                 loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 error != null && users.isEmpty() -> Text(error!!, color = MaterialTheme.colorScheme.error)
                 users.isEmpty() -> Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) { Icon(Icons.Default.People, null, Modifier.size(48.dp)); Spacer(Modifier.height(10.dp)); Text("No users found.") }
-                else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items(users, key = { it.id }) { user -> Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(user.username, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f)); if (user.role != "Admin") IconButton(enabled = deletingId == null, onClick = { deleteTarget = user }) { Icon(Icons.Default.Delete, "Delete account", tint = MaterialTheme.colorScheme.error) } }
-                        Text(user.email); Text("Mobile: ${user.phone}"); Text("Age: ${user.age} • ${user.gender.replaceFirstChar { it.uppercase() }}"); Text("Role: ${user.role}", color = MaterialTheme.colorScheme.primary); if (user.lastSeen != "Not available") Text("Last seen: ${user.lastSeen}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } } }
+                else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp), contentPadding = PaddingValues(bottom = 12.dp)) {
+                    items(users, key = { it.id }) { user ->
+                        Card(
+                            onClick = { selectedUser = user },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Surface(
+                                    modifier = Modifier.size(44.dp),
+                                    shape = MaterialTheme.shapes.extraLarge,
+                                    color = MaterialTheme.colorScheme.primaryContainer
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Text(
+                                            user.username.firstOrNull()?.uppercase() ?: "?",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.width(14.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(user.username, style = MaterialTheme.typography.titleMedium)
+                                    Text(
+                                        if (user.lastSeen != "Not available") "Last seen: ${user.lastSeen}" else user.role,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1
+                                    )
+                                }
+                                if (user.role == "Admin") {
+                                    Text(
+                                        "Admin",
+                                        color = MaterialTheme.colorScheme.primary,
+                                        style = MaterialTheme.typography.labelMedium
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
             if (error != null && users.isNotEmpty()) { Spacer(Modifier.height(8.dp)); Text(error!!, color = MaterialTheme.colorScheme.error) }
