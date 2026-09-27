@@ -645,7 +645,10 @@ private fun GroupChatsSection(
         loading = false
     }
 
-    item {
+    Column(
+        Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -654,8 +657,6 @@ private fun GroupChatsSection(
             Text("Group Chats", style = MaterialTheme.typography.titleMedium)
             TextButton(onClick = { loading = true }) { Text("Refresh") }
         }
-    }
-    item {
         if (loading) {
             Row(
                 Modifier.fillMaxWidth(),
@@ -664,44 +665,42 @@ private fun GroupChatsSection(
                 CircularProgressIndicator(modifier = Modifier.size(24.dp))
             }
         } else if (groups.isEmpty()) {
-            Text(
-                "No group chats yet.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-    items(groups, key = { "group-${it.id}" }) { group ->
-        ListItem(
-            headlineContent = {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(group.name, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        if (group.groupType == "public") "Public" else "Private",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            },
-            supportingContent = {
-                Text(
-                    group.description.ifBlank { "Group chat • Auto-delete: ${group.autoDeleteDays} days" },
-                    maxLines = 2,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                )
-            },
-            leadingContent = {
-                Surface(modifier = Modifier.size(48.dp).clip(CircleShape), tonalElevation = 2.dp) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.Groups, "Group")
+            Text("No group chats yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            groups.forEach { group ->
+                ListItem(
+                    headlineContent = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(group.name, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                if (group.groupType == "public") "Public" else "Private",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    },
+                    supportingContent = {
+                        Text(
+                            group.description.ifBlank { "Group chat • Auto-delete: " + group.autoDeleteDays + " days" },
+                            maxLines = 2,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
+                    },
+                    leadingContent = {
+                        Surface(modifier = Modifier.size(48.dp).clip(CircleShape), tonalElevation = 2.dp) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.Groups, "Group")
+                            }
+                        }
+                    },
+                    trailingContent = {
+                        Icon(Icons.Default.ChevronRight, "Open group")
                     }
-                }
-            },
-            trailingContent = {
-                Icon(Icons.Default.ChevronRight, "Open group")
+                )
+                HorizontalDivider()
             }
-        )
-        HorizontalDivider()
+        }
     }
 }
 
