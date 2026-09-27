@@ -258,12 +258,40 @@ private class StoriesApi(private val auth: AuthApi, initial: AuthSession) {
         } finally { c.disconnect() }
     }
 
+    private fun loadPublicProfiles(ids: Set<String>): JSONArray {
+        if (ids.isEmpty()) return JSONArray()
+        val c = URL(STORIES_URL + "/functions/v1/public-profiles").openConnection() as HttpURLConnection
+        try {
+            c.requestMethod = "POST"
+            c.doOutput = true
+            c.connectTimeout = 15000
+            c.readTimeout = 30000
+            c.setRequestProperty("apikey", STORIES_KEY)
+            c.setRequestProperty("Authorization", "Bearer " + session.accessToken)
+            c.setRequestProperty("Content-Type", "application/json")
+            c.setRequestProperty("Accept", "application/json")
+            val body = JSONObject()
+                .put("mode", "ids")
+                .put("ids", JSONArray(ids.toList()))
+                .toString()
+            c.outputStream.use { it.write(body.toByteArray()) }
+            val stream = if (c.responseCode in 200..299) c.inputStream else c.errorStream
+            val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (c.responseCode !in 200..299) {
+                throw IllegalStateException(JSONObject(text).optString("error").ifBlank { "Public profile lookup failed (" + c.responseCode + ")." })
+            }
+            return JSONArray(text)
+        } finally {
+            c.disconnect()
+        }
+    }
+
     suspend fun load(): List<StoryItem> = withContext(Dispatchers.IO) {
         val now = URLEncoder.encode(Instant.now().toString(), "UTF-8")
         val a = JSONArray(request("/rest/v1/stories?expires_at=gt." + now + "&select=id,user_id,media_type,storage_path,caption,created_at&order=created_at.asc&limit=500", "GET"))
         if (a.length() == 0) return@withContext emptyList()
         val ids = buildSet { for (i in 0 until a.length()) add(a.getJSONObject(i).optString("user_id")) }
-        val p = JSONArray(request("/rest/v1/public_profiles?id=in.(" + ids.joinToString(",") + ")&select=id,username,avatar_url&limit=500", "GET"))
+        val p = loadPublicProfiles(ids)
         val profiles = buildMap {
             for (i in 0 until p.length()) {
                 val o = p.getJSONObject(i)
