@@ -2344,9 +2344,23 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                     onClick = { friendTab = 1 },
                     text = { Text("Friend List") }
                 )
+                Tab(
+                    selected = friendTab == 2,
+                    onClick = { friendTab = 2 },
+                    text = { Text("Group Chats") }
+                )
             }
         }
-        when (searchState) {
+        if (friendTab == 2) {
+            item {
+                GroupChatsSection(
+                    session = session,
+                    onStatus = { statusMessage = it }
+                )
+            }
+        }
+
+        if (friendTab != 2) when (searchState) {
             FriendSearchState.Loading -> item {
                 Row(
                     Modifier.fillMaxWidth(),
@@ -2369,7 +2383,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             }
             else -> Unit
         }
-        if (results.isNotEmpty()) {
+        if (friendTab != 2 && results.isNotEmpty()) {
             item { Text("Search results", style = MaterialTheme.typography.titleMedium) }
             items(results, key = { "result-${it.id}" }) { u ->
                 val isFriend = friends.any { it.id == u.id }
@@ -2472,7 +2486,7 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
                     HorizontalDivider()
                 }
             }
-        } else {
+        } else if (friendTab == 1) {
             if (requests.isNotEmpty()) {
                 item { Text("Friend requests", style = MaterialTheme.typography.titleMedium) }
                 items(requests, key = { "request-${it.id}" }) { r ->
