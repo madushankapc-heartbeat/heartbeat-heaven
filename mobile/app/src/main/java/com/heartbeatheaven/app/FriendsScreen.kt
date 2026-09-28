@@ -596,6 +596,12 @@ private data class GroupMessage(
     val createdAt: String
 )
 
+private data class GroupMemberSummary(
+    val userId: String,
+    val username: String,
+    val role: String
+)
+
 @Composable
 private fun GroupChatRoom(
     session: AuthSession,
@@ -613,6 +619,12 @@ private fun GroupChatRoom(
     var canManageInvite by remember { mutableStateOf(false) }
     var showGroupMenu by remember { mutableStateOf(false) }
     var showInfoDialog by remember { mutableStateOf(false) }
+    var showMembersDialog by remember { mutableStateOf(false) }
+    var showAddMembersDialog by remember { mutableStateOf(false) }
+    var membersLoading by remember { mutableStateOf(false) }
+    var members by remember { mutableStateOf<List<GroupMemberSummary>>(emptyList()) }
+    var friendCandidates by remember { mutableStateOf<List<FriendUser>>(emptyList()) }
+    var memberActionBusy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -712,6 +724,111 @@ private fun GroupChatRoom(
         }
     }
 
+    suspend fun loadGroupMembers() {
+        membersLoading = true
+        try {
+            val rows = withContext(Dispatchers.IO) {
+                val url = FRIENDS_SUPABASE_URL + "/rest/v1/group_members?group_id=eq." + group.id +
+                    "&left_at=is.null&select=user_id,role,profiles(username)&order=joined_at.asc"
+                val connection = (URL(url).openConnection() as HttpURLConnection)
+                try {
+                    connection.requestMethod = "GET"
+                    connection.connectTimeout = 15000
+                    connection.readTimeout = 20000
+                    connection.setRequestProperty("apikey", FRIENDS_KEY)
+                    connection.setRequestProperty("Authorization", "Bearer " + session.accessToken)
+                    connection.setRequestProperty("Accept", "application/json")
+                    val code = connection.responseCode
+                    val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) throw IllegalStateException("Could not load group members.")
+                    JSONArray(body)
+                } finally { connection.disconnect() }
+            }
+            members = buildList {
+                for (i in 0 until rows.length()) {
+                    val row = rows.getJSONObject(i)
+                    val profile = row.optJSONObject("profiles")
+                    add(GroupMemberSummary(row.optString("user_id"), profile?.optString("username").orEmpty().ifBlank { "Member" }, row.optString("role").ifBlank { "member" }))
+                }
+            }
+        } catch (error: Throwable) {
+            onStatus(error.message ?: "Could not load group members.")
+        } finally {
+            membersLoading = false
+        }
+    }
+
+    suspend fun addGroupMember(userId: String) {
+        if (memberActionBusy) return
+        memberActionBusy = true
+        try {
+            withContext(Dispatchers.IO) {
+                val connection = (URL(FRIENDS_SUPABASE_URL + "/rest/v1/group_members").openConnection() as HttpURLConnection)
+                try {
+                    connection.requestMethod = "POST"
+                    connection.doOutput = true
+                    connection.connectTimeout = 15000
+                    connection.readTimeout = 20000
+                    connection.setRequestProperty("apikey", FRIENDS_KEY)
+                    connection.setRequestProperty("Authorization", "Bearer " + session.accessToken)
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.setRequestProperty("Prefer", "return=minimal")
+                    connection.outputStream.use { it.write(JSONObject().put("group_id", group.id).put("user_id", userId).put("role", "member").toString().toByteArray()) }
+                    val code = connection.responseCode
+                    val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) {
+                        val detail = runCatching { JSONObject(body).optString("message") }.getOrDefault("")
+                        throw IllegalStateException(detail.ifBlank { "Could not add member." })
+                    }
+                } finally { connection.disconnect() }
+            }
+            showAddMembersDialog = false
+            loadGroupMembers()
+            onStatus("Member added.")
+        } catch (error: Throwable) {
+            onStatus(error.message ?: "Could not add member.")
+        } finally {
+            memberActionBusy = false
+        }
+    }
+
+    suspend fun removeGroupMember(userId: String) {
+        if (memberActionBusy) return
+        memberActionBusy = true
+        try {
+            withContext(Dispatchers.IO) {
+                val url = FRIENDS_SUPABASE_URL + "/rest/v1/group_members?group_id=eq." + group.id + "&user_id=eq." + userId + "&left_at=is.null"
+                val connection = (URL(url).openConnection() as HttpURLConnection)
+                try {
+                    connection.requestMethod = "DELETE"
+                    connection.connectTimeout = 15000
+                    connection.readTimeout = 20000
+                    connection.setRequestProperty("apikey", FRIENDS_KEY)
+                    connection.setRequestProperty("Authorization", "Bearer " + session.accessToken)
+                    connection.setRequestProperty("Accept", "application/json")
+                    val code = connection.responseCode
+                    val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) {
+                        val detail = runCatching { JSONObject(body).optString("message") }.getOrDefault("")
+                        throw IllegalStateException(detail.ifBlank { "Could not remove member." })
+                    }
+                } finally { connection.disconnect() }
+            }
+            loadGroupMembers()
+            onStatus("Member removed.")
+        } catch (error: Throwable) {
+            onStatus(error.message ?: "Could not remove member.")
+        } finally {
+            memberActionBusy = false
+        }
+    }
+
+    suspend fun loadFriendCandidates() {
+        runCatching { FriendsApi(AuthApi(context), session).friends() }
+            .onSuccess { friendCandidates = it.filter { friend -> friend.id != session.profile.id && members.none { m -> m.userId == friend.id } } }
+            .onFailure { onStatus(it.message ?: "Could not load friends.") }
+    }
+
     suspend fun createInvite() {
         if (inviteBusy) return
         inviteBusy = true
@@ -804,7 +921,7 @@ private fun GroupChatRoom(
                     DropdownMenuItem(
                         text = { Text("Members") },
                         leadingIcon = { Icon(Icons.Default.Group, contentDescription = null) },
-                        onClick = { showGroupMenu = false; onStatus("Members management will be added next.") }
+                        onClick = { showGroupMenu = false; showMembersDialog = true; scope.launch { loadGroupMembers() } }
                     )
                     DropdownMenuItem(
                         text = { Text("Group Info") },
@@ -865,6 +982,64 @@ private fun GroupChatRoom(
                 }
             }
         }
+    }
+
+    if (showMembersDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!memberActionBusy) showMembersDialog = false },
+            title = { Text("Group Members") },
+            text = {
+                if (membersLoading) {
+                    Box(Modifier.fillMaxWidth().heightIn(min = 80.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        members.forEach { member ->
+                            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Person, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(member.username)
+                                    Text(member.role.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelSmall)
+                                }
+                                if (canManageInvite && member.userId != session.profile.id && member.role != "owner") {
+                                    IconButton(enabled = !memberActionBusy, onClick = { scope.launch { removeGroupMember(member.userId) } }) {
+                                        Icon(Icons.Default.PersonRemove, contentDescription = "Remove member")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (canManageInvite) {
+                        TextButton(onClick = { showAddMembersDialog = true; scope.launch { loadFriendCandidates() } }) { Text("Add") }
+                    }
+                    TextButton(onClick = { showMembersDialog = false }) { Text("Close") }
+                }
+            }
+        )
+    }
+
+    if (showAddMembersDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!memberActionBusy) showAddMembersDialog = false },
+            title = { Text("Add Members") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (friendCandidates.isEmpty()) Text("No friends available to add.")
+                    friendCandidates.forEach { friend ->
+                        Row(Modifier.fillMaxWidth().clickable(enabled = !memberActionBusy) { scope.launch { addGroupMember(friend.id) } }.padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.PersonAdd, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(friend.username)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showAddMembersDialog = false }) { Text("Close") } }
+        )
     }
 
     if (showInfoDialog) {
