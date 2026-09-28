@@ -611,6 +611,8 @@ private fun GroupChatRoom(
     var inviteLink by remember { mutableStateOf<String?>(null) }
     var inviteExpiresAt by remember { mutableStateOf("") }
     var canManageInvite by remember { mutableStateOf(false) }
+    var showGroupMenu by remember { mutableStateOf(false) }
+    var showInfoDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -794,6 +796,30 @@ private fun GroupChatRoom(
                     Icon(Icons.Default.Link, contentDescription = "Create group invite")
                 }
             }
+            Box {
+                IconButton(onClick = { showGroupMenu = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "Group menu")
+                }
+                DropdownMenu(expanded = showGroupMenu, onDismissRequest = { showGroupMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Members") },
+                        leadingIcon = { Icon(Icons.Default.Group, contentDescription = null) },
+                        onClick = { showGroupMenu = false; onStatus("Members management will be added next.") }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Group Info") },
+                        leadingIcon = { Icon(Icons.Default.Info, contentDescription = null) },
+                        onClick = { showGroupMenu = false; showInfoDialog = true }
+                    )
+                    if (canManageInvite) {
+                        DropdownMenuItem(
+                            text = { Text("Invite Link") },
+                            leadingIcon = { Icon(Icons.Default.Link, contentDescription = null) },
+                            onClick = { showGroupMenu = false; scope.launch { createInvite() } }
+                        )
+                    }
+                }
+            }
             IconButton(onClick = { scope.launch { runCatching { loadMessages() }.onFailure { onStatus(it.message ?: "Could not refresh messages.") } } }) {
                 Icon(Icons.Default.Refresh, contentDescription = "Refresh messages")
             }
@@ -839,6 +865,21 @@ private fun GroupChatRoom(
                 }
             }
         }
+    }
+
+    if (showInfoDialog) {
+        AlertDialog(
+            onDismissRequest = { showInfoDialog = false },
+            title = { Text(group.name) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(group.description.ifBlank { "No group description." })
+                    Text("Type: " + if (group.groupType == "public") "Public" else "Private")
+                    Text("Auto-delete: ${group.autoDeleteDays} days")
+                }
+            },
+            confirmButton = { TextButton(onClick = { showInfoDialog = false }) { Text("Close") } }
+        )
     }
 
     if (inviteLink != null) {
