@@ -777,6 +777,7 @@ private fun GroupChatsSection(
     var autoDeleteDays by remember { mutableIntStateOf(7) }
     var friends by remember { mutableStateOf<List<FriendUser>>(emptyList()) }
     var selectedFriendIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var groupsRefresh by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
 
     suspend fun createGroup(current: AuthSession) {
@@ -823,13 +824,14 @@ private fun GroupChatsSection(
             groupName = ""; groupDescription = ""; groupType = "private"; autoDeleteDays = 7; selectedFriendIds = emptySet()
             showCreateDialog = false
             loading = true
+            groupsRefresh++
             onStatus("Group created.")
         } catch (error: Throwable) {
             onStatus(error.message ?: "Could not create group.")
         } finally { creating = false }
     }
 
-    LaunchedEffect(session?.profile?.id) {
+    LaunchedEffect(session?.profile?.id, groupsRefresh) {
         val current = session ?: run { groups = emptyList(); loading = false; return@LaunchedEffect }
         loading = true
         runCatching { friends = FriendsApi(AuthApi(context), current).friends() }.onFailure { friends = emptyList() }
