@@ -1498,28 +1498,60 @@ private fun GroupChatRoom(
                     Text("Uploading group media… $groupMediaProgress%", style = MaterialTheme.typography.labelSmall)
                 }
             }
-            Row(
-                Modifier
+            Surface(
+                modifier = Modifier
                     .fillMaxWidth()
                     .imePadding()
-                    .padding(8.dp),
-                verticalAlignment = Alignment.Bottom
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                shape = RoundedCornerShape(24.dp),
+                tonalElevation = 2.dp
             ) {
-                IconButton(enabled = !mediaSending, onClick = { groupMediaPicker.launch(arrayOf("image/*", "video/*")) }) {
-                    Icon(Icons.Default.AttachFile, contentDescription = "Attach image or video")
-                }
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { if (it.length <= 4000) text = it },
-                    modifier = Modifier.weight(1f),
-                    placeholder = { Text("Message or caption") },
-                    maxLines = 5,
-                    enabled = true
-                )
-                Spacer(Modifier.width(8.dp))
-                IconButton(enabled = !textSending && (text.trim().isNotBlank() || pendingGroupMedia.isNotEmpty()), onClick = { scope.launch { sendMessage() } }) {
-                    if (textSending) CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-                    else Icon(Icons.Default.Send, contentDescription = "Send message")
+                Row(
+                    Modifier.padding(start = 4.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.Bottom
+                ) {
+                    IconButton(
+                        enabled = !mediaSending,
+                        onClick = { groupMediaPicker.launch(arrayOf("image/*", "video/*")) }
+                    ) {
+                        Icon(Icons.Default.AttachFile, contentDescription = "Attach image or video")
+                    }
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { if (it.length <= 4000) text = it },
+                        modifier = Modifier.weight(1f),
+                        placeholder = { Text("Message or caption") },
+                        maxLines = 5,
+                        enabled = !mediaSending,
+                        shape = RoundedCornerShape(20.dp),
+                        supportingText = {
+                            if (text.length >= 3500) {
+                                Text("0/4000", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    )
+                    if (text.isNotBlank()) {
+                        IconButton(
+                            enabled = !textSending && !mediaSending,
+                            onClick = { text = "" }
+                        ) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear message")
+                        }
+                    }
+                    FilledIconButton(
+                        enabled = !textSending && !mediaSending &&
+                            (text.trim().isNotBlank() || pendingGroupMedia.isNotEmpty()),
+                        onClick = { scope.launch { sendMessage() } }
+                    ) {
+                        if (textSending) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(Icons.Default.Send, contentDescription = "Send message")
+                        }
+                    }
                 }
             }
         }
