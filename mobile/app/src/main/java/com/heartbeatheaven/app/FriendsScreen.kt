@@ -616,14 +616,14 @@ private fun GroupChatRoom(
 
     suspend fun loadMessages() {
         withContext(Dispatchers.IO) {
-            val url = "$FRIENDS_SUPABASE_URL/rest/v1/group_messages?group_id=eq.\${group.id}&select=id,sender_id,body,created_at&order=created_at.asc&limit=500"
+            val url = "$FRIENDS_SUPABASE_URL/rest/v1/group_messages?group_id=eq.${group.id}&select=id,sender_id,body,created_at&order=created_at.asc&limit=500"
             val connection = (URL(url).openConnection() as HttpURLConnection)
             try {
                 connection.requestMethod = "GET"
                 connection.connectTimeout = 15000
                 connection.readTimeout = 20000
                 connection.setRequestProperty("apikey", FRIENDS_KEY)
-                connection.setRequestProperty("Authorization", "Bearer \${session.accessToken}")
+                connection.setRequestProperty("Authorization", "Bearer ${session.accessToken}")
                 connection.setRequestProperty("Accept", "application/json")
                 val code = connection.responseCode
                 val stream = if (code in 200..299) connection.inputStream else connection.errorStream
