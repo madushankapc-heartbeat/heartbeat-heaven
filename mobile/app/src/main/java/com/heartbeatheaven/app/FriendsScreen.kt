@@ -981,7 +981,7 @@ private fun GroupChatsSection(
                 connection.connectTimeout = 15000
                 connection.readTimeout = 20000
                 connection.setRequestProperty("apikey", FRIENDS_KEY)
-                connection.setRequestProperty("Authorization", "Bearer \${current.accessToken}")
+                connection.setRequestProperty("Authorization", "Bearer ${current.accessToken}")
                 connection.setRequestProperty("Accept", "application/json")
                 val code = connection.responseCode
                 val stream = if (code in 200..299) connection.inputStream else connection.errorStream
@@ -1025,7 +1025,7 @@ private fun GroupChatsSection(
                             Text(if (group.groupType == "public") "Public" else "Private", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     },
-                    supportingContent = { Text(group.description.ifBlank { "Group chat • Auto-delete: \${group.autoDeleteDays} days" }, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                    supportingContent = { Text(group.description.ifBlank { "Group chat • Auto-delete: ${group.autoDeleteDays} days" }, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                     leadingContent = {
                         Surface(modifier = Modifier.size(48.dp).clip(CircleShape), tonalElevation = 2.dp) {
                             Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Groups, "Group") }
@@ -1064,7 +1064,7 @@ private fun GroupChatsSection(
                     }
                     Text("Auto-delete messages", style = MaterialTheme.typography.titleSmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(2, 4, 7, 30).forEach { days -> FilterChip(selected = autoDeleteDays == days, onClick = { autoDeleteDays = days }, label = { Text("\${days}d") }, enabled = !creating) }
+                        listOf(2, 4, 7, 30).forEach { days -> FilterChip(selected = autoDeleteDays == days, onClick = { autoDeleteDays = days }, label = { Text("${days}d") }, enabled = !creating) }
                     }
                 }
             },
