@@ -594,6 +594,62 @@ private fun GroupChatsSection(
 ) {
     var groups by remember { mutableStateOf<List<GroupSummary>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    var showCreateDialog by remember { mutableStateOf(false) }
+    var creating by remember { mutableStateOf(false) }
+    var groupName by remember { mutableStateOf("") }
+    var groupDescription by remember { mutableStateOf("") }
+    var groupType by remember { mutableStateOf("private") }
+    var autoDeleteDays by remember { mutableIntStateOf(7) }
+
+    suspend fun createGroup(current: AuthSession) {
+        val name = groupName.trim()
+        val description = groupDescription.trim()
+        if (name.length !in 1..100) { onStatus("Group name must be 1–100 characters."); return }
+        if (description.length > 500) { onStatus("Group description must be 500 characters or less."); return }
+        if (groupType !in setOf("private", "public") || autoDeleteDays !in setOf(2, 4, 7, 30)) {
+            onStatus("Invalid group settings.")
+            return
+        }
+        creating = true
+        try {
+            withContext(Dispatchers.IO) {
+                val connection = (URL("$FRIENDS_SUPABASE_URL/rest/v1/groups").openConnection() as HttpURLConnection)
+                try {
+                    connection.requestMethod = "POST"
+                    connection.doOutput = true
+                    connection.connectTimeout = 15000
+                    connection.readTimeout = 20000
+                    connection.setRequestProperty("apikey", FRIENDS_KEY)
+                    connection.setRequestProperty("Authorization", "Bearer ${current.accessToken}")
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.setRequestProperty("Accept", "application/json")
+                    connection.setRequestProperty("Prefer", "return=minimal")
+                    val payload = JSONObject()
+                        .put("name", name)
+                        .put("description", description.ifBlank { JSONObject.NULL })
+                        .put("group_type", groupType)
+                        .put("auto_delete_days", autoDeleteDays)
+                        .put("owner_id", current.profile.id)
+                        .toString()
+                    connection.outputStream.use { it.write(payload.toByteArray()) }
+                    val responseCode = connection.responseCode
+                    val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+                    val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (responseCode !in 200..299) {
+                        val detail = runCatching { JSONObject(response).optString("message") }.getOrDefault("")
+                        throw IllegalStateException(detail.ifBlank { "Could not create group." })
+                    }
+                } finally { connection.disconnect() }
+            }
+            groupName = ""; groupDescription = ""; groupType = "private"; autoDeleteDays = 7
+            showCreateDialog = false
+            onStatus("Group created.")
+        } catch (error: Throwable) {
+            onStatus(error.message ?: "Could not create group.")
+        } finally {
+            creating = false
+        }
+    }
 
     LaunchedEffect(session?.profile?.id) {
         val current = session ?: run {
@@ -655,6 +711,14 @@ private fun GroupChatsSection(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("Group Chats", style = MaterialTheme.typography.titleMedium)
+            Button(
+                enabled = session != null && !creating,
+                onClick = { showCreateDialog = true }
+            ) {
+                Icon(Icons.Default.Add, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text("Create Group")
+            }
         }
         if (loading) {
             Row(
@@ -700,6 +764,59 @@ private fun GroupChatsSection(
                 HorizontalDivider()
             }
         }
+    }
+
+    if (showCreateDialog && session != null) {
+        AlertDialog(
+            onDismissRequest = { if (!creating) showCreateDialog = false },
+            title = { Text("Create Group") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(
+                        value = groupName,
+                        onValueChange = { if (it.length <= 100) groupName = it },
+                        label = { Text("Group name") },
+                        singleLine = true,
+                        enabled = !creating
+                    )
+                    OutlinedTextField(
+                        value = groupDescription,
+                        onValueChange = { if (it.length <= 500) groupDescription = it },
+                        label = { Text("Description (optional)") },
+                        minLines = 2,
+                        maxLines = 4,
+                        enabled = !creating
+                    )
+                    Text("Group type", style = MaterialTheme.typography.titleSmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected = groupType == "private", onClick = { groupType = "private" }, label = { Text("Private") }, enabled = !creating)
+                        FilterChip(selected = groupType == "public", onClick = { groupType = "public" }, label = { Text("Public") }, enabled = !creating)
+                    }
+                    Text("Auto-delete messages", style = MaterialTheme.typography.titleSmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(2, 4, 7, 30).forEach { days ->
+                            FilterChip(selected = autoDeleteDays == days, onClick = { autoDeleteDays = days }, label = { Text("${days}d") }, enabled = !creating)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = !creating && groupName.trim().isNotEmpty(),
+                    onClick = { session?.let { creating = true } }
+                ) {
+                    if (creating) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    else Text("Create")
+                }
+            },
+            dismissButton = {
+                TextButton(enabled = !creating, onClick = { showCreateDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    LaunchedEffect(creating) {
+        if (creating && showCreateDialog && session != null) createGroup(session!!)
     }
 }
 
