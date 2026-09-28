@@ -622,6 +622,12 @@ private fun GroupChatRoom(
     var showInfoDialog by remember { mutableStateOf(false) }
     var showLeaveDialog by remember { mutableStateOf(false) }
     var leavingGroup by remember { mutableStateOf(false) }
+    var showSettingsDialog by remember { mutableStateOf(false) }
+    var savingSettings by remember { mutableStateOf(false) }
+    var settingsName by remember { mutableStateOf(group.name) }
+    var settingsDescription by remember { mutableStateOf(group.description) }
+    var settingsType by remember { mutableStateOf(group.groupType) }
+    var settingsAutoDeleteDays by remember { mutableIntStateOf(group.autoDeleteDays) }
     var showMembersDialog by remember { mutableStateOf(false) }
     var showAddMembersDialog by remember { mutableStateOf(false) }
     var membersLoading by remember { mutableStateOf(false) }
@@ -770,6 +776,37 @@ private fun GroupChatRoom(
         } finally {
             leavingGroup = false
         }
+    }
+
+    suspend fun saveGroupSettings() {
+        if (group.ownerId != session.profile.id) { onStatus("Only the group owner can change group settings."); return }
+        val name = settingsName.trim()
+        val description = settingsDescription.trim()
+        if (name.length !in 1..100) { onStatus("Group name must be 1–100 characters."); return }
+        if (description.length > 1000) { onStatus("Group description must be 1000 characters or less."); return }
+        if (settingsType !in setOf("private", "public") || settingsAutoDeleteDays !in setOf(2, 4, 7, 30)) { onStatus("Invalid group settings."); return }
+        savingSettings = true
+        try {
+            withContext(Dispatchers.IO) {
+                val connection = (URL(FRIENDS_SUPABASE_URL + "/rest/v1/groups?id=eq." + group.id).openConnection() as HttpURLConnection)
+                try {
+                    connection.requestMethod = "PATCH"; connection.doOutput = true; connection.connectTimeout = 15000; connection.readTimeout = 20000
+                    connection.setRequestProperty("apikey", FRIENDS_KEY); connection.setRequestProperty("Authorization", "Bearer " + session.accessToken); connection.setRequestProperty("Content-Type", "application/json"); connection.setRequestProperty("Accept", "application/json")
+                    val payload = JSONObject().put("name", name).put("description", description).put("group_type", settingsType).put("auto_delete_days", settingsAutoDeleteDays).put("updated_at", java.time.Instant.now().toString()).toString()
+                    connection.outputStream.use { it.write(payload.toByteArray()) }
+                    val code = connection.responseCode
+                    val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) {
+                        val detail = runCatching { JSONObject(body).optString("message").ifBlank { JSONObject(body).optString("msg") }.ifBlank { JSONObject(body).optString("hint") } }.getOrDefault("")
+                        throw IllegalStateException(detail.ifBlank { "Could not save group settings (HTTP $code)." })
+                    }
+                } finally { connection.disconnect() }
+            }
+            showSettingsDialog = false
+            onStatus("Group settings updated.")
+            onBack()
+        } catch (error: Throwable) { onStatus(error.message ?: "Could not save group settings.") }
+        finally { savingSettings = false }
     }
 
     suspend fun loadGroupMembers() {
@@ -1023,6 +1060,20 @@ private fun GroupChatRoom(
                         leadingIcon = { Icon(Icons.Default.ExitToApp, contentDescription = null) },
                         onClick = { showGroupMenu = false; showLeaveDialog = true }
                     )
+                    if (group.ownerId == session.profile.id) {
+                        DropdownMenuItem(
+                            text = { Text("Group Settings") },
+                            leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                            onClick = {
+                                showGroupMenu = false
+                                settingsName = group.name
+                                settingsDescription = group.description
+                                settingsType = group.groupType
+                                settingsAutoDeleteDays = group.autoDeleteDays
+                                showSettingsDialog = true
+                            }
+                        )
+                    }
                 }
             }
             IconButton(onClick = { scope.launch { runCatching { loadMessages() }.onFailure { onStatus(it.message ?: "Could not refresh messages.") } } }) {
@@ -1089,6 +1140,28 @@ private fun GroupChatRoom(
             dismissButton = {
                 TextButton(enabled = !leavingGroup, onClick = { showLeaveDialog = false }) { Text("Cancel") }
             }
+        )
+    }
+
+    if (showSettingsDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!savingSettings) showSettingsDialog = false },
+            title = { Text("Group Settings") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedTextField(value = settingsName, onValueChange = { if (it.length <= 100) settingsName = it }, label = { Text("Group name") }, singleLine = true, enabled = !savingSettings)
+                    OutlinedTextField(value = settingsDescription, onValueChange = { if (it.length <= 1000) settingsDescription = it }, label = { Text("Description") }, minLines = 2, maxLines = 4, enabled = !savingSettings)
+                    Text("Group type", style = MaterialTheme.typography.titleSmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(selected = settingsType == "private", onClick = { settingsType = "private" }, label = { Text("Private") }, enabled = !savingSettings)
+                        FilterChip(selected = settingsType == "public", onClick = { settingsType = "public" }, label = { Text("Public") }, enabled = !savingSettings)
+                    }
+                    Text("Auto-delete messages", style = MaterialTheme.typography.titleSmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) { listOf(2, 4, 7, 30).forEach { days -> FilterChip(selected = settingsAutoDeleteDays == days, onClick = { settingsAutoDeleteDays = days }, label = { Text("${days}d") }, enabled = !savingSettings) } }
+                }
+            },
+            confirmButton = { Button(enabled = !savingSettings && settingsName.trim().isNotEmpty(), onClick = { scope.launch { saveGroupSettings() } }) { if (savingSettings) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp) else Text("Save") } },
+            dismissButton = { TextButton(enabled = !savingSettings, onClick = { showSettingsDialog = false }) { Text("Cancel") } }
         )
     }
 
