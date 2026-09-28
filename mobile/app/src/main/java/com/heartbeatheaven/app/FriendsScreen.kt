@@ -605,7 +605,8 @@ private data class GroupMessage(
 private data class GroupMemberSummary(
     val userId: String,
     val username: String,
-    val role: String
+    val role: String,
+    val avatarUrl: String = ""
 )
 
 @Composable
@@ -995,11 +996,69 @@ private fun GroupChatRoom(
                     JSONArray(body)
                 } finally { connection.disconnect() }
             }
+            val memberIds = buildList {
+                for (i in 0 until rows.length()) {
+                    val userId = rows.getJSONObject(i).optString("user_id")
+                    if (userId.isNotBlank()) add(userId)
+                }
+            }.distinct()
+
+            val publicProfiles = if (memberIds.isNotEmpty()) {
+                withContext(Dispatchers.IO) {
+                    val payload = JSONObject().put("mode", "ids").put("ids", JSONArray(memberIds)).toString()
+                    val connection = (URL(FRIENDS_SUPABASE_URL + "/functions/v1/public-profiles").openConnection() as HttpURLConnection)
+                    try {
+                        connection.requestMethod = "POST"
+                        connection.doOutput = true
+                        connection.connectTimeout = 15000
+                        connection.readTimeout = 20000
+                        connection.setRequestProperty("apikey", FRIENDS_KEY)
+                        connection.setRequestProperty("Authorization", "Bearer " + session.accessToken)
+                        connection.setRequestProperty("Content-Type", "application/json")
+                        connection.setRequestProperty("Accept", "application/json")
+                        connection.outputStream.use { it.write(payload.toByteArray()) }
+                        val code = connection.responseCode
+                        val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                        if (code !in 200..299) throw IllegalStateException("Could not load member profiles.")
+                        JSONArray(body)
+                    } finally {
+                        connection.disconnect()
+                    }
+                }
+            } else {
+                JSONArray()
+            }
+
+            val profileMap = buildMap<String, Pair<String, String>> {
+                for (i in 0 until publicProfiles.length()) {
+                    val profile = publicProfiles.getJSONObject(i)
+                    val id = profile.optString("id")
+                    if (id.isNotBlank()) {
+                        put(
+                            id,
+                            profile.optString("username").orEmpty() to
+                                profile.optString("avatar_url").takeUnless { it == "null" }.orEmpty()
+                        )
+                    }
+                }
+            }
+
             members = buildList {
                 for (i in 0 until rows.length()) {
                     val row = rows.getJSONObject(i)
-                    val profile = row.optJSONObject("profiles")
-                    add(GroupMemberSummary(row.optString("user_id"), profile?.optString("username").orEmpty().ifBlank { "Member" }, row.optString("role").ifBlank { "member" }))
+                    val userId = row.optString("user_id")
+                    val legacyProfile = row.optJSONObject("profiles")
+                    val publicProfile = profileMap[userId]
+                    add(
+                        GroupMemberSummary(
+                            userId = userId,
+                            username = publicProfile?.first.orEmpty().ifBlank {
+                                legacyProfile?.optString("username").orEmpty().ifBlank { "Member" }
+                            },
+                            role = row.optString("role").ifBlank { "member" },
+                            avatarUrl = publicProfile?.second.orEmpty()
+                        )
+                    )
                 }
             }
         } catch (error: Throwable) {
@@ -1477,7 +1536,24 @@ private fun GroupChatRoom(
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         members.forEach { member ->
                             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Default.Person, contentDescription = null)
+                                if (member.avatarUrl.isNotBlank()) {
+                                    AsyncImage(
+                                        model = member.avatarUrl,
+                                        contentDescription = "${member.username} profile picture",
+                                        modifier = Modifier.size(40.dp).clip(CircleShape),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                    )
+                                } else {
+                                    Surface(
+                                        modifier = Modifier.size(40.dp),
+                                        shape = CircleShape,
+                                        tonalElevation = 1.dp
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(Icons.Default.Person, contentDescription = null)
+                                        }
+                                    }
+                                }
                                 Spacer(Modifier.width(8.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(member.username)
