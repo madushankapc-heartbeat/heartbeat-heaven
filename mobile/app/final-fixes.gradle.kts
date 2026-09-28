@@ -95,6 +95,10 @@ val prepareFinalAppFixes = tasks.register("prepareFinalAppFixes") {
                 "HeartbeatApp(currentSong, currentSongId, isPlaying, positionMs, durationMs, ::playSong, ::pausePlayback, ::seekPlayback, ::stopPlayback)",
                 "HeartbeatApp(currentSong, currentSongId, isPlaying, positionMs, durationMs, ::playSong, ::pausePlayback, ::seekPlayback, ::stopPlayback, ::previousPlayback, ::nextPlayback, ::setPlaybackQueue)"
             )
+            t = t.replace(
+                "HeartbeatApp(currentSong, currentSongId, isPlaying, positionMs, durationMs, ::playSong, ::pausePlayback, ::seekPlayback, ::stopPlayback, pendingGroupInviteToken) { pendingGroupInviteToken = null }",
+                "HeartbeatApp(currentSong, currentSongId, isPlaying, positionMs, durationMs, ::playSong, ::pausePlayback, ::seekPlayback, ::stopPlayback, ::previousPlayback, ::nextPlayback, ::setPlaybackQueue, pendingGroupInviteToken) { pendingGroupInviteToken = null }"
+            )
             if (!t.contains("private fun setPlaybackQueue(songs: List<Song>)")) {
                 t = t.replace(
                     "    private fun playSong(song: Song) {",
@@ -107,7 +111,11 @@ val prepareFinalAppFixes = tasks.register("prepareFinalAppFixes") {
             )
             t = t.replace(
                 "private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit)",
-                "private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit, onQueueChanged: (List<Song>) -> Unit)"
+                "private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit, onQueueChanged: (List<Song>) -> Unit, groupInviteToken: String? = null, onGroupInviteHandled: () -> Unit = {})"
+            )
+            t = t.replace(
+                "private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit, groupInviteToken: String? = null, onGroupInviteHandled: () -> Unit = {})",
+                "private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit, onQueueChanged: (List<Song>) -> Unit, groupInviteToken: String? = null, onGroupInviteHandled: () -> Unit = {})"
             )
             t = t.replace("LaunchedEffect(Unit) { try { songs = fetchSongs() }", "LaunchedEffect(Unit) { try { songs = fetchSongs(); onQueueChanged(songs) }")
             t = t.replace(
