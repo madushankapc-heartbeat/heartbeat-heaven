@@ -1071,15 +1071,6 @@ private fun GroupChatRoom(
         finally { inviteBusy = false }
     }
 
-    val groupMediaPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        if (uris.isEmpty() || sending) return@rememberLauncherForActivityResult
-        val selected = uris.map { readPendingAttachment(it) }
-        val invalid = selected.firstOrNull { !it.mime.startsWith("image/") && !it.mime.startsWith("video/") }
-        if (invalid != null) onStatus("Only image and video files can be selected.")
-        else if (selected.any { it.size > 50L * 1024L * 1024L }) onStatus("Each group media file must be 50 MB or smaller.")
-        else pendingGroupMedia = selected
-    }
-
     fun readPendingAttachment(uri: Uri): PendingChatAttachment {
         val name = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
             if (c.moveToFirst()) c.getString(c.getColumnIndexOrThrow(android.provider.OpenableColumns.DISPLAY_NAME)) else "attachment"
@@ -1088,6 +1079,15 @@ private fun GroupChatRoom(
             if (c.moveToFirst()) c.getLong(c.getColumnIndexOrThrow(android.provider.OpenableColumns.SIZE)) else -1L
         } ?: -1L
         return PendingChatAttachment(uri, name, context.contentResolver.getType(uri).orEmpty(), size)
+    }
+
+    val groupMediaPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isEmpty() || sending) return@rememberLauncherForActivityResult
+        val selected = uris.map { readPendingAttachment(it) }
+        val invalid = selected.firstOrNull { !it.mime.startsWith("image/") && !it.mime.startsWith("video/") }
+        if (invalid != null) onStatus("Only image and video files can be selected.")
+        else if (selected.any { it.size > 50L * 1024L * 1024L }) onStatus("Each group media file must be 50 MB or smaller.")
+        else pendingGroupMedia = selected
     }
 
     LaunchedEffect(messages) {
