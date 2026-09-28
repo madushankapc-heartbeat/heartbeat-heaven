@@ -1314,7 +1314,7 @@ private fun GroupChatRoom(
     }
 
     LaunchedEffect(group.id, group.photoPath) {
-        if (group.photoPath.isNotBlank() && groupPhotoUrl.isBlank()) {
+        if (group.photoPath.isNotBlank()) {
             runCatching { withContext(Dispatchers.IO) { GroupProfileSupport.signedUrl(session, group.photoPath) } }
                 .onSuccess { groupPhotoUrl = it }
         }
