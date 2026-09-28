@@ -61,17 +61,23 @@ internal object GroupMediaSupport {
                 else -> error("This image/video format is not supported.")
             }
             val size = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use { c -> if (c.moveToFirst()) c.getLong(c.getColumnIndexOrThrow(android.provider.OpenableColumns.SIZE)) else -1L } ?: -1L
-            if (size <= 0L) error("Could not determine the selected file size.")
             if (size > MAX_BYTES) error("Group media must be 50 MB or smaller.")
             val path = groupId + "/" + UUID.randomUUID().toString() + "." + extension
             val requestBody = object : RequestBody() {
                 override fun contentType() = normalizedMime.toMediaTypeOrNull()
-                override fun contentLength() = size
+                override fun contentLength() = size.coerceAtLeast(-1L)
                 override fun writeTo(sink: BufferedSink) {
                     val input = context.contentResolver.openInputStream(uri) ?: error("Could not open the selected media.")
                     input.use { stream ->
                         val buffer = ByteArray(64 * 1024); var sent = 0L
-                        while (true) { val count = stream.read(buffer); if (count <= 0) break; sink.write(buffer, 0, count); sent += count; onProgress(sent, size) }
+                        while (true) {
+                            val count = stream.read(buffer)
+                            if (count <= 0) break
+                            sent += count
+                            if (sent > MAX_BYTES) error("Group media must be 50 MB or smaller.")
+                            sink.write(buffer, 0, count)
+                            onProgress(sent, if (size > 0L) size else sent)
+                        }
                     }
                 }
             }
@@ -85,7 +91,8 @@ internal object GroupMediaSupport {
                     error(detail.ifBlank { "Media upload failed (HTTP " + response.code + ")." })
                 }
             }
-            onProgress(size, size); Uploaded(type, path, size)
+            onProgress(if (size > 0L) size else 1L, if (size > 0L) size else 1L)
+            Uploaded(type, path, if (size > 0L) size else 0L)
         }
     }
 }
