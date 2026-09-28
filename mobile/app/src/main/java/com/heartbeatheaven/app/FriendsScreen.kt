@@ -797,15 +797,17 @@ private fun GroupChatRoom(
         memberActionBusy = true
         try {
             withContext(Dispatchers.IO) {
-                val url = FRIENDS_SUPABASE_URL + "/rest/v1/group_members?group_id=eq." + group.id + "&user_id=eq." + userId + "&left_at=is.null"
-                val connection = (URL(url).openConnection() as HttpURLConnection)
+                val connection = (URL(FRIENDS_SUPABASE_URL + "/rest/v1/rpc/group_remove_member").openConnection() as HttpURLConnection)
                 try {
-                    connection.requestMethod = "DELETE"
+                    connection.requestMethod = "POST"
+                    connection.doOutput = true
                     connection.connectTimeout = 15000
                     connection.readTimeout = 20000
                     connection.setRequestProperty("apikey", FRIENDS_KEY)
                     connection.setRequestProperty("Authorization", "Bearer " + session.accessToken)
+                    connection.setRequestProperty("Content-Type", "application/json")
                     connection.setRequestProperty("Accept", "application/json")
+                    connection.outputStream.use { it.write(JSONObject().put("p_group_id", group.id).put("p_user_id", userId).toString().toByteArray()) }
                     val code = connection.responseCode
                     val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
                     if (code !in 200..299) {
@@ -818,6 +820,39 @@ private fun GroupChatRoom(
             onStatus("Member removed.")
         } catch (error: Throwable) {
             onStatus(error.message ?: "Could not remove member.")
+        } finally {
+            memberActionBusy = false
+        }
+    }
+
+    suspend fun setMemberRole(userId: String, role: String) {
+        if (memberActionBusy) return
+        memberActionBusy = true
+        try {
+            withContext(Dispatchers.IO) {
+                val connection = (URL(FRIENDS_SUPABASE_URL + "/rest/v1/rpc/group_set_member_role").openConnection() as HttpURLConnection)
+                try {
+                    connection.requestMethod = "POST"
+                    connection.doOutput = true
+                    connection.connectTimeout = 15000
+                    connection.readTimeout = 20000
+                    connection.setRequestProperty("apikey", FRIENDS_KEY)
+                    connection.setRequestProperty("Authorization", "Bearer " + session.accessToken)
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.setRequestProperty("Accept", "application/json")
+                    connection.outputStream.use { it.write(JSONObject().put("p_group_id", group.id).put("p_user_id", userId).put("p_role", role).toString().toByteArray()) }
+                    val code = connection.responseCode
+                    val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) {
+                        val detail = runCatching { JSONObject(body).optString("message") }.getOrDefault("")
+                        throw IllegalStateException(detail.ifBlank { "Could not change member role." })
+                    }
+                } finally { connection.disconnect() }
+            }
+            loadGroupMembers()
+            onStatus(if (role == "admin") "Member promoted to admin." else "Admin demoted to member.")
+        } catch (error: Throwable) {
+            onStatus(error.message ?: "Could not change member role.")
         } finally {
             memberActionBusy = false
         }
@@ -1002,6 +1037,11 @@ private fun GroupChatRoom(
                                     Text(member.role.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelSmall)
                                 }
                                 if (canManageInvite && member.userId != session.profile.id && member.role != "owner") {
+                                    if (member.role == "member") {
+                                        TextButton(enabled = !memberActionBusy, onClick = { scope.launch { setMemberRole(member.userId, "admin") } }) { Text("Promote") }
+                                    } else if (member.role == "admin" && group.ownerId == session.profile.id) {
+                                        TextButton(enabled = !memberActionBusy, onClick = { scope.launch { setMemberRole(member.userId, "member") } }) { Text("Demote") }
+                                    }
                                     IconButton(enabled = !memberActionBusy, onClick = { scope.launch { removeGroupMember(member.userId) } }) {
                                         Icon(Icons.Default.PersonRemove, contentDescription = "Remove member")
                                     }
