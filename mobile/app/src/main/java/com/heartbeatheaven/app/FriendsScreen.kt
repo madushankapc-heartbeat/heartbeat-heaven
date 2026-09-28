@@ -971,7 +971,7 @@ private fun GroupChatsSection(
     }
 
     LaunchedEffect(session?.profile?.id, groupsRefresh) {
-        val current = session ?: run { groups = emptyList(); loading = false; return@LaunchedEffect }
+        val current = AuthApi(context).currentSession() ?: session ?: run { groups = emptyList(); loading = false; return@LaunchedEffect }
         loading = true
         runCatching { friends = FriendsApi(AuthApi(context), current).friends() }.onFailure { friends = emptyList() }
         runCatching {
