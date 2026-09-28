@@ -2,6 +2,8 @@ package com.heartbeatheaven.app
 
 import java.io.File
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.media.AudioAttributes
 import android.media.MediaPlayer
@@ -605,6 +607,10 @@ private fun GroupChatRoom(
     var text by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(true) }
     var sending by remember { mutableStateOf(false) }
+    var inviteBusy by remember { mutableStateOf(false) }
+    var inviteLink by remember { mutableStateOf<String?>(null) }
+    var inviteExpiresAt by remember { mutableStateOf("") }
+    var canManageInvite by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     suspend fun loadMessages() {
@@ -687,9 +693,78 @@ private fun GroupChatRoom(
         }
     }
 
+    suspend fun loadInvitePermission() {
+        withContext(Dispatchers.IO) {
+            val url = FRIENDS_SUPABASE_URL + "/rest/v1/group_members?group_id=eq." + group.id + "&user_id=eq." + session.profile.id + "&left_at=is.null&select=role&limit=1"
+            val connection = (URL(url).openConnection() as HttpURLConnection)
+            try {
+                connection.requestMethod = "GET"; connection.connectTimeout = 15000; connection.readTimeout = 20000
+                connection.setRequestProperty("apikey", FRIENDS_KEY); connection.setRequestProperty("Authorization", "Bearer " + session.accessToken); connection.setRequestProperty("Accept", "application/json")
+                val code = connection.responseCode
+                val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                if (code !in 200..299) return@withContext
+                val rows = JSONArray(body)
+                canManageInvite = rows.length() > 0 && rows.getJSONObject(0).optString("role") in setOf("owner", "admin")
+            } finally { connection.disconnect() }
+        }
+    }
+
+    suspend fun createInvite() {
+        if (inviteBusy) return
+        inviteBusy = true
+        try {
+            val response = withContext(Dispatchers.IO) {
+                val connection = (URL(FRIENDS_SUPABASE_URL + "/rest/v1/rpc/create_group_invite").openConnection() as HttpURLConnection)
+                try {
+                    connection.requestMethod = "POST"; connection.doOutput = true; connection.connectTimeout = 15000; connection.readTimeout = 20000
+                    connection.setRequestProperty("apikey", FRIENDS_KEY); connection.setRequestProperty("Authorization", "Bearer " + session.accessToken); connection.setRequestProperty("Content-Type", "application/json"); connection.setRequestProperty("Accept", "application/json")
+                    connection.outputStream.use { it.write(JSONObject().put("p_group_id", group.id).put("p_expires_in_days", 30).toString().toByteArray()) }
+                    val code = connection.responseCode
+                    val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) {
+                        val detail = runCatching { JSONObject(body).optString("message") }.getOrDefault("")
+                        throw IllegalStateException(detail.ifBlank { "Could not create invite link." })
+                    }
+                    body
+                } finally { connection.disconnect() }
+            }
+            val rows = JSONArray(response)
+            if (rows.length() == 0) throw IllegalStateException("Invite link was not returned.")
+            val row = rows.getJSONObject(0); val token = row.optString("token")
+            if (token.length != 64) throw IllegalStateException("Invalid invite token returned.")
+            inviteLink = "heartbeatheaven://group-invite?token=" + token
+            inviteExpiresAt = row.optString("expires_at")
+        } catch (error: Throwable) { onStatus(error.message ?: "Could not create invite link.") }
+        finally { inviteBusy = false }
+    }
+
+    suspend fun revokeInvites() {
+        if (inviteBusy) return
+        inviteBusy = true
+        try {
+            withContext(Dispatchers.IO) {
+                val connection = (URL(FRIENDS_SUPABASE_URL + "/rest/v1/rpc/revoke_group_invites").openConnection() as HttpURLConnection)
+                try {
+                    connection.requestMethod = "POST"; connection.doOutput = true; connection.connectTimeout = 15000; connection.readTimeout = 20000
+                    connection.setRequestProperty("apikey", FRIENDS_KEY); connection.setRequestProperty("Authorization", "Bearer " + session.accessToken); connection.setRequestProperty("Content-Type", "application/json"); connection.setRequestProperty("Accept", "application/json")
+                    connection.outputStream.use { it.write(JSONObject().put("p_group_id", group.id).toString().toByteArray()) }
+                    val code = connection.responseCode
+                    val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) {
+                        val detail = runCatching { JSONObject(body).optString("message") }.getOrDefault("")
+                        throw IllegalStateException(detail.ifBlank { "Could not revoke invite links." })
+                    }
+                } finally { connection.disconnect() }
+            }
+            inviteLink = null; inviteExpiresAt = ""; onStatus("Invite link revoked.")
+        } catch (error: Throwable) { onStatus(error.message ?: "Could not revoke invite link.") }
+        finally { inviteBusy = false }
+    }
+
     LaunchedEffect(group.id) {
         loading = true
         runCatching { loadMessages() }.onFailure { onStatus(it.message ?: "Could not load group messages.") }
+        runCatching { loadInvitePermission() }
         loading = false
         while (true) {
             delay(5000)
@@ -712,6 +787,11 @@ private fun GroupChatRoom(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            }
+            if (canManageInvite) {
+                IconButton(enabled = !inviteBusy, onClick = { scope.launch { createInvite() } }) {
+                    Icon(Icons.Default.Link, contentDescription = "Create group invite")
+                }
             }
             IconButton(onClick = { scope.launch { runCatching { loadMessages() }.onFailure { onStatus(it.message ?: "Could not refresh messages.") } } }) {
                 Icon(Icons.Default.Refresh, contentDescription = "Refresh messages")
@@ -759,12 +839,42 @@ private fun GroupChatRoom(
             }
         }
     }
+
+    if (inviteLink != null) {
+        AlertDialog(
+            onDismissRequest = { if (!inviteBusy) inviteLink = null },
+            title = { Text("Group Invite Link") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("This link lets someone join this group until it expires or you revoke it.")
+                    OutlinedTextField(value = inviteLink.orEmpty(), onValueChange = {}, readOnly = true, modifier = Modifier.fillMaxWidth(), maxLines = 3)
+                    if (inviteExpiresAt.isNotBlank()) Text("Expires: " + inviteExpiresAt, style = MaterialTheme.typography.labelSmall)
+                }
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = {
+                        val clipboard = context.getSystemService(ClipboardManager::class.java)
+                        clipboard?.setPrimaryClip(ClipData.newPlainText("HEARTBEAT HEAVEN group invite", inviteLink.orEmpty()))
+                        onStatus("Invite link copied.")
+                    }) { Text("Copy") }
+                    TextButton(onClick = {
+                        val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, inviteLink.orEmpty()) }
+                        context.startActivity(Intent.createChooser(send, "Share group invite"))
+                    }) { Text("Share") }
+                    TextButton(enabled = !inviteBusy, onClick = { scope.launch { revokeInvites() } }) { Text("Revoke") }
+                }
+            }
+        )
+    }
 }
 
 @Composable
 private fun GroupChatsSection(
     session: AuthSession?,
-    onStatus: (String) -> Unit
+    onStatus: (String) -> Unit,
+    initialInviteToken: String? = null,
+    onInviteHandled: () -> Unit = {}
 ) {
     var groups by remember { mutableStateOf<List<GroupSummary>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -778,6 +888,7 @@ private fun GroupChatsSection(
     var friends by remember { mutableStateOf<List<FriendUser>>(emptyList()) }
     var selectedFriendIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var groupsRefresh by remember { mutableIntStateOf(0) }
+    var joiningInvite by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
     suspend fun createGroup(current: AuthSession) {
@@ -829,6 +940,33 @@ private fun GroupChatsSection(
         } catch (error: Throwable) {
             onStatus(error.message ?: "Could not create group.")
         } finally { creating = false }
+    }
+
+    LaunchedEffect(initialInviteToken, session?.profile?.id) {
+        val current = session ?: return@LaunchedEffect
+        val token = initialInviteToken?.trim().orEmpty()
+        if (token.isBlank() || joiningInvite) return@LaunchedEffect
+        joiningInvite = true
+        try {
+            withContext(Dispatchers.IO) {
+                val connection = (URL(FRIENDS_SUPABASE_URL + "/rest/v1/rpc/redeem_group_invite").openConnection() as HttpURLConnection)
+                try {
+                    connection.requestMethod = "POST"; connection.doOutput = true; connection.connectTimeout = 15000; connection.readTimeout = 20000
+                    connection.setRequestProperty("apikey", FRIENDS_KEY); connection.setRequestProperty("Authorization", "Bearer " + current.accessToken); connection.setRequestProperty("Content-Type", "application/json"); connection.setRequestProperty("Accept", "application/json")
+                    connection.outputStream.use { it.write(JSONObject().put("p_token", token).toString().toByteArray()) }
+                    val code = connection.responseCode
+                    val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) {
+                        val detail = runCatching { JSONObject(body).optString("message") }.getOrDefault("")
+                        throw IllegalStateException(detail.ifBlank { "Invite link is invalid or expired." })
+                    }
+                    val rows = JSONArray(body)
+                    val name = if (rows.length() > 0) rows.getJSONObject(0).optString("group_name") else ""
+                    onStatus(if (name.isBlank()) "You joined the group." else "Joined group: " + name)
+                } finally { connection.disconnect() }
+            }
+        } catch (error: Throwable) { onStatus(error.message ?: "Could not join group from invite.") }
+        finally { joiningInvite = false; onInviteHandled(); groupsRefresh++ }
     }
 
     LaunchedEffect(session?.profile?.id, groupsRefresh) {
@@ -960,7 +1098,11 @@ private fun saveRemoteAttachment(context: android.content.Context, sourceUrl: St
 }
 
 @Composable
-internal fun FriendsScreen(refreshTrigger: Int = 0) {
+internal fun FriendsScreen(
+    refreshTrigger: Int = 0,
+    groupInviteToken: String? = null,
+    onGroupInviteHandled: () -> Unit = {}
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val auth = remember { AuthApi(context) }
@@ -2720,7 +2862,9 @@ internal fun FriendsScreen(refreshTrigger: Int = 0) {
             item {
                 GroupChatsSection(
                     session = session,
-                    onStatus = { statusMessage = it }
+                    onStatus = { statusMessage = it },
+                    initialInviteToken = groupInviteToken,
+                    onInviteHandled = onGroupInviteHandled
                 )
             }
         }
