@@ -586,7 +586,8 @@ private data class GroupSummary(
     val name: String,
     val description: String,
     val groupType: String,
-    val autoDeleteDays: Int
+    val autoDeleteDays: Int,
+    val ownerId: String
 )
 
 private data class GroupMessage(
@@ -1267,7 +1268,7 @@ private fun GroupChatsSection(
         groups = buildList {
             for (i in 0 until rows.length()) {
                 val row = rows.getJSONObject(i)
-                add(GroupSummary(row.optString("id"), row.optString("name"), row.optString("description").takeUnless { it == "null" }.orEmpty(), row.optString("group_type"), row.optInt("auto_delete_days", 7)))
+                add(GroupSummary(row.optString("id"), row.optString("name"), row.optString("description").takeUnless { it == "null" }.orEmpty(), row.optString("group_type"), row.optInt("auto_delete_days", 7), row.optString("owner_id")))
             }
         }
         return true
