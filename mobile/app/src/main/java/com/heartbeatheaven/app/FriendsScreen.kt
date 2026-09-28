@@ -606,6 +606,7 @@ private fun GroupChatRoom(
     var loading by remember { mutableStateOf(true) }
     var sending by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     suspend fun loadMessages() {
         withContext(Dispatchers.IO) {
@@ -708,7 +709,7 @@ private fun GroupChatRoom(
             Column(Modifier.weight(1f)) {
                 Text(group.name, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 Text(
-                    "\${if (group.groupType == "public") "Public" else "Private"} • Auto-delete \${group.autoDeleteDays} days",
+                    "${if (group.groupType == "public") "Public" else "Private"} • Auto-delete ${group.autoDeleteDays} days",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -847,7 +848,7 @@ private fun GroupChatsSection(
     LaunchedEffect(session?.profile?.id) {
         val current = session ?: run { groups = emptyList(); loading = false; return@LaunchedEffect }
         loading = true
-        runCatching { friends = FriendsApi(AuthApi(LocalContext.current), current).friends() }.onFailure { friends = emptyList() }
+        runCatching { friends = FriendsApi(AuthApi(context), current).friends() }.onFailure { friends = emptyList() }
         runCatching {
             val connection = (URL("$FRIENDS_SUPABASE_URL/rest/v1/groups?select=id,name,description,group_type,auto_delete_days&order=updated_at.desc&limit=100").openConnection() as HttpURLConnection)
             try {
