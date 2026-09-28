@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.layout.imePadding
 import coil.compose.AsyncImage
 import androidx.compose.ui.viewinterop.AndroidView
 import android.widget.VideoView
@@ -706,37 +707,70 @@ private fun GroupChatRoom(
         val attachments = pendingGroupMedia
         if (body.isBlank() && attachments.isEmpty()) return
         if (body.length > 4000) { onStatus("Message is too long."); return }
+
+        // A normal text message must never be blocked by a failed/stale media attachment.
+        // Media is sent only when the user explicitly sends while it is attached.
         sending = true
         groupMediaBusy = attachments.isNotEmpty()
         try {
             for ((index, attachment) in attachments.withIndex()) {
                 val mime = attachment.mime.lowercase()
-                if (!mime.startsWith("image/") && !mime.startsWith("video/")) error("Only image and video files can be shared.")
+                if (!mime.startsWith("image/") && !mime.startsWith("video/")) {
+                    error("Only image and video files can be shared.")
+                }
+
                 groupMediaProgress = 0
-                val uploaded = GroupMediaSupport.upload(context, attachment.uri, session.accessToken, group.id, mime) { sent, total ->
-                    if (total > 0L) groupMediaProgress = (sent.toDouble() / total.toDouble() * 100.0).toInt().coerceIn(0, 100)
+                val uploaded = GroupMediaSupport.upload(
+                    context, attachment.uri, session.accessToken, group.id, mime
+                ) { sent, total ->
+                    if (total > 0L) {
+                        groupMediaProgress = (sent.toDouble() / total.toDouble() * 100.0)
+                            .toInt().coerceIn(0, 100)
+                    }
                 }.getOrElse { throw it }
 
                 try {
                     withContext(Dispatchers.IO) {
-                        val connection = (URL("$FRIENDS_SUPABASE_URL/rest/v1/group_messages").openConnection() as HttpURLConnection)
+                        val connection = (URL("$FRIENDS_SUPABASE_URL/rest/v1/group_messages")
+                            .openConnection() as HttpURLConnection)
                         try {
-                            connection.requestMethod = "POST"; connection.doOutput = true; connection.connectTimeout = 15000; connection.readTimeout = 20000
-                            connection.setRequestProperty("apikey", FRIENDS_KEY); connection.setRequestProperty("Authorization", "Bearer " + session.accessToken)
-                            connection.setRequestProperty("Content-Type", "application/json"); connection.setRequestProperty("Accept", "application/json"); connection.setRequestProperty("Prefer", "return=minimal")
-                            val payload = JSONObject().put("group_id", group.id).put("sender_id", session.profile.id)
-                                .put("body", body).put("message_type", uploaded.type).put("media_path", uploaded.path).toString()
+                            connection.requestMethod = "POST"
+                            connection.doOutput = true
+                            connection.connectTimeout = 15000
+                            connection.readTimeout = 20000
+                            connection.setRequestProperty("apikey", FRIENDS_KEY)
+                            connection.setRequestProperty("Authorization", "Bearer " + session.accessToken)
+                            connection.setRequestProperty("Content-Type", "application/json")
+                            connection.setRequestProperty("Accept", "application/json")
+                            connection.setRequestProperty("Prefer", "return=minimal")
+                            val payload = JSONObject()
+                                .put("group_id", group.id)
+                                .put("sender_id", session.profile.id)
+                                .put("body", body)
+                                .put("message_type", uploaded.type)
+                                .put("media_path", uploaded.path)
+                                .toString()
                             connection.outputStream.use { it.write(payload.toByteArray()) }
                             val code = connection.responseCode
-                            val response = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                            val response = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                                ?.bufferedReader()?.use { it.readText() }.orEmpty()
                             if (code !in 200..299) {
-                                val detail = runCatching { JSONObject(response).optString("message").ifBlank { JSONObject(response).optString("error") } }.getOrDefault("")
-                                throw IllegalStateException(detail.ifBlank { "Media message could not be sent." })
+                                val detail = runCatching {
+                                    JSONObject(response).optString("message")
+                                        .ifBlank { JSONObject(response).optString("error") }
+                                }.getOrDefault("")
+                                throw IllegalStateException(
+                                    detail.ifBlank { "Media message could not be sent." }
+                                )
                             }
-                        } finally { connection.disconnect() }
+                        } finally {
+                            connection.disconnect()
+                        }
                     }
                 } catch (insertError: Throwable) {
-                    val cleanup = GroupMediaSupport.deleteUploaded(context, session.accessToken, uploaded.path)
+                    val cleanup = GroupMediaSupport.deleteUploaded(
+                        context, session.accessToken, uploaded.path
+                    )
                     val cleanupMessage = cleanup.exceptionOrNull()?.message
                     if (cleanupMessage != null) {
                         onStatus("Message could not be created. Uploaded media cleanup also failed: $cleanupMessage")
@@ -746,29 +780,64 @@ private fun GroupChatRoom(
                     throw insertError
                 }
 
+                // Only keep attachments that have not yet been sent.
                 pendingGroupMedia = attachments.drop(index + 1)
             }
 
             if (attachments.isEmpty()) {
                 withContext(Dispatchers.IO) {
-                    val connection = (URL("$FRIENDS_SUPABASE_URL/rest/v1/group_messages").openConnection() as HttpURLConnection)
+                    val connection = (URL("$FRIENDS_SUPABASE_URL/rest/v1/group_messages")
+                        .openConnection() as HttpURLConnection)
                     try {
-                        connection.requestMethod = "POST"; connection.doOutput = true; connection.connectTimeout = 15000; connection.readTimeout = 20000
-                        connection.setRequestProperty("apikey", FRIENDS_KEY); connection.setRequestProperty("Authorization", "Bearer " + session.accessToken)
-                        connection.setRequestProperty("Content-Type", "application/json"); connection.setRequestProperty("Accept", "application/json"); connection.setRequestProperty("Prefer", "return=minimal")
-                        connection.outputStream.use { it.write(JSONObject().put("group_id", group.id).put("sender_id", session.profile.id).put("body", body).put("message_type", "text").toString().toByteArray()) }
+                        connection.requestMethod = "POST"
+                        connection.doOutput = true
+                        connection.connectTimeout = 15000
+                        connection.readTimeout = 20000
+                        connection.setRequestProperty("apikey", FRIENDS_KEY)
+                        connection.setRequestProperty("Authorization", "Bearer " + session.accessToken)
+                        connection.setRequestProperty("Content-Type", "application/json")
+                        connection.setRequestProperty("Accept", "application/json")
+                        connection.setRequestProperty("Prefer", "return=minimal")
+                        connection.outputStream.use {
+                            it.write(
+                                JSONObject()
+                                    .put("group_id", group.id)
+                                    .put("sender_id", session.profile.id)
+                                    .put("body", body)
+                                    .put("message_type", "text")
+                                    .toString().toByteArray()
+                            )
+                        }
                         val code = connection.responseCode
-                        val response = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
-                        if (code !in 200..299) throw IllegalStateException(runCatching { JSONObject(response).optString("message") }.getOrElse { "" }.ifBlank { "Message could not be sent." })
-                    } finally { connection.disconnect() }
+                        val response = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                            ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                        if (code !in 200..299) {
+                            val detail = runCatching {
+                                JSONObject(response).optString("message")
+                                    .ifBlank { JSONObject(response).optString("msg") }
+                                    .ifBlank { JSONObject(response).optString("error") }
+                            }.getOrDefault("")
+                            throw IllegalStateException(
+                                detail.ifBlank { "Message could not be sent." }
+                            )
+                        }
+                    } finally {
+                        connection.disconnect()
+                    }
                 }
             }
-            text = ""; pendingGroupMedia = emptyList(); groupMediaProgress = 0
-            loadMessages(); onStatus("")
+
+            text = ""
+            pendingGroupMedia = emptyList()
+            groupMediaProgress = 0
+            loadMessages()
+            onStatus("")
         } catch (error: Throwable) {
             onStatus(error.message ?: "Message could not be sent.")
         } finally {
-            sending = false; groupMediaBusy = false; groupMediaProgress = 0
+            sending = false
+            groupMediaBusy = false
+            groupMediaProgress = 0
         }
     }
 
@@ -1303,7 +1372,13 @@ private fun GroupChatRoom(
                     Text("Uploading group media… $groupMediaProgress%", style = MaterialTheme.typography.labelSmall)
                 }
             }
-            Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .imePadding()
+                    .padding(8.dp),
+                verticalAlignment = Alignment.Bottom
+            ) {
                 IconButton(enabled = !sending, onClick = { groupMediaPicker.launch(arrayOf("image/*", "video/*")) }) {
                     Icon(Icons.Default.AttachFile, contentDescription = "Attach image or video")
                 }
