@@ -25,6 +25,28 @@ internal object GroupMediaSupport {
 
     data class Uploaded(val type: String, val path: String, val size: Long)
 
+    suspend fun deleteUploaded(context: Context, accessToken: String, path: String): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            val request = Request.Builder()
+                .url(SUPABASE_URL + "/storage/v1/object/" + BUCKET + "/" + path)
+                .header("apikey", SUPABASE_PUBLISHABLE_KEY)
+                .header("Authorization", "Bearer " + accessToken)
+                .delete()
+                .build()
+            client.newCall(request).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    val detail = runCatching {
+                        JSONObject(body).optString("message")
+                            .ifBlank { JSONObject(body).optString("error") }
+                            .ifBlank { JSONObject(body).optString("statusCode") }
+                    }.getOrDefault("")
+                    error(detail.ifBlank { "Uploaded media cleanup failed (HTTP " + response.code + ")." })
+                }
+            }
+        }
+    }
+
     suspend fun upload(context: Context, uri: Uri, accessToken: String, groupId: String, mime: String, onProgress: (Long, Long) -> Unit = { _, _ -> }): Result<Uploaded> = withContext(Dispatchers.IO) {
         runCatching {
             val normalizedMime = mime.trim().lowercase()
