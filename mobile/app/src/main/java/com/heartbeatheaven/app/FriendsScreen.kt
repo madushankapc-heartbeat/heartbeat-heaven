@@ -612,6 +612,7 @@ private fun GroupChatRoom(
     var inviteExpiresAt by remember { mutableStateOf("") }
     var canManageInvite by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     suspend fun loadMessages() {
         withContext(Dispatchers.IO) {
