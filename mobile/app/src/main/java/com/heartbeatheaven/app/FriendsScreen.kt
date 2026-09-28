@@ -2881,7 +2881,7 @@ internal fun FriendsScreen(
                 )
                 Tab(
                     selected = friendTab == 2,
-                    onClick = { friendTab = 2; groupLoadRefresh++ },
+                    onClick = { friendTab = 2 },
                     text = { Text("Group Chats") }
                 )
             }
