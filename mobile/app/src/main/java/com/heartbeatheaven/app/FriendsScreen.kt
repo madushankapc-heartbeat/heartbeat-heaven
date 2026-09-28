@@ -890,6 +890,7 @@ private fun GroupChatsSection(
     var selectedFriendIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var groupsRefresh by remember { mutableIntStateOf(0) }
     var joiningInvite by remember { mutableStateOf(false) }
+    var groupLoadRefresh by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
 
     suspend fun createGroup(current: AuthSession) {
@@ -970,33 +971,59 @@ private fun GroupChatsSection(
         finally { joiningInvite = false; onInviteHandled(); groupsRefresh++ }
     }
 
-    LaunchedEffect(session?.profile?.id, groupsRefresh) {
-        val current = AuthApi(context).currentSession() ?: session ?: run { groups = emptyList(); loading = false; return@LaunchedEffect }
-        loading = true
-        runCatching { friends = FriendsApi(AuthApi(context), current).friends() }.onFailure { friends = emptyList() }
-        runCatching {
+    suspend fun loadGroups(): Boolean {
+        val auth = AuthApi(context)
+        var current = withContext(Dispatchers.IO) { auth.currentSession() } ?: session
+        if (current == null) {
+            groups = emptyList()
+            return false
+        }
+        suspend fun requestWith(token: String): Pair<Int, String> = withContext(Dispatchers.IO) {
             val connection = (URL("$FRIENDS_SUPABASE_URL/rest/v1/groups?select=id,name,description,group_type,auto_delete_days&order=updated_at.desc&limit=100").openConnection() as HttpURLConnection)
             try {
                 connection.requestMethod = "GET"
                 connection.connectTimeout = 15000
                 connection.readTimeout = 20000
                 connection.setRequestProperty("apikey", FRIENDS_KEY)
-                connection.setRequestProperty("Authorization", "Bearer ${current.accessToken}")
+                connection.setRequestProperty("Authorization", "Bearer $token")
                 connection.setRequestProperty("Accept", "application/json")
                 val code = connection.responseCode
                 val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-                val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                if (code !in 200..299) throw IllegalStateException("Could not load group chats.")
-                val rows = JSONArray(body)
-                buildList {
-                    for (i in 0 until rows.length()) {
-                        val row = rows.getJSONObject(i)
-                        add(GroupSummary(row.optString("id"), row.optString("name"), row.optString("description").takeUnless { it == "null" }.orEmpty(), row.optString("group_type"), row.optInt("auto_delete_days", 7)))
-                    }
-                }
+                code to (stream?.bufferedReader()?.use { it.readText() }.orEmpty())
             } finally { connection.disconnect() }
-        }.onSuccess { groups = it; onStatus(""); loading = false }
-         .onFailure { groups = emptyList(); loading = false; onStatus(it.message ?: "Could not load group chats.") }
+        }
+        var result = requestWith(current.accessToken)
+        if (result.first == 401) {
+            current = withContext(Dispatchers.IO) { auth.currentSession() } ?: current
+            result = requestWith(current.accessToken)
+        }
+        val code = result.first
+        val body = result.second
+        if (code !in 200..299) {
+            val detail = runCatching {
+                JSONObject(body).optString("message")
+                    .ifBlank { JSONObject(body).optString("msg") }
+                    .ifBlank { JSONObject(body).optString("hint") }
+            }.getOrDefault("")
+            throw IllegalStateException(if (detail.isBlank()) "Could not load group chats (HTTP $code)." else "Could not load group chats: $detail")
+        }
+        val rows = JSONArray(body)
+        groups = buildList {
+            for (i in 0 until rows.length()) {
+                val row = rows.getJSONObject(i)
+                add(GroupSummary(row.optString("id"), row.optString("name"), row.optString("description").takeUnless { it == "null" }.orEmpty(), row.optString("group_type"), row.optInt("auto_delete_days", 7)))
+            }
+        }
+        return true
+    }
+
+    LaunchedEffect(session?.accessToken, groupsRefresh, groupLoadRefresh) {
+        loading = true
+        runCatching { friends = FriendsApi(AuthApi(context), session ?: return@runCatching).friends() }.onFailure { friends = emptyList() }
+        runCatching { loadGroups() }
+            .onSuccess { onStatus("") }
+            .onFailure { onStatus(it.message ?: "Could not load group chats.") }
+        loading = false
     }
 
     if (selectedGroup != null && session != null) {
@@ -2854,7 +2881,7 @@ internal fun FriendsScreen(
                 )
                 Tab(
                     selected = friendTab == 2,
-                    onClick = { friendTab = 2 },
+                    onClick = { friendTab = 2; groupLoadRefresh++ },
                     text = { Text("Group Chats") }
                 )
             }
