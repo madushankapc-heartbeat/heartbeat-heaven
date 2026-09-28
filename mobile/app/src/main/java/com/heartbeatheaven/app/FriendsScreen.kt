@@ -600,6 +600,8 @@ private fun GroupChatsSection(
     var groupDescription by remember { mutableStateOf("") }
     var groupType by remember { mutableStateOf("private") }
     var autoDeleteDays by remember { mutableIntStateOf(7) }
+    var friends by remember { mutableStateOf<List<FriendUser>>(emptyList()) }
+    var selectedFriendIds by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     suspend fun createGroup(current: AuthSession) {
         val name = groupName.trim()
@@ -623,7 +625,7 @@ private fun GroupChatsSection(
                     connection.setRequestProperty("Authorization", "Bearer ${current.accessToken}")
                     connection.setRequestProperty("Content-Type", "application/json")
                     connection.setRequestProperty("Accept", "application/json")
-                    connection.setRequestProperty("Prefer", "return=minimal")
+                    connection.setRequestProperty("Prefer", "return=representation")
                     val payload = JSONObject()
                         .put("name", name)
                         .put("description", description.ifBlank { JSONObject.NULL })
@@ -639,9 +641,40 @@ private fun GroupChatsSection(
                         val detail = runCatching { JSONObject(response).optString("message") }.getOrDefault("")
                         throw IllegalStateException(detail.ifBlank { "Could not create group." })
                     }
+                    val createdRows = JSONArray(response)
+                    val groupId = if (createdRows.length() > 0) createdRows.getJSONObject(0).optString("id") else ""
+                    if (groupId.isBlank()) throw IllegalStateException("Group was created but its ID was not returned.")
+                    if (selectedFriendIds.isNotEmpty()) {
+                        val membersConnection = (URL("$FRIENDS_SUPABASE_URL/rest/v1/group_members").openConnection() as HttpURLConnection)
+                        try {
+                            membersConnection.requestMethod = "POST"
+                            membersConnection.doOutput = true
+                            membersConnection.connectTimeout = 15000
+                            membersConnection.readTimeout = 20000
+                            membersConnection.setRequestProperty("apikey", FRIENDS_KEY)
+                            membersConnection.setRequestProperty("Authorization", "Bearer ${current.accessToken}")
+                            membersConnection.setRequestProperty("Content-Type", "application/json")
+                            membersConnection.setRequestProperty("Accept", "application/json")
+                            membersConnection.setRequestProperty("Prefer", "return=minimal")
+                            val memberRows = JSONArray()
+                            selectedFriendIds.forEach { friendId ->
+                                memberRows.put(JSONObject().put("group_id", groupId).put("user_id", friendId).put("role", "member"))
+                            }
+                            membersConnection.outputStream.use { it.write(memberRows.toString().toByteArray()) }
+                            val memberCode = membersConnection.responseCode
+                            if (memberCode !in 200..299) {
+                                val memberResponse = membersConnection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                                val detail = runCatching { JSONObject(memberResponse).optString("message") }.getOrDefault("")
+                                throw IllegalStateException(detail.ifBlank { "Group created, but adding members failed." })
+                            }
+                        } finally {
+                            membersConnection.disconnect()
+                        }
+                    }
                 } finally { connection.disconnect() }
             }
             groupName = ""; groupDescription = ""; groupType = "private"; autoDeleteDays = 7
+            selectedFriendIds = emptySet()
             showCreateDialog = false
             onStatus("Group created.")
         } catch (error: Throwable) {
@@ -658,6 +691,11 @@ private fun GroupChatsSection(
             return@LaunchedEffect
         }
         loading = true
+        runCatching {
+            friends = FriendsApi(AuthApi(LocalContext.current), current).friends()
+        }.onFailure {
+            friends = emptyList()
+        }
         runCatching {
             val connection = (URL("$FRIENDS_SUPABASE_URL/rest/v1/groups?select=id,name,description,group_type,auto_delete_days&order=updated_at.desc&limit=100")
                 .openConnection() as HttpURLConnection)
@@ -791,6 +829,30 @@ private fun GroupChatsSection(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(selected = groupType == "private", onClick = { groupType = "private" }, label = { Text("Private") }, enabled = !creating)
                         FilterChip(selected = groupType == "public", onClick = { groupType = "public" }, label = { Text("Public") }, enabled = !creating)
+                    }
+                    Text("Add friends", style = MaterialTheme.typography.titleSmall)
+                    if (friends.isEmpty()) {
+                        Text("You can add friends after creating the group.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            friends.take(20).forEach { friend ->
+                                Row(
+                                    Modifier.fillMaxWidth().clickable {
+                                        selectedFriendIds = if (friend.id in selectedFriendIds) selectedFriendIds - friend.id else selectedFriendIds + friend.id
+                                    },
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Checkbox(
+                                        checked = friend.id in selectedFriendIds,
+                                        onCheckedChange = { checked ->
+                                            selectedFriendIds = if (checked) selectedFriendIds + friend.id else selectedFriendIds - friend.id
+                                        },
+                                        enabled = !creating
+                                    )
+                                    Text(friend.username, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
                     }
                     Text("Auto-delete messages", style = MaterialTheme.typography.titleSmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
