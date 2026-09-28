@@ -622,6 +622,8 @@ private fun GroupChatRoom(
     var showInfoDialog by remember { mutableStateOf(false) }
     var showLeaveDialog by remember { mutableStateOf(false) }
     var leavingGroup by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var deletingGroup by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
     var savingSettings by remember { mutableStateOf(false) }
     var settingsName by remember { mutableStateOf(group.name) }
@@ -775,6 +777,38 @@ private fun GroupChatRoom(
             onStatus(error.message ?: "Could not leave the group.")
         } finally {
             leavingGroup = false
+        }
+    }
+
+    suspend fun deleteGroupPermanently() {
+        if (group.ownerId != session.profile.id) { onStatus("Only the group owner can delete this group."); return }
+        if (deletingGroup) return
+        deletingGroup = true
+        try {
+            withContext(Dispatchers.IO) {
+                val connection = (URL(FRIENDS_SUPABASE_URL + "/rest/v1/rpc/delete_group_permanently").openConnection() as HttpURLConnection)
+                try {
+                    connection.requestMethod = "POST"; connection.doOutput = true; connection.connectTimeout = 15000; connection.readTimeout = 20000
+                    connection.setRequestProperty("apikey", FRIENDS_KEY)
+                    connection.setRequestProperty("Authorization", "Bearer " + session.accessToken)
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.setRequestProperty("Accept", "application/json")
+                    connection.outputStream.use { it.write(JSONObject().put("p_group_id", group.id).toString().toByteArray()) }
+                    val code = connection.responseCode
+                    val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) {
+                        val detail = runCatching { JSONObject(body).optString("message").ifBlank { JSONObject(body).optString("msg") }.ifBlank { JSONObject(body).optString("hint") } }.getOrDefault("")
+                        throw IllegalStateException(detail.ifBlank { "Could not delete group (HTTP $code)." })
+                    }
+                } finally { connection.disconnect() }
+            }
+            showDeleteDialog = false
+            onStatus("Group deleted permanently.")
+            onBack()
+        } catch (error: Throwable) {
+            onStatus(error.message ?: "Could not delete group.")
+        } finally {
+            deletingGroup = false
         }
     }
 
@@ -1062,6 +1096,11 @@ private fun GroupChatRoom(
                     )
                     if (group.ownerId == session.profile.id) {
                         DropdownMenuItem(
+                            text = { Text("Delete Group") },
+                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
+                            onClick = { showGroupMenu = false; showDeleteDialog = true }
+                        )
+                        DropdownMenuItem(
                             text = { Text("Group Settings") },
                             leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) },
                             onClick = {
@@ -1162,6 +1201,21 @@ private fun GroupChatRoom(
             },
             confirmButton = { Button(enabled = !savingSettings && settingsName.trim().isNotEmpty(), onClick = { scope.launch { saveGroupSettings() } }) { if (savingSettings) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp) else Text("Save") } },
             dismissButton = { TextButton(enabled = !savingSettings, onClick = { showSettingsDialog = false }) { Text("Cancel") } }
+        )
+    }
+
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!deletingGroup) showDeleteDialog = false },
+            title = { Text("Delete Group?") },
+            text = { Text("This permanently deletes the group, its messages, members, invites, and reports. This action cannot be undone.") },
+            confirmButton = {
+                Button(enabled = !deletingGroup, onClick = { scope.launch { deleteGroupPermanently() } }) {
+                    if (deletingGroup) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    else Text("Delete Permanently")
+                }
+            },
+            dismissButton = { TextButton(enabled = !deletingGroup, onClick = { showDeleteDialog = false }) { Text("Cancel") } }
         )
     }
 
