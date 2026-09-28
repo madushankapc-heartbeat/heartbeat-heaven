@@ -1492,12 +1492,12 @@ private fun GroupChatRoom(
 private fun GroupChatsSection(
     session: AuthSession?,
     onStatus: (String) -> Unit,
+    onGroupSelected: (GroupSummary) -> Unit,
     initialInviteToken: String? = null,
     onInviteHandled: () -> Unit = {}
 ) {
     var groups by remember { mutableStateOf<List<GroupSummary>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
-    var selectedGroup by remember { mutableStateOf<GroupSummary?>(null) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var creating by remember { mutableStateOf(false) }
     var groupName by remember { mutableStateOf("") }
@@ -1597,7 +1597,7 @@ private fun GroupChatsSection(
             return false
         }
         suspend fun requestWith(token: String): Pair<Int, String> = withContext(Dispatchers.IO) {
-            val connection = (URL("$FRIENDS_SUPABASE_URL/rest/v1/groups?select=id,name,description,group_type,auto_delete_days&order=updated_at.desc&limit=100").openConnection() as HttpURLConnection)
+            val connection = (URL("$FRIENDS_SUPABASE_URL/rest/v1/groups?select=id,name,description,group_type,auto_delete_days,owner_id&order=updated_at.desc&limit=100").openConnection() as HttpURLConnection)
             try {
                 connection.requestMethod = "GET"
                 connection.connectTimeout = 15000
@@ -1644,11 +1644,6 @@ private fun GroupChatsSection(
         loading = false
     }
 
-    if (selectedGroup != null && session != null) {
-        GroupChatRoom(session, selectedGroup!!, { selectedGroup = null }, onStatus)
-        return
-    }
-
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("Group Chats", style = MaterialTheme.typography.titleMedium)
@@ -1677,7 +1672,7 @@ private fun GroupChatsSection(
                         }
                     },
                     trailingContent = { Icon(Icons.Default.ChevronRight, "Open group") },
-                    modifier = Modifier.fillMaxWidth().clickable { selectedGroup = group }
+                    modifier = Modifier.fillMaxWidth().clickable { onGroupSelected(group) }
                 )
                 HorizontalDivider()
             }
@@ -1763,6 +1758,7 @@ internal fun FriendsScreen(
     var chatSummaries by remember { mutableStateOf<List<ChatSummary>>(emptyList()) }
     var requests by remember { mutableStateOf<List<FriendRequest>>(emptyList()) }
     var selected by remember { mutableStateOf<FriendUser?>(null) }
+    var selectedGroup by remember { mutableStateOf<GroupSummary?>(null) }
     var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
     var secureMediaLinks by remember { mutableStateOf<Map<String, SecureMediaLink>>(emptyMap()) }
     var text by remember { mutableStateOf("") }
@@ -3410,6 +3406,16 @@ internal fun FriendsScreen(
         return
     }
 
+    if (selectedGroup != null && session != null) {
+        GroupChatRoom(
+            session = session!!,
+            group = selectedGroup!!,
+            onBack = { selectedGroup = null },
+            onStatus = { statusMessage = it }
+        )
+        return
+    }
+
     val onlineIds = remember(online) { online.mapTo(hashSetOf()) { it.id } }
 
     LazyColumn(
@@ -3509,6 +3515,7 @@ internal fun FriendsScreen(
                 GroupChatsSection(
                     session = session,
                     onStatus = { statusMessage = it },
+                    onGroupSelected = { selectedGroup = it },
                     initialInviteToken = groupInviteToken,
                     onInviteHandled = onGroupInviteHandled
                 )
