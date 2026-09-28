@@ -1401,7 +1401,7 @@ private fun GroupChatRoom(
                     enabled = true
                 )
                 Spacer(Modifier.width(8.dp))
-                IconButton(enabled = !mediaSending && (text.trim().isNotBlank() || pendingGroupMedia.isNotEmpty()), onClick = { scope.launch { sendMessage() } }) {
+                IconButton(enabled = !textSending && (text.trim().isNotBlank() || pendingGroupMedia.isNotEmpty()), onClick = { scope.launch { sendMessage() } }) {
                     if (textSending) CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
                     else Icon(Icons.Default.Send, contentDescription = "Send message")
                 }
