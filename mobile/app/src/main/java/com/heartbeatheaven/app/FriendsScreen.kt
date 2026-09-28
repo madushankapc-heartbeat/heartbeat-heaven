@@ -34,6 +34,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import coil.compose.AsyncImage
+import androidx.compose.ui.viewinterop.AndroidView
+import android.widget.VideoView
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -594,7 +596,9 @@ private data class GroupMessage(
     val id: String,
     val senderId: String,
     val body: String,
-    val createdAt: String
+    val createdAt: String,
+    val messageType: String = "text",
+    val mediaPath: String = ""
 )
 
 private data class GroupMemberSummary(
@@ -614,6 +618,10 @@ private fun GroupChatRoom(
     var text by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(true) }
     var sending by remember { mutableStateOf(false) }
+    var pendingGroupMedia by remember { mutableStateOf<List<PendingChatAttachment>>(emptyList()) }
+    var groupMediaBusy by remember { mutableStateOf(false) }
+    var groupMediaProgress by remember { mutableStateOf(0) }
+    var groupMediaLinks by remember { mutableStateOf<Map<String, SecureMediaLink>>(emptyMap()) }
     var inviteBusy by remember { mutableStateOf(false) }
     var inviteLink by remember { mutableStateOf<String?>(null) }
     var inviteExpiresAt by remember { mutableStateOf("") }
@@ -641,7 +649,7 @@ private fun GroupChatRoom(
 
     suspend fun loadMessages() {
         withContext(Dispatchers.IO) {
-            val url = "$FRIENDS_SUPABASE_URL/rest/v1/group_messages?group_id=eq.${group.id}&select=id,sender_id,body,created_at&order=created_at.asc&limit=500"
+            val url = "$FRIENDS_SUPABASE_URL/rest/v1/group_messages?group_id=eq.${group.id}&select=id,sender_id,body,created_at,message_type,media_path&order=created_at.asc&limit=500"
             val connection = (URL(url).openConnection() as HttpURLConnection)
             try {
                 connection.requestMethod = "GET"
@@ -661,7 +669,7 @@ private fun GroupChatRoom(
                 messages = buildList {
                     for (i in 0 until rows.length()) {
                         val row = rows.getJSONObject(i)
-                        add(GroupMessage(row.optString("id"), row.optString("sender_id"), row.optString("body"), row.optString("created_at")))
+                        add(GroupMessage(row.optString("id"), row.optString("sender_id"), row.optString("body"), row.optString("created_at"), row.optString("message_type").ifBlank { "text" }, row.optString("media_path").takeUnless { it == "null" }.orEmpty()))
                     }
                 }
             } finally {
@@ -670,52 +678,80 @@ private fun GroupChatRoom(
         }
     }
 
+    suspend fun secureGroupMediaUrl(messageId: String, mediaPath: String): SecureMediaLink = withContext(Dispatchers.IO) {
+        val connection = (URL(FRIENDS_SUPABASE_URL + "/functions/v1/secure-group-media-access").openConnection() as HttpURLConnection)
+        try {
+            connection.requestMethod = "POST"
+            connection.doOutput = true
+            connection.connectTimeout = 15000
+            connection.readTimeout = 20000
+            connection.setRequestProperty("apikey", FRIENDS_KEY)
+            connection.setRequestProperty("Authorization", "Bearer " + session.accessToken)
+            connection.setRequestProperty("Content-Type", "application/json")
+            connection.setRequestProperty("Accept", "application/json")
+            connection.outputStream.use { it.write(JSONObject().put("message_id", messageId).put("media_path", mediaPath).put("mode", "user").toString().toByteArray()) }
+            val code = connection.responseCode
+            val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) {
+                val detail = runCatching { JSONObject(body).optString("message").ifBlank { JSONObject(body).optString("error") } }.getOrDefault("")
+                throw IllegalStateException(detail.ifBlank { "Could not create secure group media access (HTTP $code)." })
+            }
+            SecureMediaSupport.parse(body)
+        } finally { connection.disconnect() }
+    }
+
     suspend fun sendMessage() {
         val body = text.trim()
-        if (body.isBlank()) return
-        if (body.length > 4000) {
-            onStatus("Message is too long.")
-            return
-        }
+        val attachments = pendingGroupMedia
+        if (body.isBlank() && attachments.isEmpty()) return
+        if (body.length > 4000) { onStatus("Message is too long."); return }
         sending = true
+        groupMediaBusy = attachments.isNotEmpty()
         try {
-            withContext(Dispatchers.IO) {
-                val connection = (URL("$FRIENDS_SUPABASE_URL/rest/v1/group_messages").openConnection() as HttpURLConnection)
-                try {
-                    connection.requestMethod = "POST"
-                    connection.doOutput = true
-                    connection.connectTimeout = 15000
-                    connection.readTimeout = 20000
-                    connection.setRequestProperty("apikey", FRIENDS_KEY)
-                    connection.setRequestProperty("Authorization", "Bearer \${session.accessToken}")
-                    connection.setRequestProperty("Content-Type", "application/json")
-                    connection.setRequestProperty("Accept", "application/json")
-                    connection.setRequestProperty("Prefer", "return=minimal")
-                    val payload = JSONObject()
-                        .put("group_id", group.id)
-                        .put("sender_id", session.profile.id)
-                        .put("body", body)
-                        .put("message_type", "text")
-                        .toString()
-                    connection.outputStream.use { it.write(payload.toByteArray()) }
-                    val code = connection.responseCode
-                    val response = (if (code in 200..299) connection.inputStream else connection.errorStream)
-                        ?.bufferedReader()?.use { it.readText() }.orEmpty()
-                    if (code !in 200..299) {
-                        val detail = runCatching { JSONObject(response).optString("message") }.getOrDefault("")
-                        throw IllegalStateException(detail.ifBlank { "Message could not be sent." })
-                    }
-                } finally {
-                    connection.disconnect()
+            for (attachment in attachments) {
+                val mime = attachment.mime.lowercase()
+                if (!mime.startsWith("image/") && !mime.startsWith("video/")) error("Only image and video files can be shared.")
+                val uploaded = GroupMediaSupport.upload(context, attachment.uri, session.accessToken, group.id, mime) { sent, total ->
+                    if (total > 0L) groupMediaProgress = (sent.toDouble() / total.toDouble() * 100.0).toInt().coerceIn(0, 100)
+                }.getOrElse { throw it }
+                withContext(Dispatchers.IO) {
+                    val connection = (URL("$FRIENDS_SUPABASE_URL/rest/v1/group_messages").openConnection() as HttpURLConnection)
+                    try {
+                        connection.requestMethod = "POST"; connection.doOutput = true; connection.connectTimeout = 15000; connection.readTimeout = 20000
+                        connection.setRequestProperty("apikey", FRIENDS_KEY); connection.setRequestProperty("Authorization", "Bearer " + session.accessToken)
+                        connection.setRequestProperty("Content-Type", "application/json"); connection.setRequestProperty("Accept", "application/json"); connection.setRequestProperty("Prefer", "return=minimal")
+                        val payload = JSONObject().put("group_id", group.id).put("sender_id", session.profile.id)
+                            .put("body", body).put("message_type", uploaded.type).put("media_path", uploaded.path).toString()
+                        connection.outputStream.use { it.write(payload.toByteArray()) }
+                        val code = connection.responseCode
+                        val response = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                        if (code !in 200..299) {
+                            val detail = runCatching { JSONObject(response).optString("message").ifBlank { JSONObject(response).optString("error") } }.getOrDefault("")
+                            throw IllegalStateException(detail.ifBlank { "Media message could not be sent." })
+                        }
+                    } finally { connection.disconnect() }
                 }
             }
-            text = ""
-            loadMessages()
-            onStatus("")
+            if (attachments.isEmpty()) {
+                withContext(Dispatchers.IO) {
+                    val connection = (URL("$FRIENDS_SUPABASE_URL/rest/v1/group_messages").openConnection() as HttpURLConnection)
+                    try {
+                        connection.requestMethod = "POST"; connection.doOutput = true; connection.connectTimeout = 15000; connection.readTimeout = 20000
+                        connection.setRequestProperty("apikey", FRIENDS_KEY); connection.setRequestProperty("Authorization", "Bearer " + session.accessToken)
+                        connection.setRequestProperty("Content-Type", "application/json"); connection.setRequestProperty("Accept", "application/json"); connection.setRequestProperty("Prefer", "return=minimal")
+                        connection.outputStream.use { it.write(JSONObject().put("group_id", group.id).put("sender_id", session.profile.id).put("body", body).put("message_type", "text").toString().toByteArray()) }
+                        val code = connection.responseCode
+                        val response = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                        if (code !in 200..299) throw IllegalStateException(runCatching { JSONObject(response).optString("message") }.getOrElse { "" }.ifBlank { "Message could not be sent." })
+                    } finally { connection.disconnect() }
+                }
+            }
+            text = ""; pendingGroupMedia = emptyList(); groupMediaProgress = 0
+            loadMessages(); onStatus("")
         } catch (error: Throwable) {
             onStatus(error.message ?: "Message could not be sent.")
         } finally {
-            sending = false
+            sending = false; groupMediaBusy = false; groupMediaProgress = 0
         }
     }
 
@@ -1035,6 +1071,36 @@ private fun GroupChatRoom(
         finally { inviteBusy = false }
     }
 
+    val groupMediaPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        if (uris.isEmpty() || sending) return@rememberLauncherForActivityResult
+        val selected = uris.map { readPendingAttachment(it) }
+        val invalid = selected.firstOrNull { !it.mime.startsWith("image/") && !it.mime.startsWith("video/") }
+        if (invalid != null) onStatus("Only image and video files can be selected.")
+        else if (selected.any { it.size > 50L * 1024L * 1024L }) onStatus("Each group media file must be 50 MB or smaller.")
+        else pendingGroupMedia = selected
+    }
+
+    fun readPendingAttachment(uri: Uri): PendingChatAttachment {
+        val name = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getString(c.getColumnIndexOrThrow(android.provider.OpenableColumns.DISPLAY_NAME)) else "attachment"
+        } ?: "attachment"
+        val size = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use { c ->
+            if (c.moveToFirst()) c.getLong(c.getColumnIndexOrThrow(android.provider.OpenableColumns.SIZE)) else -1L
+        } ?: -1L
+        return PendingChatAttachment(uri, name, context.contentResolver.getType(uri).orEmpty(), size)
+    }
+
+    LaunchedEffect(messages) {
+        val now = System.currentTimeMillis()
+        val updated = groupMediaLinks.filterKeys { id -> messages.any { it.id == id } }.toMutableMap()
+        for (message in messages.filter { it.messageType != "text" && it.mediaPath.isNotBlank() }) {
+            val cached = updated[message.id]
+            if (cached != null && cached.expiresAtMs > now + 60_000L) continue
+            runCatching { secureGroupMediaUrl(message.id, message.mediaPath) }.onSuccess { updated[message.id] = it }
+        }
+        groupMediaLinks = updated
+    }
+
     LaunchedEffect(group.id) {
         loading = true
         runCatching { loadMessages() }.onFailure { onStatus(it.message ?: "Could not load group messages.") }
@@ -1136,7 +1202,24 @@ private fun GroupChatRoom(
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
                         Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 1.dp, modifier = Modifier.widthIn(max = 320.dp)) {
                             Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                                Text(message.body)
+                                if (message.messageType == "image" || message.messageType == "video") {
+                                    val secure = groupMediaLinks[message.id]
+                                    if (secure != null) {
+                                        if (message.messageType == "image") {
+                                            AsyncImage(model = secure.url, contentDescription = "Group image", modifier = Modifier.fillMaxWidth().heightIn(max = 280.dp).clip(RoundedCornerShape(12.dp)), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                                        } else {
+                                            AndroidView(factory = { ctx -> VideoView(ctx).apply { setVideoPath(secure.url); setOnPreparedListener { it.isLooping = false } } }, modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(12.dp)))
+                                        }
+                                    } else {
+                                        Box(Modifier.fillMaxWidth().height(80.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator(modifier = Modifier.size(24.dp)) }
+                                    }
+                                    if (message.body.isNotBlank()) {
+                                        Spacer(Modifier.height(6.dp))
+                                        Text(message.body)
+                                    }
+                                } else {
+                                    Text(message.body)
+                                }
                                 Spacer(Modifier.height(3.dp))
                                 Text(ChatTimeFormatter.listTimestamp(message.createdAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
@@ -1144,17 +1227,44 @@ private fun GroupChatRoom(
                     }
                 }
             }
+            if (pendingGroupMedia.isNotEmpty()) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    pendingGroupMedia.forEachIndexed { index, attachment ->
+                        Surface(shape = RoundedCornerShape(12.dp), tonalElevation = 2.dp) {
+                            Column(Modifier.widthIn(min = 110.dp, max = 150.dp).padding(8.dp)) {
+                                if (attachment.mime.startsWith("image/")) {
+                                    AsyncImage(model = attachment.uri, contentDescription = attachment.name, modifier = Modifier.fillMaxWidth().height(80.dp).clip(RoundedCornerShape(8.dp)), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                                } else {
+                                    Box(Modifier.fillMaxWidth().height(80.dp), contentAlignment = Alignment.Center) { Icon(Icons.Default.Videocam, "Video", Modifier.size(36.dp)) }
+                                }
+                                Text(attachment.name, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
+                                Text(formatAttachmentSize(attachment.size), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                TextButton(enabled = !sending, onClick = { pendingGroupMedia = pendingGroupMedia.filterIndexed { i, _ -> i != index } }) { Text("Remove") }
+                            }
+                        }
+                    }
+                }
+            }
+            if (groupMediaBusy) {
+                Column(Modifier.fillMaxWidth().padding(horizontal = 8.dp)) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Text("Uploading group media… $groupMediaProgress%", style = MaterialTheme.typography.labelSmall)
+                }
+            }
             Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom) {
+                IconButton(enabled = !sending, onClick = { groupMediaPicker.launch(arrayOf("image/*", "video/*")) }) {
+                    Icon(Icons.Default.AttachFile, contentDescription = "Attach image or video")
+                }
                 OutlinedTextField(
                     value = text,
                     onValueChange = { if (it.length <= 4000) text = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("Message") },
+                    placeholder = { Text("Message or caption") },
                     maxLines = 5,
                     enabled = !sending
                 )
                 Spacer(Modifier.width(8.dp))
-                IconButton(enabled = !sending && text.trim().isNotBlank(), onClick = { scope.launch { sendMessage() } }) {
+                IconButton(enabled = !sending && (text.trim().isNotBlank() || pendingGroupMedia.isNotEmpty()), onClick = { scope.launch { sendMessage() } }) {
                     if (sending) CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
                     else Icon(Icons.Default.Send, contentDescription = "Send message")
                 }
