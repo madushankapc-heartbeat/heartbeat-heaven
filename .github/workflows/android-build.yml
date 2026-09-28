@@ -7,6 +7,7 @@ on:
     branches:
       - feature/android-app
       - feature/phone-one-device-account
+      - feature/group-chat-safe
   workflow_dispatch:
 
 jobs:
