@@ -616,7 +616,8 @@ private fun GroupChatRoom(
     session: AuthSession,
     group: GroupSummary,
     onBack: () -> Unit,
-    onStatus: (String) -> Unit
+    onStatus: (String) -> Unit,
+    onGroupPhotoUpdated: (String, String) -> Unit
 ) {
     var messages by remember(group.id) { mutableStateOf<List<GroupMessage>>(emptyList()) }
     var text by remember { mutableStateOf("") }
@@ -678,6 +679,7 @@ private fun GroupChatRoom(
                     }
                     val signed = withContext(Dispatchers.IO) { GroupProfileSupport.signedUrl(session, newPath) }
                     groupPhotoUrl = signed
+                    onGroupPhotoUpdated(newPath, signed)
                     if (oldPath.isNotBlank() && oldPath != newPath) {
                         runCatching { withContext(Dispatchers.IO) { GroupProfileSupport.delete(session, oldPath) } }
                     }
@@ -1892,7 +1894,15 @@ private fun GroupChatsSection(
         }
         val photoPaths = groups.mapNotNull { it.photoPath.takeIf(String::isNotBlank) }.distinct()
         if (photoPaths.isNotEmpty()) {
-            val photoUrls = runCatching { withContext(Dispatchers.IO) { GroupProfileSupport.signedUrls(current, photoPaths) } }.getOrDefault(emptyMap())
+            val photoUrls = runCatching { withContext(Dispatchers.IO) { GroupProfileSupport.signedUrls(current, photoPaths) } }
+                .getOrElse {
+                    buildMap {
+                        for (path in photoPaths) {
+                            runCatching { GroupProfileSupport.signedUrl(current, path) }
+                                .onSuccess { put(path, it) }
+                        }
+                    }
+                }
             groups = groups.map { it.copy(photoUrl = photoUrls[it.photoPath].orEmpty()) }
         }
         return true
@@ -3678,7 +3688,11 @@ internal fun FriendsScreen(
             session = session!!,
             group = selectedGroup!!,
             onBack = { selectedGroup = null },
-            onStatus = { statusMessage = it }
+            onStatus = { statusMessage = it },
+            onGroupPhotoUpdated = { newPath, signedUrl ->
+                selectedGroup = selectedGroup?.copy(photoPath = newPath, photoUrl = signedUrl)
+                groupsRefresh++
+            }
         )
         return
     }
