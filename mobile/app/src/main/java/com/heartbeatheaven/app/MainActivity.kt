@@ -141,7 +141,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         pendingGroupInviteToken = intent?.data?.takeIf { it.scheme == "heartbeatheaven" && it.host == "group-invite" }?.getQueryParameter("token")
         setContent {
-            MaterialTheme {
+            HeartbeatHeavenTheme {
                 LaunchedEffect(currentSongId, isPlaying) {
                     while (currentSongId != null) {
                         positionMs = player?.currentPosition?.coerceAtLeast(0L) ?: 0L
