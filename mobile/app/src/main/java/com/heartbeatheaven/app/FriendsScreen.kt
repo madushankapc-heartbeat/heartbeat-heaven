@@ -606,7 +606,6 @@ private fun GroupChatRoom(
     var loading by remember { mutableStateOf(true) }
     var sending by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
 
     suspend fun loadMessages() {
         withContext(Dispatchers.IO) {
@@ -778,6 +777,7 @@ private fun GroupChatsSection(
     var autoDeleteDays by remember { mutableIntStateOf(7) }
     var friends by remember { mutableStateOf<List<FriendUser>>(emptyList()) }
     var selectedFriendIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val context = LocalContext.current
 
     suspend fun createGroup(current: AuthSession) {
         val name = groupName.trim()
