@@ -657,6 +657,8 @@ private fun GroupChatRoom(
     val context = LocalContext.current
     val groupPhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null && group.ownerId == session.profile.id) {
+            val previousPhotoUrl = groupPhotoUrl
+            groupPhotoUrl = uri.toString()
             scope.launch {
                 groupPhotoUploading = true
                 runCatching {
@@ -684,7 +686,10 @@ private fun GroupChatRoom(
                         runCatching { withContext(Dispatchers.IO) { GroupProfileSupport.delete(session, oldPath) } }
                     }
                     onStatus("Group picture updated.")
-                }.onFailure { onStatus(it.message ?: "Could not update group picture.") }
+                }.onFailure {
+                    groupPhotoUrl = previousPhotoUrl
+                    onStatus(it.message ?: "Could not update group picture.")
+                }
                 groupPhotoUploading = false
             }
         }
