@@ -587,6 +587,180 @@ private data class GroupSummary(
     val autoDeleteDays: Int
 )
 
+private data class GroupMessage(
+    val id: String,
+    val senderId: String,
+    val body: String,
+    val createdAt: String
+)
+
+@Composable
+private fun GroupChatRoom(
+    session: AuthSession,
+    group: GroupSummary,
+    onBack: () -> Unit,
+    onStatus: (String) -> Unit
+) {
+    var messages by remember(group.id) { mutableStateOf<List<GroupMessage>>(emptyList()) }
+    var text by remember { mutableStateOf("") }
+    var loading by remember { mutableStateOf(true) }
+    var sending by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    suspend fun loadMessages() {
+        withContext(Dispatchers.IO) {
+            val url = "$FRIENDS_SUPABASE_URL/rest/v1/group_messages?group_id=eq.\${group.id}&select=id,sender_id,body,created_at&order=created_at.asc&limit=500"
+            val connection = (URL(url).openConnection() as HttpURLConnection)
+            try {
+                connection.requestMethod = "GET"
+                connection.connectTimeout = 15000
+                connection.readTimeout = 20000
+                connection.setRequestProperty("apikey", FRIENDS_KEY)
+                connection.setRequestProperty("Authorization", "Bearer \${session.accessToken}")
+                connection.setRequestProperty("Accept", "application/json")
+                val code = connection.responseCode
+                val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+                val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                if (code !in 200..299) {
+                    val detail = runCatching { JSONObject(body).optString("message") }.getOrDefault("")
+                    throw IllegalStateException(detail.ifBlank { "Could not load group messages." })
+                }
+                val rows = JSONArray(body)
+                messages = buildList {
+                    for (i in 0 until rows.length()) {
+                        val row = rows.getJSONObject(i)
+                        add(GroupMessage(row.optString("id"), row.optString("sender_id"), row.optString("body"), row.optString("created_at")))
+                    }
+                }
+            } finally {
+                connection.disconnect()
+            }
+        }
+    }
+
+    suspend fun sendMessage() {
+        val body = text.trim()
+        if (body.isBlank()) return
+        if (body.length > 4000) {
+            onStatus("Message is too long.")
+            return
+        }
+        sending = true
+        try {
+            withContext(Dispatchers.IO) {
+                val connection = (URL("$FRIENDS_SUPABASE_URL/rest/v1/group_messages").openConnection() as HttpURLConnection)
+                try {
+                    connection.requestMethod = "POST"
+                    connection.doOutput = true
+                    connection.connectTimeout = 15000
+                    connection.readTimeout = 20000
+                    connection.setRequestProperty("apikey", FRIENDS_KEY)
+                    connection.setRequestProperty("Authorization", "Bearer \${session.accessToken}")
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.setRequestProperty("Accept", "application/json")
+                    connection.setRequestProperty("Prefer", "return=minimal")
+                    val payload = JSONObject()
+                        .put("group_id", group.id)
+                        .put("sender_id", session.profile.id)
+                        .put("body", body)
+                        .put("message_type", "text")
+                        .toString()
+                    connection.outputStream.use { it.write(payload.toByteArray()) }
+                    val code = connection.responseCode
+                    val response = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                        ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) {
+                        val detail = runCatching { JSONObject(response).optString("message") }.getOrDefault("")
+                        throw IllegalStateException(detail.ifBlank { "Message could not be sent." })
+                    }
+                } finally {
+                    connection.disconnect()
+                }
+            }
+            text = ""
+            loadMessages()
+            onStatus("")
+        } catch (error: Throwable) {
+            onStatus(error.message ?: "Message could not be sent.")
+        } finally {
+            sending = false
+        }
+    }
+
+    LaunchedEffect(group.id) {
+        loading = true
+        runCatching { loadMessages() }.onFailure { onStatus(it.message ?: "Could not load group messages.") }
+        loading = false
+        while (true) {
+            delay(5000)
+            runCatching { loadMessages() }
+        }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Back to Group Chats")
+            }
+            Column(Modifier.weight(1f)) {
+                Text(group.name, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                Text(
+                    "\${if (group.groupType == "public") "Public" else "Private"} • Auto-delete \${group.autoDeleteDays} days",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(onClick = { scope.launch { runCatching { loadMessages() }.onFailure { onStatus(it.message ?: "Could not refresh messages.") } } }) {
+                Icon(Icons.Default.Refresh, contentDescription = "Refresh messages")
+            }
+        }
+        HorizontalDivider()
+        if (loading) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (messages.isEmpty()) {
+                    item { Text("No messages yet. Start the conversation.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+                items(messages, key = { it.id }) { message ->
+                    val mine = message.senderId == session.profile.id
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
+                        Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 1.dp, modifier = Modifier.widthIn(max = 320.dp)) {
+                            Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                Text(message.body)
+                                Spacer(Modifier.height(3.dp))
+                                Text(ChatTimeFormatter.listTimestamp(message.createdAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.Bottom) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { if (it.length <= 4000) text = it },
+                    modifier = Modifier.weight(1f),
+                    placeholder = { Text("Message") },
+                    maxLines = 5,
+                    enabled = !sending
+                )
+                Spacer(Modifier.width(8.dp))
+                IconButton(enabled = !sending && text.trim().isNotBlank(), onClick = { scope.launch { sendMessage() } }) {
+                    if (sending) CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                    else Icon(Icons.Default.Send, contentDescription = "Send message")
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun GroupChatsSection(
     session: AuthSession?,
@@ -594,6 +768,7 @@ private fun GroupChatsSection(
 ) {
     var groups by remember { mutableStateOf<List<GroupSummary>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    var selectedGroup by remember { mutableStateOf<GroupSummary?>(null) }
     var showCreateDialog by remember { mutableStateOf(false) }
     var creating by remember { mutableStateOf(false) }
     var groupName by remember { mutableStateOf("") }
@@ -608,10 +783,7 @@ private fun GroupChatsSection(
         val description = groupDescription.trim()
         if (name.length !in 1..100) { onStatus("Group name must be 1–100 characters."); return }
         if (description.length > 500) { onStatus("Group description must be 500 characters or less."); return }
-        if (groupType !in setOf("private", "public") || autoDeleteDays !in setOf(2, 4, 7, 30)) {
-            onStatus("Invalid group settings.")
-            return
-        }
+        if (groupType !in setOf("private", "public") || autoDeleteDays !in setOf(2, 4, 7, 30)) { onStatus("Invalid group settings."); return }
         creating = true
         try {
             withContext(Dispatchers.IO) {
@@ -622,17 +794,11 @@ private fun GroupChatsSection(
                     connection.connectTimeout = 15000
                     connection.readTimeout = 20000
                     connection.setRequestProperty("apikey", FRIENDS_KEY)
-                    connection.setRequestProperty("Authorization", "Bearer ${current.accessToken}")
+                    connection.setRequestProperty("Authorization", "Bearer \${current.accessToken}")
                     connection.setRequestProperty("Content-Type", "application/json")
                     connection.setRequestProperty("Accept", "application/json")
                     connection.setRequestProperty("Prefer", "return=representation")
-                    val payload = JSONObject()
-                        .put("name", name)
-                        .put("description", description.ifBlank { JSONObject.NULL })
-                        .put("group_type", groupType)
-                        .put("auto_delete_days", autoDeleteDays)
-                        .put("owner_id", current.profile.id)
-                        .toString()
+                    val payload = JSONObject().put("name", name).put("description", description.ifBlank { JSONObject.NULL }).put("group_type", groupType).put("auto_delete_days", autoDeleteDays).put("owner_id", current.profile.id).toString()
                     connection.outputStream.use { it.write(payload.toByteArray()) }
                     val responseCode = connection.responseCode
                     val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
@@ -652,14 +818,12 @@ private fun GroupChatsSection(
                             membersConnection.connectTimeout = 15000
                             membersConnection.readTimeout = 20000
                             membersConnection.setRequestProperty("apikey", FRIENDS_KEY)
-                            membersConnection.setRequestProperty("Authorization", "Bearer ${current.accessToken}")
+                            membersConnection.setRequestProperty("Authorization", "Bearer \${current.accessToken}")
                             membersConnection.setRequestProperty("Content-Type", "application/json")
                             membersConnection.setRequestProperty("Accept", "application/json")
                             membersConnection.setRequestProperty("Prefer", "return=minimal")
                             val memberRows = JSONArray()
-                            selectedFriendIds.forEach { friendId ->
-                                memberRows.put(JSONObject().put("group_id", groupId).put("user_id", friendId).put("role", "member"))
-                            }
+                            selectedFriendIds.forEach { friendId -> memberRows.put(JSONObject().put("group_id", groupId).put("user_id", friendId).put("role", "member")) }
                             membersConnection.outputStream.use { it.write(memberRows.toString().toByteArray()) }
                             val memberCode = membersConnection.responseCode
                             if (memberCode !in 200..299) {
@@ -667,104 +831,62 @@ private fun GroupChatsSection(
                                 val detail = runCatching { JSONObject(memberResponse).optString("message") }.getOrDefault("")
                                 throw IllegalStateException(detail.ifBlank { "Group created, but adding members failed." })
                             }
-                        } finally {
-                            membersConnection.disconnect()
-                        }
+                        } finally { membersConnection.disconnect() }
                     }
                 } finally { connection.disconnect() }
             }
-            groupName = ""; groupDescription = ""; groupType = "private"; autoDeleteDays = 7
-            selectedFriendIds = emptySet()
+            groupName = ""; groupDescription = ""; groupType = "private"; autoDeleteDays = 7; selectedFriendIds = emptySet()
             showCreateDialog = false
+            loading = true
             onStatus("Group created.")
         } catch (error: Throwable) {
             onStatus(error.message ?: "Could not create group.")
-        } finally {
-            creating = false
-        }
+        } finally { creating = false }
     }
 
     LaunchedEffect(session?.profile?.id) {
-        val current = session ?: run {
-            groups = emptyList()
-            loading = false
-            return@LaunchedEffect
-        }
+        val current = session ?: run { groups = emptyList(); loading = false; return@LaunchedEffect }
         loading = true
+        runCatching { friends = FriendsApi(AuthApi(LocalContext.current), current).friends() }.onFailure { friends = emptyList() }
         runCatching {
-            friends = FriendsApi(AuthApi(LocalContext.current), current).friends()
-        }.onFailure {
-            friends = emptyList()
-        }
-        runCatching {
-            val connection = (URL("$FRIENDS_SUPABASE_URL/rest/v1/groups?select=id,name,description,group_type,auto_delete_days&order=updated_at.desc&limit=100")
-                .openConnection() as HttpURLConnection)
+            val connection = (URL("$FRIENDS_SUPABASE_URL/rest/v1/groups?select=id,name,description,group_type,auto_delete_days&order=updated_at.desc&limit=100").openConnection() as HttpURLConnection)
             try {
                 connection.requestMethod = "GET"
                 connection.connectTimeout = 15000
                 connection.readTimeout = 20000
                 connection.setRequestProperty("apikey", FRIENDS_KEY)
-                connection.setRequestProperty("Authorization", "Bearer ${current.accessToken}")
+                connection.setRequestProperty("Authorization", "Bearer \${current.accessToken}")
                 connection.setRequestProperty("Accept", "application/json")
-                val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
+                val code = connection.responseCode
+                val stream = if (code in 200..299) connection.inputStream else connection.errorStream
                 val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                if (connection.responseCode !in 200..299) {
-                    throw IllegalStateException("Could not load group chats.")
-                }
+                if (code !in 200..299) throw IllegalStateException("Could not load group chats.")
                 val rows = JSONArray(body)
                 buildList {
                     for (i in 0 until rows.length()) {
                         val row = rows.getJSONObject(i)
-                        add(
-                            GroupSummary(
-                                id = row.optString("id"),
-                                name = row.optString("name"),
-                                description = row.optString("description").takeUnless { it == "null" }.orEmpty(),
-                                groupType = row.optString("group_type"),
-                                autoDeleteDays = row.optInt("auto_delete_days", 7)
-                            )
-                        )
+                        add(GroupSummary(row.optString("id"), row.optString("name"), row.optString("description").takeUnless { it == "null" }.orEmpty(), row.optString("group_type"), row.optInt("auto_delete_days", 7)))
                     }
                 }
-            } finally {
-                connection.disconnect()
-            }
-        }.onSuccess {
-            groups = it
-            onStatus("")
-        }.onFailure {
-            groups = emptyList()
-            onStatus(it.message ?: "Could not load group chats.")
-        }
-        loading = false
+            } finally { connection.disconnect() }
+        }.onSuccess { groups = it; onStatus(""); loading = false }
+         .onFailure { groups = emptyList(); loading = false; onStatus(it.message ?: "Could not load group chats.") }
     }
 
-    Column(
-        Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+    if (selectedGroup != null && session != null) {
+        GroupChatRoom(session, selectedGroup!!, { selectedGroup = null }, onStatus)
+        return
+    }
+
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text("Group Chats", style = MaterialTheme.typography.titleMedium)
-            Button(
-                enabled = session != null && !creating,
-                onClick = { showCreateDialog = true }
-            ) {
-                Icon(Icons.Default.Add, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text("Create Group")
+            Button(enabled = session != null && !creating, onClick = { showCreateDialog = true }) {
+                Icon(Icons.Default.Add, contentDescription = null); Spacer(Modifier.width(6.dp)); Text("Create Group")
             }
         }
         if (loading) {
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center
-            ) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp))
-            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) { CircularProgressIndicator(modifier = Modifier.size(24.dp)) }
         } else if (groups.isEmpty()) {
             Text("No group chats yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
@@ -774,30 +896,17 @@ private fun GroupChatsSection(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(group.name, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                             Spacer(Modifier.width(8.dp))
-                            Text(
-                                if (group.groupType == "public") "Public" else "Private",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Text(if (group.groupType == "public") "Public" else "Private", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     },
-                    supportingContent = {
-                        Text(
-                            group.description.ifBlank { "Group chat • Auto-delete: " + group.autoDeleteDays + " days" },
-                            maxLines = 2,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                        )
-                    },
+                    supportingContent = { Text(group.description.ifBlank { "Group chat • Auto-delete: \${group.autoDeleteDays} days" }, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                     leadingContent = {
                         Surface(modifier = Modifier.size(48.dp).clip(CircleShape), tonalElevation = 2.dp) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(Icons.Default.Groups, "Group")
-                            }
+                            Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Groups, "Group") }
                         }
                     },
-                    trailingContent = {
-                        Icon(Icons.Default.ChevronRight, "Open group")
-                    }
+                    trailingContent = { Icon(Icons.Default.ChevronRight, "Open group") },
+                    modifier = Modifier.fillMaxWidth().clickable { selectedGroup = group }
                 )
                 HorizontalDivider()
             }
@@ -810,70 +919,35 @@ private fun GroupChatsSection(
             title = { Text("Create Group") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(
-                        value = groupName,
-                        onValueChange = { if (it.length <= 100) groupName = it },
-                        label = { Text("Group name") },
-                        singleLine = true,
-                        enabled = !creating
-                    )
-                    OutlinedTextField(
-                        value = groupDescription,
-                        onValueChange = { if (it.length <= 500) groupDescription = it },
-                        label = { Text("Description (optional)") },
-                        minLines = 2,
-                        maxLines = 4,
-                        enabled = !creating
-                    )
+                    OutlinedTextField(value = groupName, onValueChange = { if (it.length <= 100) groupName = it }, label = { Text("Group name") }, singleLine = true, enabled = !creating)
+                    OutlinedTextField(value = groupDescription, onValueChange = { if (it.length <= 500) groupDescription = it }, label = { Text("Description (optional)") }, minLines = 2, maxLines = 4, enabled = !creating)
                     Text("Group type", style = MaterialTheme.typography.titleSmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(selected = groupType == "private", onClick = { groupType = "private" }, label = { Text("Private") }, enabled = !creating)
                         FilterChip(selected = groupType == "public", onClick = { groupType = "public" }, label = { Text("Public") }, enabled = !creating)
                     }
                     Text("Add friends", style = MaterialTheme.typography.titleSmall)
-                    if (friends.isEmpty()) {
-                        Text("You can add friends after creating the group.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else {
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            friends.take(20).forEach { friend ->
-                                Row(
-                                    Modifier.fillMaxWidth().clickable {
-                                        selectedFriendIds = if (friend.id in selectedFriendIds) selectedFriendIds - friend.id else selectedFriendIds + friend.id
-                                    },
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Checkbox(
-                                        checked = friend.id in selectedFriendIds,
-                                        onCheckedChange = { checked ->
-                                            selectedFriendIds = if (checked) selectedFriendIds + friend.id else selectedFriendIds - friend.id
-                                        },
-                                        enabled = !creating
-                                    )
-                                    Text(friend.username, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                                }
+                    if (friends.isEmpty()) Text("You can add friends after creating the group.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    else Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        friends.take(20).forEach { friend ->
+                            Row(Modifier.fillMaxWidth().clickable { selectedFriendIds = if (friend.id in selectedFriendIds) selectedFriendIds - friend.id else selectedFriendIds + friend.id }, verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = friend.id in selectedFriendIds, onCheckedChange = { checked -> selectedFriendIds = if (checked) selectedFriendIds + friend.id else selectedFriendIds - friend.id }, enabled = !creating)
+                                Text(friend.username, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                             }
                         }
                     }
                     Text("Auto-delete messages", style = MaterialTheme.typography.titleSmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf(2, 4, 7, 30).forEach { days ->
-                            FilterChip(selected = autoDeleteDays == days, onClick = { autoDeleteDays = days }, label = { Text("${days}d") }, enabled = !creating)
-                        }
+                        listOf(2, 4, 7, 30).forEach { days -> FilterChip(selected = autoDeleteDays == days, onClick = { autoDeleteDays = days }, label = { Text("\${days}d") }, enabled = !creating) }
                     }
                 }
             },
             confirmButton = {
-                Button(
-                    enabled = !creating && groupName.trim().isNotEmpty(),
-                    onClick = { session?.let { creating = true } }
-                ) {
-                    if (creating) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    else Text("Create")
+                Button(enabled = !creating && groupName.trim().isNotEmpty(), onClick = { if (!creating) creating = true }) {
+                    if (creating) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp) else Text("Create")
                 }
             },
-            dismissButton = {
-                TextButton(enabled = !creating, onClick = { showCreateDialog = false }) { Text("Cancel") }
-            }
+            dismissButton = { TextButton(enabled = !creating, onClick = { showCreateDialog = false }) { Text("Cancel") } }
         )
     }
 
@@ -881,6 +955,7 @@ private fun GroupChatsSection(
         if (creating && showCreateDialog && session != null) createGroup(session!!)
     }
 }
+
 
 private fun targetIsMine(message: ChatMessage?, userId: String): Boolean = message?.senderId == userId
 
