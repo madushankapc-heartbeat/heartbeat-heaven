@@ -590,7 +590,9 @@ private data class GroupSummary(
     val description: String,
     val groupType: String,
     val autoDeleteDays: Int,
-    val ownerId: String
+    val ownerId: String,
+    val photoPath: String = "",
+    val photoUrl: String = ""
 )
 
 private data class GroupMessage(
@@ -626,6 +628,8 @@ private fun GroupChatRoom(
     var groupMediaProgress by remember { mutableStateOf(0) }
     var groupMediaLinks by remember { mutableStateOf<Map<String, SecureMediaLink>>(emptyMap()) }
     var groupMediaErrors by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var groupPhotoUrl by remember { mutableStateOf(group.photoUrl) }
+    var groupPhotoUploading by remember { mutableStateOf(false) }
     var inviteBusy by remember { mutableStateOf(false) }
     var inviteLink by remember { mutableStateOf<String?>(null) }
     var inviteExpiresAt by remember { mutableStateOf("") }
@@ -650,6 +654,39 @@ private fun GroupChatRoom(
     var memberActionBusy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val groupPhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null && group.ownerId == session.profile.id) {
+            scope.launch {
+                groupPhotoUploading = true
+                runCatching {
+                    val oldPath = group.photoPath
+                    val newPath = withContext(Dispatchers.IO) { GroupProfileSupport.upload(context, uri, session, group.id) }
+                    withContext(Dispatchers.IO) {
+                        val connection = (URL(FRIENDS_SUPABASE_URL + "/rest/v1/groups?id=eq." + group.id).openConnection() as HttpURLConnection)
+                        try {
+                            connection.requestMethod = "PATCH"
+                            connection.doOutput = true
+                            connection.connectTimeout = 15000
+                            connection.readTimeout = 20000
+                            connection.setRequestProperty("apikey", FRIENDS_KEY)
+                            connection.setRequestProperty("Authorization", "Bearer " + session.accessToken)
+                            connection.setRequestProperty("Content-Type", "application/json")
+                            connection.setRequestProperty("Accept", "application/json")
+                            connection.outputStream.use { it.write(JSONObject().put("photo_path", newPath).put("updated_at", Instant.now().toString()).toString().toByteArray()) }
+                            if (connection.responseCode !in 200..299) error("Could not save the group picture.")
+                        } finally { connection.disconnect() }
+                    }
+                    val signed = withContext(Dispatchers.IO) { GroupProfileSupport.signedUrl(session, newPath) }
+                    groupPhotoUrl = signed
+                    if (oldPath.isNotBlank() && oldPath != newPath) {
+                        runCatching { withContext(Dispatchers.IO) { GroupProfileSupport.delete(session, oldPath) } }
+                    }
+                    onStatus("Group picture updated.")
+                }.onFailure { onStatus(it.message ?: "Could not update group picture.") }
+                groupPhotoUploading = false
+            }
+        }
+    }
 
     suspend fun loadMessages() {
         withContext(Dispatchers.IO) {
@@ -1274,6 +1311,13 @@ private fun GroupChatRoom(
         groupMediaErrors = errors
     }
 
+    LaunchedEffect(group.id, group.photoPath) {
+        if (group.photoPath.isNotBlank() && groupPhotoUrl.isBlank()) {
+            runCatching { withContext(Dispatchers.IO) { GroupProfileSupport.signedUrl(session, group.photoPath) } }
+                .onSuccess { groupPhotoUrl = it }
+        }
+    }
+
     LaunchedEffect(group.id) {
         loading = true
         runCatching { loadMessages() }.onFailure { onStatus(it.message ?: "Could not load group messages.") }
@@ -1293,6 +1337,14 @@ private fun GroupChatRoom(
             IconButton(onClick = onBack) {
                 Icon(Icons.Default.ArrowBack, contentDescription = "Back to Group Chats")
             }
+            if (groupPhotoUrl.isNotBlank()) {
+                AsyncImage(model = groupPhotoUrl, contentDescription = "Group picture", modifier = Modifier.size(40.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+            } else {
+                Surface(modifier = Modifier.size(40.dp).clip(CircleShape), tonalElevation = 2.dp) {
+                    Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Groups, "Group picture") }
+                }
+            }
+            Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(group.name, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                 Text(
@@ -1334,6 +1386,11 @@ private fun GroupChatRoom(
                         onClick = { showGroupMenu = false; showLeaveDialog = true }
                     )
                     if (group.ownerId == session.profile.id) {
+                        DropdownMenuItem(
+                            text = { Text("Change Group Picture") },
+                            leadingIcon = { Icon(Icons.Default.PhotoCamera, contentDescription = null) },
+                            onClick = { showGroupMenu = false; groupPhotoPicker.launch("image/*") }
+                        )
                         DropdownMenuItem(
                             text = { Text("Delete Group") },
                             leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
@@ -1496,6 +1553,14 @@ private fun GroupChatRoom(
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(value = settingsName, onValueChange = { if (it.length <= 100) settingsName = it }, label = { Text("Group name") }, singleLine = true, enabled = !savingSettings)
                     OutlinedTextField(value = settingsDescription, onValueChange = { if (it.length <= 1000) settingsDescription = it }, label = { Text("Description") }, minLines = 2, maxLines = 4, enabled = !savingSettings)
+                    Text("Group picture", style = MaterialTheme.typography.titleSmall)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        if (groupPhotoUrl.isNotBlank()) AsyncImage(model = groupPhotoUrl, contentDescription = "Group picture", modifier = Modifier.size(56.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                        else Surface(modifier = Modifier.size(56.dp).clip(CircleShape), tonalElevation = 2.dp) { Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Groups, "Group picture") } }
+                        OutlinedButton(enabled = !savingSettings && !groupPhotoUploading, onClick = { groupPhotoPicker.launch("image/*") }) {
+                            if (groupPhotoUploading) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp) else Text("Change")
+                        }
+                    }
                     Text("Group type", style = MaterialTheme.typography.titleSmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         FilterChip(selected = settingsType == "private", onClick = { settingsType = "private" }, label = { Text("Private") }, enabled = !savingSettings)
@@ -1758,7 +1823,7 @@ private fun GroupChatsSection(
             return false
         }
         suspend fun requestWith(token: String): Pair<Int, String> = withContext(Dispatchers.IO) {
-            val connection = (URL("$FRIENDS_SUPABASE_URL/rest/v1/groups?select=id,name,description,group_type,auto_delete_days,owner_id&order=updated_at.desc&limit=100").openConnection() as HttpURLConnection)
+            val connection = (URL("$FRIENDS_SUPABASE_URL/rest/v1/groups?select=id,name,description,photo_path,group_type,auto_delete_days,owner_id&order=updated_at.desc&limit=100").openConnection() as HttpURLConnection)
             try {
                 connection.requestMethod = "GET"
                 connection.connectTimeout = 15000
@@ -1790,7 +1855,14 @@ private fun GroupChatsSection(
         groups = buildList {
             for (i in 0 until rows.length()) {
                 val row = rows.getJSONObject(i)
-                add(GroupSummary(row.optString("id"), row.optString("name"), row.optString("description").takeUnless { it == "null" }.orEmpty(), row.optString("group_type"), row.optInt("auto_delete_days", 7), row.optString("owner_id")))
+                add(GroupSummary(row.optString("id"), row.optString("name"), row.optString("description").takeUnless { it == "null" }.orEmpty(), row.optString("group_type"), row.optInt("auto_delete_days", 7), row.optString("owner_id"), row.optString("photo_path").takeUnless { it == "null" }.orEmpty()))
+            }
+        }
+        val photoPaths = groups.mapNotNull { it.photoPath.takeIf(String::isNotBlank) }.distinct()
+        if (photoPaths.isNotEmpty()) {
+            val photoUrls = runCatching { withContext(Dispatchers.IO) { GroupProfileSupport.signedUrls(current, photoPaths) } }.getOrDefault(emptyMap())
+            groups = groups.map { it.copy(photoUrl = photoUrls[it.photoPath].orEmpty()) }
+        }
             }
         }
         return true
@@ -1828,8 +1900,12 @@ private fun GroupChatsSection(
                     },
                     supportingContent = { Text(group.description.ifBlank { "Group chat • Auto-delete: ${group.autoDeleteDays} days" }, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                     leadingContent = {
-                        Surface(modifier = Modifier.size(48.dp).clip(CircleShape), tonalElevation = 2.dp) {
-                            Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Groups, "Group") }
+                        if (group.photoUrl.isNotBlank()) {
+                            AsyncImage(model = group.photoUrl, contentDescription = "Group picture", modifier = Modifier.size(48.dp).clip(CircleShape), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
+                        } else {
+                            Surface(modifier = Modifier.size(48.dp).clip(CircleShape), tonalElevation = 2.dp) {
+                                Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Groups, "Group") }
+                            }
                         }
                     },
                     trailingContent = { Icon(Icons.Default.ChevronRight, "Open group") },
