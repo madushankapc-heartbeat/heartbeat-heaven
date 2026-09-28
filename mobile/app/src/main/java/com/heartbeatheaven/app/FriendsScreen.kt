@@ -1863,8 +1863,6 @@ private fun GroupChatsSection(
             val photoUrls = runCatching { withContext(Dispatchers.IO) { GroupProfileSupport.signedUrls(current, photoPaths) } }.getOrDefault(emptyMap())
             groups = groups.map { it.copy(photoUrl = photoUrls[it.photoPath].orEmpty()) }
         }
-            }
-        }
         return true
     }
 
