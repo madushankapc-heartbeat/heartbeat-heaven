@@ -3691,7 +3691,6 @@ internal fun FriendsScreen(
             onStatus = { statusMessage = it },
             onGroupPhotoUpdated = { newPath, signedUrl ->
                 selectedGroup = selectedGroup?.copy(photoPath = newPath, photoUrl = signedUrl)
-                groupsRefresh++
             }
         )
         return
