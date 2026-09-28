@@ -749,12 +749,10 @@ private fun GroupChatRoom(
         if (body.isBlank() && attachments.isEmpty()) return
         if (body.length > 4000) { onStatus("Message is too long."); return }
 
-        // If media is attached, capture it and clear the composer immediately.
-        // This prevents a completed/failed upload from being re-used by a later text send.
+        // Keep the pending media visible until each upload and message insert succeeds.
+        // Successfully sent attachments are removed incrementally so a retry cannot duplicate them.
         if (attachments.isNotEmpty()) {
             if (mediaSending) return
-            pendingGroupMedia = emptyList()
-            text = ""
             mediaSending = true
             groupMediaBusy = true
             scope.launch {
@@ -825,7 +823,9 @@ private fun GroupChatRoom(
                             throw insertError
                         }
                         groupMediaProgress = 0
+                        pendingGroupMedia = pendingGroupMedia.drop(1)
                     }
+                    text = ""
                     loadMessages()
                 } catch (error: Throwable) {
                     onStatus(error.message ?: "Media message could not be sent.")
