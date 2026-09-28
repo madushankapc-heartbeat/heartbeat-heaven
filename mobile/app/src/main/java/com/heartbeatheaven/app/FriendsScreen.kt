@@ -788,18 +788,25 @@ private fun GroupChatsSection(
         creating = true
         try {
             withContext(Dispatchers.IO) {
-                val connection = (URL("$FRIENDS_SUPABASE_URL/rest/v1/groups").openConnection() as HttpURLConnection)
+                val connection = (URL("$FRIENDS_SUPABASE_URL/rest/v1/rpc/create_group_with_members").openConnection() as HttpURLConnection)
                 try {
                     connection.requestMethod = "POST"
                     connection.doOutput = true
                     connection.connectTimeout = 15000
                     connection.readTimeout = 20000
                     connection.setRequestProperty("apikey", FRIENDS_KEY)
-                    connection.setRequestProperty("Authorization", "Bearer \${current.accessToken}")
+                    connection.setRequestProperty("Authorization", "Bearer ${current.accessToken}")
                     connection.setRequestProperty("Content-Type", "application/json")
                     connection.setRequestProperty("Accept", "application/json")
-                    connection.setRequestProperty("Prefer", "return=representation")
-                    val payload = JSONObject().put("name", name).put("description", description.ifBlank { JSONObject.NULL }).put("group_type", groupType).put("auto_delete_days", autoDeleteDays).put("owner_id", current.profile.id).toString()
+                    val memberRows = JSONArray()
+                    selectedFriendIds.forEach { friendId -> memberRows.put(friendId) }
+                    val payload = JSONObject()
+                        .put("p_name", name)
+                        .put("p_description", description.ifBlank { JSONObject.NULL })
+                        .put("p_group_type", groupType)
+                        .put("p_auto_delete_days", autoDeleteDays)
+                        .put("p_member_ids", memberRows)
+                        .toString()
                     connection.outputStream.use { it.write(payload.toByteArray()) }
                     val responseCode = connection.responseCode
                     val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
@@ -808,31 +815,8 @@ private fun GroupChatsSection(
                         val detail = runCatching { JSONObject(response).optString("message") }.getOrDefault("")
                         throw IllegalStateException(detail.ifBlank { "Could not create group." })
                     }
-                    val createdRows = JSONArray(response)
-                    val groupId = if (createdRows.length() > 0) createdRows.getJSONObject(0).optString("id") else ""
-                    if (groupId.isBlank()) throw IllegalStateException("Group was created but its ID was not returned.")
-                    if (selectedFriendIds.isNotEmpty()) {
-                        val membersConnection = (URL("$FRIENDS_SUPABASE_URL/rest/v1/group_members").openConnection() as HttpURLConnection)
-                        try {
-                            membersConnection.requestMethod = "POST"
-                            membersConnection.doOutput = true
-                            membersConnection.connectTimeout = 15000
-                            membersConnection.readTimeout = 20000
-                            membersConnection.setRequestProperty("apikey", FRIENDS_KEY)
-                            membersConnection.setRequestProperty("Authorization", "Bearer \${current.accessToken}")
-                            membersConnection.setRequestProperty("Content-Type", "application/json")
-                            membersConnection.setRequestProperty("Accept", "application/json")
-                            membersConnection.setRequestProperty("Prefer", "return=minimal")
-                            val memberRows = JSONArray()
-                            selectedFriendIds.forEach { friendId -> memberRows.put(JSONObject().put("group_id", groupId).put("user_id", friendId).put("role", "member")) }
-                            membersConnection.outputStream.use { it.write(memberRows.toString().toByteArray()) }
-                            val memberCode = membersConnection.responseCode
-                            if (memberCode !in 200..299) {
-                                val memberResponse = membersConnection.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                                val detail = runCatching { JSONObject(memberResponse).optString("message") }.getOrDefault("")
-                                throw IllegalStateException(detail.ifBlank { "Group created, but adding members failed." })
-                            }
-                        } finally { membersConnection.disconnect() }
+                    if (response.trim().isBlank()) {
+                        throw IllegalStateException("Group was created but its ID was not returned.")
                     }
                 } finally { connection.disconnect() }
             }
