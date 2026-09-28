@@ -620,6 +620,8 @@ private fun GroupChatRoom(
     var canManageInvite by remember { mutableStateOf(false) }
     var showGroupMenu by remember { mutableStateOf(false) }
     var showInfoDialog by remember { mutableStateOf(false) }
+    var showLeaveDialog by remember { mutableStateOf(false) }
+    var leavingGroup by remember { mutableStateOf(false) }
     var showMembersDialog by remember { mutableStateOf(false) }
     var showAddMembersDialog by remember { mutableStateOf(false) }
     var membersLoading by remember { mutableStateOf(false) }
@@ -722,6 +724,51 @@ private fun GroupChatRoom(
                 val rows = JSONArray(body)
                 canManageInvite = rows.length() > 0 && rows.getJSONObject(0).optString("role") in setOf("owner", "admin")
             } finally { connection.disconnect() }
+        }
+    }
+
+    suspend fun leaveGroup() {
+        if (group.ownerId == session.profile.id) {
+            onStatus("The group owner cannot leave the group. Transfer ownership or delete the group first.")
+            return
+        }
+        leavingGroup = true
+        try {
+            withContext(Dispatchers.IO) {
+                val connection = (URL(FRIENDS_SUPABASE_URL + "/rest/v1/rpc/group_remove_member").openConnection() as HttpURLConnection)
+                try {
+                    connection.requestMethod = "POST"
+                    connection.doOutput = true
+                    connection.connectTimeout = 15000
+                    connection.readTimeout = 20000
+                    connection.setRequestProperty("apikey", FRIENDS_KEY)
+                    connection.setRequestProperty("Authorization", "Bearer " + session.accessToken)
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.setRequestProperty("Accept", "application/json")
+                    connection.outputStream.use {
+                        it.write(JSONObject().put("p_group_id", group.id).put("p_user_id", session.profile.id).toString().toByteArray())
+                    }
+                    val code = connection.responseCode
+                    val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) {
+                        val detail = runCatching {
+                            JSONObject(body).optString("message")
+                                .ifBlank { JSONObject(body).optString("msg") }
+                                .ifBlank { JSONObject(body).optString("error") }
+                        }.getOrDefault("")
+                        throw IllegalStateException(detail.ifBlank { "Could not leave the group." })
+                    }
+                } finally {
+                    connection.disconnect()
+                }
+            }
+            showLeaveDialog = false
+            onStatus("You left ${group.name}.")
+            onBack()
+        } catch (error: Throwable) {
+            onStatus(error.message ?: "Could not leave the group.")
+        } finally {
+            leavingGroup = false
         }
     }
 
@@ -971,6 +1018,11 @@ private fun GroupChatRoom(
                             onClick = { showGroupMenu = false; scope.launch { createInvite() } }
                         )
                     }
+                    DropdownMenuItem(
+                        text = { Text("Leave Group") },
+                        leadingIcon = { Icon(Icons.Default.ExitToApp, contentDescription = null) },
+                        onClick = { showGroupMenu = false; showLeaveDialog = true }
+                    )
                 }
             }
             IconButton(onClick = { scope.launch { runCatching { loadMessages() }.onFailure { onStatus(it.message ?: "Could not refresh messages.") } } }) {
@@ -1018,6 +1070,26 @@ private fun GroupChatRoom(
                 }
             }
         }
+    }
+
+    if (showLeaveDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!leavingGroup) showLeaveDialog = false },
+            title = { Text("Leave Group?") },
+            text = { Text("You will be removed from ${group.name}. You can join again later if the group is public or you receive a new invite.") },
+            confirmButton = {
+                TextButton(
+                    enabled = !leavingGroup,
+                    onClick = { scope.launch { leaveGroup() } }
+                ) {
+                    if (leavingGroup) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    else Text("Leave")
+                }
+            },
+            dismissButton = {
+                TextButton(enabled = !leavingGroup, onClick = { showLeaveDialog = false }) { Text("Cancel") }
+            }
+        )
     }
 
     if (showMembersDialog) {
