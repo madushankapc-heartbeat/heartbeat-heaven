@@ -127,7 +127,6 @@ class MainActivity : ComponentActivity() {
     private var positionMs by mutableLongStateOf(0L)
     private var durationMs by mutableLongStateOf(0L)
     private var pendingGroupInviteToken by mutableStateOf<String?>(null)
-    private var notificationTarget by mutableStateOf<Pair<String, String>?>(null)
 
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlayingNow: Boolean) { isPlaying = isPlayingNow }
