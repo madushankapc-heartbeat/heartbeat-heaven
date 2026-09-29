@@ -1644,6 +1644,20 @@ private fun GroupChatRoom(
                                     },
                                     onLongClick = { selectedMessage = message }
                                 )
+                                .pointerInput(message.id) {
+                                    var totalDrag = 0f
+                                    var quickReplyTriggered = false
+                                    detectHorizontalDragGestures(
+                                        onHorizontalDrag = { change, dragAmount ->
+                                            change.consume()
+                                            totalDrag += dragAmount
+                                            if (!quickReplyTriggered && totalDrag >= 120f) {
+                                                quickReplyTriggered = true
+                                                replyToMessage = message
+                                            }
+                                        }
+                                    )
+                                }
                         ) {
                             Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                                 if (!mine) {
