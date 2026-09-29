@@ -721,18 +721,6 @@ private fun GroupChatRoom(
         }
     }
 
-    suspend fun scrollToGroupMessage(messageId: String) {
-        val index = messages.indexOfFirst { it.id == messageId }
-        if (index < 0) {
-            onStatus("Original message is no longer available.")
-            return
-        }
-        groupMessageListState.animateScrollToItem(index)
-        highlightedMessageId = messageId
-        delay(1200)
-        if (highlightedMessageId == messageId) highlightedMessageId = null
-    }
-
     suspend fun loadUnreadGroupNotifications() {
         runCatching {
             val response = withContext(Dispatchers.IO) {
