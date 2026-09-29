@@ -798,9 +798,15 @@ private fun GroupChatRoom(
         groupVoiceFile = null
         groupVoiceRecording = false
         groupVoiceElapsedMs = SystemClock.elapsedRealtime() - groupVoiceStartedAt
+        var recorderStopError: Throwable? = null
         if (recorder != null) {
-            runCatching { recorder.stop() }
+            recorderStopError = runCatching { recorder.stop() }.exceptionOrNull()
             recorder.release()
+        }
+        if (recorderStopError != null) {
+            file?.delete()
+            onStatus(recorderStopError?.message ?: "Voice recording could not be finalized.")
+            return
         }
         if (!send || file == null) {
             file?.delete()
