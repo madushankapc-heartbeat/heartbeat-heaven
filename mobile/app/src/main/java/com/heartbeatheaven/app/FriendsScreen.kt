@@ -659,6 +659,7 @@ private fun GroupChatRoom(
     var inviteLink by remember { mutableStateOf<String?>(null) }
     var inviteExpiresAt by remember { mutableStateOf("") }
     var canManageInvite by remember { mutableStateOf(false) }
+    var isGroupMember by remember { mutableStateOf(false) }
     var showGroupMenu by remember { mutableStateOf(false) }
     var showInfoDialog by remember { mutableStateOf(false) }
     var showLeaveDialog by remember { mutableStateOf(false) }
@@ -1286,8 +1287,54 @@ private fun GroupChatRoom(
                 val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
                 if (code !in 200..299) return@withContext
                 val rows = JSONArray(body)
+                isGroupMember = rows.length() > 0
                 canManageInvite = rows.length() > 0 && rows.getJSONObject(0).optString("role") in setOf("owner", "admin")
             } finally { connection.disconnect() }
+        }
+    }
+
+    suspend fun joinPublicGroup() {
+        if (group.groupType != "public" || isGroupMember) return
+        try {
+            withContext(Dispatchers.IO) {
+                val connection = (URL(FRIENDS_SUPABASE_URL + "/rest/v1/group_members").openConnection() as HttpURLConnection)
+                try {
+                    connection.requestMethod = "POST"
+                    connection.doOutput = true
+                    connection.connectTimeout = 15000
+                    connection.readTimeout = 20000
+                    connection.setRequestProperty("apikey", FRIENDS_KEY)
+                    connection.setRequestProperty("Authorization", "Bearer " + session.accessToken)
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.setRequestProperty("Accept", "application/json")
+                    connection.setRequestProperty("Prefer", "return=minimal")
+                    connection.outputStream.use {
+                        it.write(
+                            JSONObject()
+                                .put("group_id", group.id)
+                                .put("user_id", session.profile.id)
+                                .put("role", "member")
+                                .toString()
+                                .toByteArray()
+                        )
+                    }
+                    val code = connection.responseCode
+                    val body = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                        ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) {
+                        val detail = runCatching { JSONObject(body).optString("message") }.getOrDefault("")
+                        throw IllegalStateException(detail.ifBlank { "Could not join group." })
+                    }
+                } finally {
+                    connection.disconnect()
+                }
+            }
+            isGroupMember = true
+            loadMessages()
+            loadGroupReactions()
+            onStatus("Joined " + group.name + ".")
+        } catch (error: Throwable) {
+            onStatus(error.message ?: "Could not join group.")
         }
     }
 
@@ -2126,6 +2173,17 @@ private fun GroupChatRoom(
                         }
                         IconButton(onClick = { replyToMessage = null }) { Icon(Icons.Default.Close, "Cancel reply") }
                     }
+                }
+            }
+
+            if (group.groupType == "public" && !isGroupMember) {
+                Button(
+                    onClick = { scope.launch { joinPublicGroup() } },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text("Join Group")
                 }
             }
 
