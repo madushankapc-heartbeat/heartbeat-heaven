@@ -38,6 +38,7 @@ import org.json.JSONObject
 
 private const val API_BASE = "https://heartbeat-heaven.onrender.com"
 private const val YOUTUBE_URL = "https://www.youtube.com/@ViBORA-r1i"
+// Notification navigation is handled inside HeartbeatApp so the active group can receive the target message.
 
 private data class Song(
     val id: Long,
