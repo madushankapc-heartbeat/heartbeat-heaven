@@ -897,7 +897,6 @@ private fun GroupChatRoom(
         }
     }
 
-    val groupVoicePermissionLauncher = groupVoicePermissionLauncher
     val groupPhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null && group.ownerId == session.profile.id) {
             val previousPhotoUrl = groupPhotoUrl
