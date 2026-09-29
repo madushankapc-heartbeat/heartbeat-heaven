@@ -191,7 +191,7 @@ private fun Progress(position: Long, duration: Long, onSeek: (Long) -> Unit, sma
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit, groupInviteToken: String? = null, onGroupInviteHandled: () -> Unit = {}, notificationTarget: Pair<String, String>? = null, onNotificationTargetHandled: () -> Unit = {}) {
+private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit, groupInviteToken: String? = null, onGroupInviteHandled: () -> Unit = {}) {
     val context = LocalContext.current
     var songs by remember { mutableStateOf<List<Song>>(emptyList()) }; var loading by remember { mutableStateOf(true) }; var error by remember { mutableStateOf<String?>(null) }
     var tab by remember { mutableStateOf(0) }; var search by remember { mutableStateOf("") }; var selected by remember { mutableStateOf<Song?>(null) }; var showNotifications by remember { mutableStateOf(false) }
