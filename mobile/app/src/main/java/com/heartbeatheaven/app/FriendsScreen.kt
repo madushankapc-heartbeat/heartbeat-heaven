@@ -809,7 +809,15 @@ private fun GroupChatRoom(
             loadUnreadGroupNotifications()
             return
         }
-        scrollToGroupMessage(target.id)
+        val targetIndex = messages.indexOfFirst { it.id == target.id }
+        if (targetIndex < 0) {
+            onStatus("Original message is no longer available.")
+            return
+        }
+        groupMessageListState.animateScrollToItem(targetIndex)
+        highlightedMessageId = target.id
+        delay(1200)
+        if (highlightedMessageId == target.id) highlightedMessageId = null
         runCatching { markGroupNotificationRead(next.id) }
             .onFailure { onStatus(it.message ?: "Could not mark group notification as read.") }
         unreadGroupNotifications = unreadGroupNotifications.drop(1)
