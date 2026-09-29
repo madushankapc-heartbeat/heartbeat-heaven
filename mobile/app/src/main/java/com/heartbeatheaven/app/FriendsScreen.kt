@@ -1844,7 +1844,7 @@ private fun GroupChatRoom(
             confirmButton = {
                 TextButton(enabled = editText.trim().isNotBlank(), onClick = { scope.launch { editGroupMessage(editingMessage!!, editText) } }) { Text("Save") }
             },
-            dismissButton = { TextButton(onClick = { editingMessage = null }) { Text("Cancel") }
+            dismissButton = { TextButton(onClick = { editingMessage = null }) { Text("Cancel") } }
         )
     }
 
