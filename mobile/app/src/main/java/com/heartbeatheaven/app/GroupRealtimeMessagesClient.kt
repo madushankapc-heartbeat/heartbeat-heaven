@@ -55,10 +55,16 @@ class GroupRealtimeMessagesClient(
                     val changes = JSONArray()
                         .put(
                             JSONObject()
-                                .put("event", "INSERT")
+                                .put("event", "*")
                                 .put("schema", "public")
                                 .put("table", "group_messages")
                                 .put("filter", "group_id=eq.$groupId")
+                        )
+                        .put(
+                            JSONObject()
+                                .put("event", "*")
+                                .put("schema", "public")
+                                .put("table", "group_message_reactions")
                         )
 
                     val payload = JSONObject()
@@ -119,7 +125,9 @@ class GroupRealtimeMessagesClient(
                                     .ifBlank { "INSERT" }
                                 val record = data.optJSONObject("record")
                                     ?: return@runCatching
-                                if (record.optString("group_id") == groupId) {
+                                val recordGroupId = record.optString("group_id")
+                                val isReaction = data.optString("table") == "group_message_reactions" || record.has("group_message_id")
+                                if (recordGroupId == groupId || isReaction) {
                                     onChange(eventType, record)
                                 }
                             }
