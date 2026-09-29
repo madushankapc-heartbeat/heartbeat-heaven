@@ -680,6 +680,38 @@ private fun GroupChatRoom(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
+    suspend fun loadMessages() {
+        withContext(Dispatchers.IO) {
+            val url = "$FRIENDS_SUPABASE_URL/rest/v1/group_messages?group_id=eq.${group.id}&select=id,sender_id,body,created_at,edited_at,deleted_at,reply_to_id,message_type,media_path&order=created_at.asc&limit=500"
+            val connection = (URL(url).openConnection() as HttpURLConnection)
+            try {
+                connection.requestMethod = "GET"
+                connection.connectTimeout = 15000
+                connection.readTimeout = 20000
+                connection.setRequestProperty("apikey", FRIENDS_KEY)
+                connection.setRequestProperty("Authorization", "Bearer ${session.accessToken}")
+                connection.setRequestProperty("Accept", "application/json")
+                val code = connection.responseCode
+                val stream = if (code in 200..299) connection.inputStream else connection.errorStream
+                val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                if (code !in 200..299) {
+                    val detail = runCatching { JSONObject(body).optString("message") }.getOrDefault("")
+                    throw IllegalStateException(detail.ifBlank { "Could not load group messages." })
+                }
+                val rows = JSONArray(body)
+                messages = buildList {
+                    for (i in 0 until rows.length()) {
+                        val row = rows.getJSONObject(i)
+                        add(GroupMessage(row.optString("id"), row.optString("sender_id"), row.optString("body"), row.optString("created_at"), row.optString("edited_at").takeUnless { it == "null" }.orEmpty(), row.optString("deleted_at").takeUnless { it == "null" }.orEmpty(), row.optString("reply_to_id").takeUnless { it == "null" }.orEmpty(), row.optString("message_type").ifBlank { "text" }, row.optString("media_path").takeUnless { it == "null" }.orEmpty()))
+                    }
+                }
+            } finally {
+                connection.disconnect()
+            }
+        }
+    }
+
+
     fun stopGroupVoicePlayback() {
         groupVoicePlayer?.runCatching { stop() }
         groupVoicePlayer?.release()
@@ -944,37 +976,6 @@ private fun GroupChatRoom(
                     onStatus(it.message ?: "Could not update group picture.")
                 }
                 groupPhotoUploading = false
-            }
-        }
-    }
-
-    suspend fun loadMessages() {
-        withContext(Dispatchers.IO) {
-            val url = "$FRIENDS_SUPABASE_URL/rest/v1/group_messages?group_id=eq.${group.id}&select=id,sender_id,body,created_at,edited_at,deleted_at,reply_to_id,message_type,media_path&order=created_at.asc&limit=500"
-            val connection = (URL(url).openConnection() as HttpURLConnection)
-            try {
-                connection.requestMethod = "GET"
-                connection.connectTimeout = 15000
-                connection.readTimeout = 20000
-                connection.setRequestProperty("apikey", FRIENDS_KEY)
-                connection.setRequestProperty("Authorization", "Bearer ${session.accessToken}")
-                connection.setRequestProperty("Accept", "application/json")
-                val code = connection.responseCode
-                val stream = if (code in 200..299) connection.inputStream else connection.errorStream
-                val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                if (code !in 200..299) {
-                    val detail = runCatching { JSONObject(body).optString("message") }.getOrDefault("")
-                    throw IllegalStateException(detail.ifBlank { "Could not load group messages." })
-                }
-                val rows = JSONArray(body)
-                messages = buildList {
-                    for (i in 0 until rows.length()) {
-                        val row = rows.getJSONObject(i)
-                        add(GroupMessage(row.optString("id"), row.optString("sender_id"), row.optString("body"), row.optString("created_at"), row.optString("edited_at").takeUnless { it == "null" }.orEmpty(), row.optString("deleted_at").takeUnless { it == "null" }.orEmpty(), row.optString("reply_to_id").takeUnless { it == "null" }.orEmpty(), row.optString("message_type").ifBlank { "text" }, row.optString("media_path").takeUnless { it == "null" }.orEmpty()))
-                    }
-                }
-            } finally {
-                connection.disconnect()
             }
         }
     }
