@@ -1863,7 +1863,7 @@ private fun GroupChatRoom(
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     AsyncImage(model = fullScreenMedia!!.url, contentDescription = "Group media", modifier = Modifier.fillMaxWidth().padding(12.dp), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
-                    IconButton(Modifier.align(Alignment.TopEnd).padding(12.dp), onClick = { fullScreenMedia = null }) {
+                    IconButton(onClick = { fullScreenMedia = null }, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)) {
                         Icon(Icons.Default.Close, "Close")
                     }
                 }
