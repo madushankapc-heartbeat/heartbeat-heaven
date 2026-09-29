@@ -1874,6 +1874,21 @@ private fun GroupChatRoom(
         }
     }
 
+    DisposableEffect(group.id, session.profile.id) {
+        val notificationRealtime = RealtimeNotificationsClient(
+            accessTokenProvider = { session.accessToken },
+            userId = session.profile.id,
+            apiKey = FRIENDS_KEY,
+            onNotificationChange = {
+                scope.launch(Dispatchers.Main) {
+                    runCatching { loadUnreadGroupNotifications() }
+                }
+            }
+        )
+        notificationRealtime.start()
+        onDispose { notificationRealtime.stop() }
+    }
+
     LaunchedEffect(group.id) {
         loading = true
         runCatching { loadMessages() }.onFailure { onStatus(it.message ?: "Could not load group messages.") }
