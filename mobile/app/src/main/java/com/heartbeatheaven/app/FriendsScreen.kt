@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.imePadding
@@ -4247,7 +4248,10 @@ internal fun FriendsScreen(
                                     Text(
                                         if (m.deletedAt.isNotBlank()) "This message was deleted" else m.body,
                                         Modifier.padding(top = if (replyPreview != null) 1.dp else 0.dp),
-                                        color = if (m.deletedAt.isNotBlank()) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+                                        color = when {
+                                            m.deletedAt.isNotBlank() -> MaterialTheme.colorScheme.onSurfaceVariant
+                                            else -> Color(0xFF1B1B1F)
+                                        }
                                     )
                                     myReaction?.let { Text(it.reaction, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 2.dp)) }
                                     if (reacted.isNotEmpty() && myReaction == null) {
