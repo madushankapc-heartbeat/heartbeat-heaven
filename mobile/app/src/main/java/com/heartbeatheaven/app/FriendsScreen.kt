@@ -1604,7 +1604,7 @@ private fun GroupChatRoom(
                     val mine = message.senderId == session.profile.id
                     val sender = senderProfiles[message.senderId]
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
-                        Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 1.dp, modifier = Modifier.widthIn(max = 320.dp)) {
+                        Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 1.dp, modifier = Modifier.widthIn(max = 320.dp).combinedClickable(onClick = { if ((message.messageType == "image" || message.messageType == "video") && groupMediaLinks[message.id] != null) fullScreenMedia = groupMediaLinks[message.id] }, onLongClick = { selectedMessage = message })) {
                             Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                                 if (!mine) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1631,7 +1631,9 @@ private fun GroupChatRoom(
                                     }
                                     Spacer(Modifier.height(4.dp))
                                 }
-                                if (message.messageType == "image" || message.messageType == "video") {
+                                if (message.deletedAt.isNotBlank()) {
+                                    Text("This message was deleted", color = MaterialTheme.colorScheme.onSurfaceVariant, fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                                } else if (message.messageType == "image" || message.messageType == "video") {
                                     val secure = groupMediaLinks[message.id]
                                     if (secure != null) {
                                         if (message.messageType == "image") {
@@ -1666,8 +1668,30 @@ private fun GroupChatRoom(
                                 } else {
                                     Text(message.body)
                                 }
+                                if (message.replyToId.isNotBlank()) {
+                                    val replied = messages.firstOrNull { it.id == message.replyToId }
+                                    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp), tonalElevation = 1.dp) {
+                                        Column(Modifier.padding(7.dp)) {
+                                            Text("Reply", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
+                                            Text(replied?.body?.ifBlank { "Media message" } ?: "Message unavailable", maxLines = 2, style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                    Spacer(Modifier.height(6.dp))
+                                }
+                                if (messageReactions.isNotEmpty()) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(bottom = 3.dp)) {
+                                        messageReactions.groupBy { it.reaction }.forEach { (reaction, users) ->
+                                            Surface(shape = RoundedCornerShape(12.dp), tonalElevation = 2.dp) { Text(reaction + " " + users.size, modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall) }
+                                        }
+                                    }
+                                }
                                 Spacer(Modifier.height(3.dp))
-                                Text(ChatTimeFormatter.listTimestamp(message.createdAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(ChatTimeFormatter.listTimestamp(message.createdAt), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    if (message.editedAt.isNotBlank() && message.deletedAt.isBlank()) {
+                                        Spacer(Modifier.width(4.dp)); Text("(edited)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
                             }
                         }
                     }
