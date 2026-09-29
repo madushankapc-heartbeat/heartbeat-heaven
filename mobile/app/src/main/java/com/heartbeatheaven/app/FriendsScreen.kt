@@ -1603,6 +1603,7 @@ private fun GroupChatRoom(
                 items(messages, key = { it.id }) { message ->
                     val mine = message.senderId == session.profile.id
                     val sender = senderProfiles[message.senderId]
+                    val messageReactions = groupReactions.filter { it.messageId == message.id }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
                         Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 1.dp, modifier = Modifier.widthIn(max = 320.dp).combinedClickable(onClick = { if ((message.messageType == "image" || message.messageType == "video") && groupMediaLinks[message.id] != null) fullScreenMedia = groupMediaLinks[message.id] }, onLongClick = { selectedMessage = message })) {
                             Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
