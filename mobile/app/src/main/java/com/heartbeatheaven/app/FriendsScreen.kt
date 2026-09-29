@@ -608,6 +608,13 @@ private data class GroupMessage(
     val mediaPath: String = ""
 )
 
+private data class GroupUnreadNotification(
+    val id: String,
+    val entityId: String,
+    val kind: String,
+    val createdAt: String
+)
+
 private data class GroupMessageReaction(val messageId: String, val userId: String, val reaction: String)
 
 private data class GroupMemberSummary(
@@ -631,6 +638,7 @@ private fun GroupChatRoom(
     var text by remember { mutableStateOf("") }
     var replyToMessage by remember { mutableStateOf<GroupMessage?>(null) }
     var highlightedMessageId by remember { mutableStateOf<String?>(null) }
+    var unreadGroupNotifications by remember(group.id) { mutableStateOf<List<GroupUnreadNotification>>(emptyList()) }
     var selectedMessage by remember { mutableStateOf<GroupMessage?>(null) }
     var editingMessage by remember { mutableStateOf<GroupMessage?>(null) }
     var deletingMessage by remember { mutableStateOf<GroupMessage?>(null) }
@@ -711,6 +719,100 @@ private fun GroupChatRoom(
                 connection.disconnect()
             }
         }
+    }
+
+    suspend fun loadUnreadGroupNotifications() {
+        runCatching {
+            val response = withContext(Dispatchers.IO) {
+                val url = FRIENDS_SUPABASE_URL +
+                    "/rest/v1/notifications?recipient_id=eq.${session.profile.id}" +
+                    "&kind=in.(group_reply,group_mention)&read_at=is.null" +
+                    "&select=id,entity_id,kind,created_at&order=created_at.asc&limit=500"
+                val connection = URL(url).openConnection() as HttpURLConnection
+                try {
+                    connection.requestMethod = "GET"
+                    connection.connectTimeout = 15000
+                    connection.readTimeout = 20000
+                    connection.setRequestProperty("apikey", FRIENDS_KEY)
+                    connection.setRequestProperty("Authorization", "Bearer ${session.accessToken}")
+                    connection.setRequestProperty("Accept", "application/json")
+                    val code = connection.responseCode
+                    val body = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                        ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) {
+                        val detail = runCatching { JSONObject(body).optString("message") }.getOrDefault("")
+                        throw IllegalStateException(detail.ifBlank { "Could not load group reply notifications." })
+                    }
+                    JSONArray(body)
+                } finally {
+                    connection.disconnect()
+                }
+            }
+
+            unreadGroupNotifications = buildList {
+                for (i in 0 until response.length()) {
+                    val row = response.getJSONObject(i)
+                    val entityId = row.optString("entity_id").takeUnless { it == "null" }.orEmpty()
+                    if (entityId.isNotBlank() && messages.any { it.id == entityId }) {
+                        add(
+                            GroupUnreadNotification(
+                                id = row.optString("id"),
+                                entityId = entityId,
+                                kind = row.optString("kind"),
+                                createdAt = row.optString("created_at")
+                            )
+                        )
+                    }
+                }
+            }
+        }.onFailure {
+            onStatus(it.message ?: "Could not load group reply notifications.")
+        }
+    }
+
+    suspend fun markGroupNotificationRead(notificationId: String) {
+        withContext(Dispatchers.IO) {
+            val connection = URL(
+                FRIENDS_SUPABASE_URL +
+                    "/rest/v1/notifications?id=eq.$notificationId&recipient_id=eq.${session.profile.id}"
+            ).openConnection() as HttpURLConnection
+            try {
+                connection.requestMethod = "PATCH"
+                connection.doOutput = true
+                connection.connectTimeout = 15000
+                connection.readTimeout = 20000
+                connection.setRequestProperty("apikey", FRIENDS_KEY)
+                connection.setRequestProperty("Authorization", "Bearer ${session.accessToken}")
+                connection.setRequestProperty("Content-Type", "application/json")
+                connection.setRequestProperty("Accept", "application/json")
+                connection.setRequestProperty("Prefer", "return=minimal")
+                connection.outputStream.use {
+                    it.write(JSONObject().put("read_at", Instant.now().toString()).toString().toByteArray())
+                }
+                val code = connection.responseCode
+                val body = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                    ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                if (code !in 200..299) {
+                    val detail = runCatching { JSONObject(body).optString("message") }.getOrDefault("")
+                    throw IllegalStateException(detail.ifBlank { "Could not mark group notification as read." })
+                }
+            } finally {
+                connection.disconnect()
+            }
+        }
+    }
+
+    suspend fun openNextUnreadGroupNotification() {
+        val next = unreadGroupNotifications.firstOrNull() ?: return
+        val target = messages.firstOrNull { it.id == next.entityId }
+        if (target == null) {
+            loadUnreadGroupNotifications()
+            return
+        }
+        scrollToGroupMessage(target.id)
+        runCatching { markGroupNotificationRead(next.id) }
+            .onFailure { onStatus(it.message ?: "Could not mark group notification as read.") }
+        unreadGroupNotifications = unreadGroupNotifications.drop(1)
     }
 
 
@@ -1776,6 +1878,7 @@ private fun GroupChatRoom(
         loading = true
         runCatching { loadMessages() }.onFailure { onStatus(it.message ?: "Could not load group messages.") }
         runCatching { loadInvitePermission() }
+        runCatching { loadUnreadGroupNotifications() }
         loading = false
 
         val realtime = GroupRealtimeMessagesClient(
@@ -1787,6 +1890,7 @@ private fun GroupChatRoom(
                     runCatching {
                         loadMessages()
                         loadGroupReactions()
+                        loadUnreadGroupNotifications()
                     }
                 }
             }
@@ -2104,6 +2208,29 @@ private fun GroupChatRoom(
                     }
                 }
             }
+                if (unreadGroupNotifications.isNotEmpty()) {
+                    SmallFloatingActionButton(
+                        onClick = { scope.launch { openNextUnreadGroupNotification() } },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 16.dp, bottom = if (groupMessageListState.canScrollForward && messages.isNotEmpty()) 68.dp else 16.dp),
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    ) {
+                        BadgedBox(
+                            badge = {
+                                Badge {
+                                    Text(unreadGroupNotifications.size.toString())
+                                }
+                            }
+                        ) {
+                            Icon(
+                                Icons.Default.Reply,
+                                contentDescription = "Open next reply or mention"
+                            )
+                        }
+                    }
+                }
                 if (groupMessageListState.canScrollForward && messages.isNotEmpty()) {
                     SmallFloatingActionButton(
                         onClick = {
