@@ -14,6 +14,8 @@ create table if not exists public.group_message_reactions (
 create index if not exists idx_group_message_reactions_message
   on public.group_message_reactions(group_message_id);
 
+alter publication supabase_realtime add table public.group_message_reactions;
+
 create index if not exists idx_group_message_reactions_user
   on public.group_message_reactions(user_id);
 
