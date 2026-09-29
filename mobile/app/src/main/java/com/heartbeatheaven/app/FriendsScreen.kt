@@ -643,6 +643,16 @@ private fun GroupChatRoom(
     var groupMediaProgress by remember { mutableStateOf(0) }
     var groupMediaLinks by remember { mutableStateOf<Map<String, SecureMediaLink>>(emptyMap()) }
     var groupMediaErrors by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var groupVoiceRecorder by remember { mutableStateOf<MediaRecorder?>(null) }
+    var groupVoiceFile by remember { mutableStateOf<File?>(null) }
+    var groupVoiceRecording by remember { mutableStateOf(false) }
+    var groupVoiceUploading by remember { mutableStateOf(false) }
+    var groupVoiceElapsedMs by remember { mutableStateOf(0L) }
+    var groupVoiceStartedAt by remember { mutableStateOf(0L) }
+    var groupVoicePermissionPending by remember { mutableStateOf(false) }
+    var startGroupVoiceAfterPermission by remember { mutableStateOf(false) }
+    var groupVoicePlayingId by remember { mutableStateOf<String?>(null) }
+    var groupVoicePlayer by remember { mutableStateOf<MediaPlayer?>(null) }
     var groupPhotoUrl by remember { mutableStateOf(group.photoUrl) }
     var groupPhotoUploading by remember { mutableStateOf(false) }
     var inviteBusy by remember { mutableStateOf(false) }
@@ -669,6 +679,225 @@ private fun GroupChatRoom(
     var memberActionBusy by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+
+    fun stopGroupVoicePlayback() {
+        groupVoicePlayer?.runCatching { stop() }
+        groupVoicePlayer?.release()
+        groupVoicePlayer = null
+        groupVoicePlayingId = null
+    }
+
+    fun playGroupVoice(message: GroupMessage, secure: SecureMediaLink) {
+        if (groupVoicePlayingId == message.id) {
+            stopGroupVoicePlayback()
+            return
+        }
+        stopGroupVoicePlayback()
+        val player = MediaPlayer()
+        groupVoicePlayer = player
+        groupVoicePlayingId = message.id
+        try {
+            player.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .build()
+            )
+            player.setDataSource(secure.url)
+            player.setOnPreparedListener { it.start() }
+            player.setOnCompletionListener {
+                if (groupVoicePlayingId == message.id) {
+                    groupVoicePlayer?.release()
+                    groupVoicePlayer = null
+                    groupVoicePlayingId = null
+                }
+            }
+            player.setOnErrorListener { _, _, _ ->
+                if (groupVoicePlayingId == message.id) {
+                    groupVoicePlayer?.release()
+                    groupVoicePlayer = null
+                    groupVoicePlayingId = null
+                }
+                onStatus("Voice message could not be played.")
+                true
+            }
+            player.prepareAsync()
+        } catch (error: Throwable) {
+            player.release()
+            groupVoicePlayer = null
+            groupVoicePlayingId = null
+            onStatus(error.message ?: "Voice message could not be played.")
+        }
+    }
+
+    fun startGroupVoiceRecordingNow() {
+        if (mediaSending || groupVoiceUploading || groupVoiceRecording) return
+        val file = VoiceMessageSupport.newRecordingFile(context, "m4a")
+        val recorder = MediaRecorder()
+        try {
+            recorder.setAudioSource(MediaRecorder.AudioSource.MIC)
+            recorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            recorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            recorder.setAudioEncodingBitRate(64_000)
+            recorder.setOutputFile(file.absolutePath)
+            recorder.setMaxDuration(5 * 60 * 1000)
+            recorder.setMaxFileSize(10L * 1024L * 1024L)
+            recorder.prepare()
+            recorder.start()
+            groupVoiceFile = file
+            groupVoiceRecorder = recorder
+            groupVoiceStartedAt = SystemClock.elapsedRealtime()
+            groupVoiceElapsedMs = 0L
+            groupVoiceRecording = true
+            onStatus("Recording voice message…")
+        } catch (error: Throwable) {
+            runCatching { recorder.reset() }
+            recorder.release()
+            file.delete()
+            onStatus(error.message ?: "Microphone recording could not be started.")
+        }
+    }
+
+    fun stopGroupVoiceRecording(send: Boolean) {
+        val recorder = groupVoiceRecorder
+        val file = groupVoiceFile
+        groupVoiceRecorder = null
+        groupVoiceFile = null
+        groupVoiceRecording = false
+        groupVoiceElapsedMs = SystemClock.elapsedRealtime() - groupVoiceStartedAt
+        if (recorder != null) {
+            runCatching { recorder.stop() }
+            recorder.release()
+        }
+        if (!send || file == null) {
+            file?.delete()
+            onStatus(if (send) "Voice recording was not saved." else "Voice recording cancelled.")
+            return
+        }
+        if (groupVoiceElapsedMs < 500L || file.length() <= 0L) {
+            file.delete()
+            onStatus("Voice message is too short.")
+            return
+        }
+
+        val replyTarget = replyToMessage
+        val caption = text.trim()
+        groupVoiceUploading = true
+        groupMediaProgress = 0
+        onStatus("Uploading voice message…")
+        scope.launch {
+            try {
+                val uploaded = GroupMediaSupport.uploadAudio(
+                    file = file,
+                    accessToken = session.accessToken,
+                    groupId = group.id
+                ) { sent, total ->
+                    if (total > 0L) {
+                        groupMediaProgress = (sent.toDouble() / total.toDouble() * 100.0)
+                            .toInt().coerceIn(0, 99)
+                    }
+                }.getOrElse { throw it }
+
+                try {
+                    withContext(Dispatchers.IO) {
+                        val connection = (URL("$FRIENDS_SUPABASE_URL/rest/v1/group_messages")
+                            .openConnection() as HttpURLConnection)
+                        try {
+                            connection.requestMethod = "POST"
+                            connection.doOutput = true
+                            connection.connectTimeout = 15000
+                            connection.readTimeout = 20000
+                            connection.setRequestProperty("apikey", FRIENDS_KEY)
+                            connection.setRequestProperty("Authorization", "Bearer " + session.accessToken)
+                            connection.setRequestProperty("Content-Type", "application/json")
+                            connection.setRequestProperty("Accept", "application/json")
+                            connection.setRequestProperty("Prefer", "return=minimal")
+                            val payload = JSONObject()
+                                .put("group_id", group.id)
+                                .put("sender_id", session.profile.id)
+                                .put("body", caption)
+                                .put("message_type", uploaded.type)
+                                .put("media_path", uploaded.path)
+                                .apply { replyTarget?.id?.let { put("reply_to_id", it) } }
+                                .toString()
+                            connection.outputStream.use { it.write(payload.toByteArray()) }
+                            val code = connection.responseCode
+                            val response = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                                ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                            if (code !in 200..299) {
+                                val detail = runCatching {
+                                    JSONObject(response).optString("message")
+                                        .ifBlank { JSONObject(response).optString("error") }
+                                }.getOrDefault("")
+                                error(detail.ifBlank { "Voice message could not be sent." })
+                            }
+                        } finally {
+                            connection.disconnect()
+                        }
+                    }
+                } catch (insertError: Throwable) {
+                    runCatching { GroupMediaSupport.deleteUploaded(context, session.accessToken, uploaded.path) }
+                    throw insertError
+                }
+                text = ""
+                replyToMessage = null
+                groupMediaProgress = 100
+                loadMessages()
+                onStatus("Voice message sent.")
+            } catch (error: Throwable) {
+                onStatus(error.message ?: "Voice message could not be sent.")
+            } finally {
+                file.delete()
+                groupVoiceUploading = false
+                groupMediaProgress = 0
+            }
+        }
+    }
+
+    val groupVoicePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        groupVoicePermissionPending = false
+        if (granted) {
+            startGroupVoiceAfterPermission = true
+        } else {
+            onStatus("Microphone permission is required for voice messages.")
+        }
+    }
+
+    LaunchedEffect(startGroupVoiceAfterPermission) {
+        if (startGroupVoiceAfterPermission) {
+            startGroupVoiceAfterPermission = false
+            startGroupVoiceRecordingNow()
+        }
+    }
+
+    LaunchedEffect(groupVoiceRecording) {
+        if (groupVoiceRecording) {
+            while (groupVoiceRecording) {
+                groupVoiceElapsedMs = SystemClock.elapsedRealtime() - groupVoiceStartedAt
+                if (groupVoiceElapsedMs >= 5 * 60 * 1000L) {
+                    stopGroupVoiceRecording(send = true)
+                    break
+                }
+                delay(250L)
+            }
+        }
+    }
+
+    DisposableEffect(Unit) {
+        onDispose {
+            groupVoiceRecorder?.let { recorder ->
+                runCatching { recorder.stop() }
+                recorder.release()
+            }
+            groupVoiceFile?.delete()
+            groupVoicePlayer?.runCatching { stop() }
+            groupVoicePlayer?.release()
+        }
+    }
+
+    val groupVoicePermissionLauncher = groupVoicePermissionLauncher
     val groupPhotoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null && group.ownerId == session.profile.id) {
             val previousPhotoUrl = groupPhotoUrl
@@ -1719,6 +1948,46 @@ private fun GroupChatRoom(
                                         Spacer(Modifier.height(6.dp))
                                         Text(message.body)
                                     }
+                                } else if (message.messageType == "audio") {
+                                    val secure = groupMediaLinks[message.id]
+                                    if (secure != null) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            FilledIconButton(
+                                                onClick = { playGroupVoice(message, secure) }
+                                            ) {
+                                                Icon(
+                                                    if (groupVoicePlayingId == message.id) Icons.Default.Stop else Icons.Default.PlayArrow,
+                                                    contentDescription = if (groupVoicePlayingId == message.id) "Stop voice message" else "Play voice message"
+                                                )
+                                            }
+                                            Column(Modifier.weight(1f)) {
+                                                Text("Voice message", style = MaterialTheme.typography.bodyMedium)
+                                                Text(
+                                                    if (groupVoicePlayingId == message.id) "Playing…" else "Tap to play",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+                                        }
+                                    } else {
+                                        val mediaError = groupMediaErrors[message.id]
+                                        if (mediaError != null) {
+                                            OutlinedButton(
+                                                onClick = { scope.launch { refreshGroupMedia(message.id, message.mediaPath) } },
+                                                enabled = !groupVoiceUploading
+                                            ) { Text("Retry voice message") }
+                                        } else {
+                                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                                        }
+                                    }
+                                    if (message.body.isNotBlank()) {
+                                        Spacer(Modifier.height(6.dp))
+                                        Text(message.body)
+                                    }
                                 } else {
                                     Text(message.body)
                                 }
@@ -1801,6 +2070,29 @@ private fun GroupChatRoom(
                     }
                 }
             }
+            if (groupVoiceRecording) {
+                Surface(
+                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(18.dp),
+                    tonalElevation = 2.dp
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.Mic, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Text(
+                            String.format(java.util.Locale.US, "Recording %d:%02d", groupVoiceElapsedMs / 60000, (groupVoiceElapsedMs / 1000) % 60),
+                            modifier = Modifier.weight(1f)
+                        )
+                        TextButton(onClick = { stopGroupVoiceRecording(send = false) }) { Text("Cancel") }
+                        FilledIconButton(onClick = { stopGroupVoiceRecording(send = true) }) {
+                            Icon(Icons.Default.Send, contentDescription = "Send voice message")
+                        }
+                    }
+                }
+            }
             if (pendingGroupMedia.isNotEmpty()) {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     pendingGroupMedia.forEachIndexed { index, attachment ->
@@ -1850,7 +2142,24 @@ private fun GroupChatRoom(
                     verticalAlignment = Alignment.Bottom
                 ) {
                     IconButton(
-                        enabled = !mediaSending,
+                        enabled = !mediaSending && !groupVoiceRecording && !groupVoiceUploading,
+                        onClick = {
+                            if (androidx.core.content.ContextCompat.checkSelfPermission(
+                                    context,
+                                    Manifest.permission.RECORD_AUDIO
+                                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                            ) {
+                                startGroupVoiceRecordingNow()
+                            } else if (!groupVoicePermissionPending) {
+                                groupVoicePermissionPending = true
+                                groupVoicePermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                            }
+                        }
+                    ) {
+                        Icon(Icons.Default.Mic, contentDescription = "Record voice message")
+                    }
+                    IconButton(
+                        enabled = !mediaSending && !groupVoiceRecording && !groupVoiceUploading,
                         onClick = { groupMediaPicker.launch(arrayOf("image/*", "video/*")) }
                     ) {
                         Icon(Icons.Default.AttachFile, contentDescription = "Attach image or video")
@@ -1861,7 +2170,7 @@ private fun GroupChatRoom(
                         modifier = Modifier.weight(1f),
                         placeholder = { Text("Message or caption") },
                         maxLines = 5,
-                        enabled = !mediaSending,
+                        enabled = !mediaSending && !groupVoiceRecording && !groupVoiceUploading,
                         shape = RoundedCornerShape(20.dp),
                         supportingText = {
                             if (text.length >= 3500) {
@@ -1878,7 +2187,7 @@ private fun GroupChatRoom(
                         }
                     }
                     FilledIconButton(
-                        enabled = !textSending && !mediaSending &&
+                        enabled = !textSending && !mediaSending && !groupVoiceRecording && !groupVoiceUploading &&
                             (text.trim().isNotBlank() || pendingGroupMedia.isNotEmpty()),
                         onClick = { scope.launch { sendMessage() } }
                     ) {
