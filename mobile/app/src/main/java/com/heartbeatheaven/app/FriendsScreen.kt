@@ -665,9 +665,9 @@ private fun GroupChatRoom(
                     val oldPath = group.photoPath
                     val newPath = withContext(Dispatchers.IO) { GroupProfileSupport.upload(context, uri, session, group.id) }
                     withContext(Dispatchers.IO) {
-                        val connection = (URL(FRIENDS_SUPABASE_URL + "/rest/v1/groups?id=eq." + group.id).openConnection() as HttpURLConnection)
+                        val connection = (URL(FRIENDS_SUPABASE_URL + "/rest/v1/rpc/set_group_photo_path").openConnection() as HttpURLConnection)
                         try {
-                            connection.requestMethod = "PATCH"
+                            connection.requestMethod = "POST"
                             connection.doOutput = true
                             connection.connectTimeout = 15000
                             connection.readTimeout = 20000
@@ -675,8 +675,19 @@ private fun GroupChatRoom(
                             connection.setRequestProperty("Authorization", "Bearer " + session.accessToken)
                             connection.setRequestProperty("Content-Type", "application/json")
                             connection.setRequestProperty("Accept", "application/json")
-                            connection.outputStream.use { it.write(JSONObject().put("photo_path", newPath).put("updated_at", Instant.now().toString()).toString().toByteArray()) }
-                            if (connection.responseCode !in 200..299) error("Could not save the group picture.")
+                            val payload = JSONObject()
+                                .put("p_group_id", group.id)
+                                .put("p_photo_path", newPath)
+                            connection.outputStream.use { it.write(payload.toString().toByteArray()) }
+                            val code = connection.responseCode
+                            val body = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                                ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                            if (code !in 200..299) {
+                                val detail = runCatching { JSONObject(body).optString("message") }.getOrDefault("")
+                                error(detail.ifBlank { "Could not save the group picture." })
+                            }
+                            val savedPath = runCatching { JSONObject(body).optString("photo_path") }.getOrDefault("")
+                            if (savedPath != newPath) error("Could not verify the saved group picture.")
                         } finally { connection.disconnect() }
                     }
                     val signed = withContext(Dispatchers.IO) { GroupProfileSupport.signedUrl(session, newPath) }
