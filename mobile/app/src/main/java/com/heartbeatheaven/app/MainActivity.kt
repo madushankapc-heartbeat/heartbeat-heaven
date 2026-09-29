@@ -127,6 +127,7 @@ class MainActivity : ComponentActivity() {
     private var positionMs by mutableLongStateOf(0L)
     private var durationMs by mutableLongStateOf(0L)
     private var pendingGroupInviteToken by mutableStateOf<String?>(null)
+    private var notificationTarget by mutableStateOf<Pair<String, String>?>(null)
 
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlayingNow: Boolean) { isPlaying = isPlayingNow }
@@ -190,10 +191,11 @@ private fun Progress(position: Long, duration: Long, onSeek: (Long) -> Unit, sma
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit, groupInviteToken: String? = null, onGroupInviteHandled: () -> Unit = {}) {
+private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit, groupInviteToken: String? = null, onGroupInviteHandled: () -> Unit = {}, notificationTarget: Pair<String, String>? = null, onNotificationTargetHandled: () -> Unit = {}) {
     val context = LocalContext.current
     var songs by remember { mutableStateOf<List<Song>>(emptyList()) }; var loading by remember { mutableStateOf(true) }; var error by remember { mutableStateOf<String?>(null) }
     var tab by remember { mutableStateOf(0) }; var search by remember { mutableStateOf("") }; var selected by remember { mutableStateOf<Song?>(null) }; var showNotifications by remember { mutableStateOf(false) }
+    var notificationTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
     var unreadActivityCount by remember { mutableIntStateOf(0) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
     var refreshing by remember { mutableStateOf(false) }
@@ -295,8 +297,21 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             when {
-                showNotifications -> NotificationsScreen(onBack = { showNotifications = false })
-                tab == 1 -> FriendsScreen(refreshTrigger, groupInviteToken, onGroupInviteHandled)
+                showNotifications -> NotificationsScreen(
+                    onBack = { showNotifications = false },
+                    onOpenNotification = { groupId, messageId ->
+                        notificationTarget = groupId to messageId
+                        showNotifications = false
+                        tab = 1
+                    }
+                )
+                tab == 1 -> FriendsScreen(
+                    refreshTrigger = refreshTrigger,
+                    groupInviteToken = groupInviteToken,
+                    onGroupInviteHandled = onGroupInviteHandled,
+                    notificationTarget = notificationTarget,
+                    onNotificationTargetHandled = { notificationTarget = null }
+                )
                 tab == 4 -> AccountScreen(refreshTrigger)
                 selected != null -> DetailScreen(selected!!, songId, playing, position, duration, { selected = null }, { target -> if (songId == target.id && playing) onPause() else onPlay(target) }, onSeek, { favoriteIds = favorites.toggle(selected!!.id) }, { shareSong(context, selected!!) })
                 else -> {
