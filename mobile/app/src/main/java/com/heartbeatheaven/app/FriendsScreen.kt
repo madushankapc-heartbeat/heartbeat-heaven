@@ -1488,7 +1488,10 @@ private fun GroupChatRoom(
             groupId = group.id,
             onChange = { _, _ ->
                 scope.launch {
-                    runCatching { loadMessages() }
+                    runCatching {
+                        loadMessages()
+                        loadGroupReactions()
+                    }
                 }
             }
         )
