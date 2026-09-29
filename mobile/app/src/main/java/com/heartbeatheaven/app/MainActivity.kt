@@ -193,7 +193,7 @@ private fun Progress(position: Long, duration: Long, onSeek: (Long) -> Unit, sma
 @Composable
 private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit, groupInviteToken: String? = null, onGroupInviteHandled: () -> Unit = {}) {
     val context = LocalContext.current
-    var songs by remember { mutableStateOf<List<Song>>(emptyList()) }; var loading by remember { mutableStateOf(true) }; var error by remember { mutableStateOf<String?>(null) }
+    var songs by remember { mutableStateOf(FastStartCache.loadSongs(context)) }; var loading by remember { mutableStateOf(songs.isEmpty()) }; var error by remember { mutableStateOf<String?>(null) }
     var tab by remember { mutableStateOf(0) }; var search by remember { mutableStateOf("") }; var selected by remember { mutableStateOf<Song?>(null) }; var showNotifications by remember { mutableStateOf(false) }
     var notificationTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
     var unreadActivityCount by remember { mutableIntStateOf(0) }
