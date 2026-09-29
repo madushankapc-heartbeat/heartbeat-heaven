@@ -630,7 +630,9 @@ private fun GroupChatRoom(
     group: GroupSummary,
     onBack: () -> Unit,
     onStatus: (String) -> Unit,
-    onGroupPhotoUpdated: (String, String) -> Unit
+    onGroupPhotoUpdated: (String, String) -> Unit,
+    initialMessageId: String? = null,
+    onInitialMessageHandled: () -> Unit = {}
 ) {
     var messages by remember(group.id) { mutableStateOf<List<GroupMessage>>(emptyList()) }
     var senderProfiles by remember(group.id) { mutableStateOf<Map<String, GroupMemberSummary>>(emptyMap()) }
@@ -1927,6 +1929,17 @@ private fun GroupChatRoom(
         }
     }
 
+    LaunchedEffect(group.id, initialMessageId, loading, messages.size) {
+        val targetId = initialMessageId?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+        if (loading) return@LaunchedEffect
+        if (messages.any { it.id == targetId }) {
+            scrollToGroupMessage(targetId)
+        } else {
+            onStatus("The notification message is no longer available.")
+        }
+        onInitialMessageHandled()
+    }
+
     Column(Modifier.fillMaxSize()) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
@@ -2690,7 +2703,8 @@ private fun GroupChatsSection(
     onStatus: (String) -> Unit,
     onGroupSelected: (GroupSummary) -> Unit,
     initialInviteToken: String? = null,
-    onInviteHandled: () -> Unit = {}
+    onInviteHandled: () -> Unit = {},
+    initialGroupId: String? = null
 ) {
     var groups by remember { mutableStateOf<List<GroupSummary>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -2841,6 +2855,9 @@ private fun GroupChatsSection(
                 }
             groups = groups.map { it.copy(photoUrl = photoUrls[it.photoPath].orEmpty()) }
         }
+        initialGroupId?.let { targetId ->
+            groups.firstOrNull { it.id == targetId }?.let(onGroupSelected)
+        }
         return true
     }
 
@@ -2955,7 +2972,9 @@ private fun saveRemoteAttachment(context: android.content.Context, sourceUrl: St
 internal fun FriendsScreen(
     refreshTrigger: Int = 0,
     groupInviteToken: String? = null,
-    onGroupInviteHandled: () -> Unit = {}
+    onGroupInviteHandled: () -> Unit = {},
+    notificationTarget: Pair<String, String>? = null,
+    onNotificationTargetHandled: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -2972,6 +2991,7 @@ internal fun FriendsScreen(
     var requests by remember { mutableStateOf<List<FriendRequest>>(emptyList()) }
     var selected by remember { mutableStateOf<FriendUser?>(null) }
     var selectedGroup by remember { mutableStateOf<GroupSummary?>(null) }
+    var pendingGroupMessageId by remember { mutableStateOf<String?>(notificationTarget?.second) }
     var messages by remember { mutableStateOf<List<ChatMessage>>(emptyList()) }
     var secureMediaLinks by remember { mutableStateOf<Map<String, SecureMediaLink>>(emptyMap()) }
     var text by remember { mutableStateOf("") }
@@ -3029,6 +3049,13 @@ internal fun FriendsScreen(
     LaunchedEffect(Unit) {
         session = withContext(Dispatchers.IO) { auth.currentSession() }
         checkingSession = false
+    }
+
+    LaunchedEffect(notificationTarget) {
+        pendingGroupMessageId = notificationTarget?.second
+        if (notificationTarget == null) {
+            selectedGroup = null
+        }
     }
 
     val api = session?.let { remember(it.accessToken) { FriendsApi(auth, it) } }
@@ -4630,6 +4657,11 @@ internal fun FriendsScreen(
             onStatus = { statusMessage = it },
             onGroupPhotoUpdated = { newPath, signedUrl ->
                 selectedGroup = selectedGroup?.copy(photoPath = newPath, photoUrl = signedUrl)
+            },
+            initialMessageId = pendingGroupMessageId,
+            onInitialMessageHandled = {
+                pendingGroupMessageId = null
+                onNotificationTargetHandled()
             }
         )
         return
@@ -4736,7 +4768,8 @@ internal fun FriendsScreen(
                     onStatus = { statusMessage = it },
                     onGroupSelected = { selectedGroup = it },
                     initialInviteToken = groupInviteToken,
-                    onInviteHandled = onGroupInviteHandled
+                    onInviteHandled = onGroupInviteHandled,
+                    initialGroupId = notificationTarget?.first
                 )
             }
         }
