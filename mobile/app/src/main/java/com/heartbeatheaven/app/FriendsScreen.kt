@@ -1715,7 +1715,9 @@ private fun GroupChatRoom(
                                         Modifier
                                             .fillMaxWidth()
                                             .clickable(enabled = replied != null) {
-                                                scope.launch { scrollToGroupMessage(replied.id) }
+                                                replied?.let { original ->
+                                                    scope.launch { scrollToGroupMessage(original.id) }
+                                                }
                                             },
                                         shape = RoundedCornerShape(8.dp),
                                         color = MaterialTheme.colorScheme.surfaceVariant,
