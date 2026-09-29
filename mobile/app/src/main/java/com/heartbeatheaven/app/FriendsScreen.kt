@@ -3057,6 +3057,12 @@ internal fun FriendsScreen(
         checkingSession = false
     }
 
+    LaunchedEffect(session?.profile?.id) {
+        val userId = session?.profile?.id ?: return@LaunchedEffect
+        val cached = FastStartCache.loadChats(context, userId)
+        if (cached.isNotEmpty()) chatSummaries = cached
+    }
+
     LaunchedEffect(notificationTarget) {
         if (notificationTarget != null) {
             pendingGroupMessageId = notificationTarget.second
@@ -3347,11 +3353,17 @@ internal fun FriendsScreen(
         busy = true
         scope.launch {
             runCatching {
-                val (friendList, _) = coroutineScope {
-                    val presenceDeferred = async(Dispatchers.IO) { a.touchPresence() }
-                    val friendsDeferred = async(Dispatchers.IO) { a.friends() }
-                    friendsDeferred.await() to presenceDeferred.await()
-                }
+                val friendList = a.friends()
+                friends = friendList
+
+                // Presence is background-only; it must never delay the visible chat list.
+                scope.launch(Dispatchers.IO) { runCatching { a.touchPresence() } }
+
+                // Refresh the chat list before secondary Friends data.
+                val freshChats = a.chatSummaries(friendList)
+                chatSummaries = freshChats
+                FastStartCache.saveChats(context, a.userId(), freshChats)
+
                 val friendIds = friendList.mapTo(hashSetOf()) { it.id }
                 val (requestsResult, onlineResult) = coroutineScope {
                     val requestsDeferred = async(Dispatchers.IO) { a.requests() }
@@ -3363,12 +3375,10 @@ internal fun FriendsScreen(
                 friends = f
                 requests = r
                 online = o
-                chatSummaries = runCatching { a.chatSummaries(f) }.getOrDefault(emptyList())
             }.onFailure { statusMessage = it.message ?: "Could not load Friends." }
             busy = false
         }
     }
-
     LaunchedEffect(session?.accessToken, refreshTrigger) { if (session != null) reload() }
 
     LaunchedEffect(api) {
