@@ -629,6 +629,7 @@ private fun GroupChatRoom(
     val groupMessageListState = rememberLazyListState()
     var text by remember { mutableStateOf("") }
     var replyToMessage by remember { mutableStateOf<GroupMessage?>(null) }
+    var highlightedMessageId by remember { mutableStateOf<String?>(null) }
     var selectedMessage by remember { mutableStateOf<GroupMessage?>(null) }
     var editingMessage by remember { mutableStateOf<GroupMessage?>(null) }
     var deletingMessage by remember { mutableStateOf<GroupMessage?>(null) }
@@ -802,6 +803,18 @@ private fun GroupChatRoom(
         if (mine?.reaction == reaction) groupRpc("remove_group_message_reaction", JSONObject().put("p_message_id", message.id))
         else groupRpc("set_group_message_reaction", JSONObject().put("p_message_id", message.id).put("p_reaction", reaction))
         selectedMessage = null; loadGroupReactions()
+    }
+
+    suspend fun scrollToGroupMessage(messageId: String) {
+        val index = messages.indexOfFirst { it.id == messageId }
+        if (index < 0) {
+            onStatus("Original message is no longer available.")
+            return
+        }
+        groupMessageListState.animateScrollToItem(index)
+        highlightedMessageId = messageId
+        delay(1200)
+        if (highlightedMessageId == messageId) highlightedMessageId = null
     }
 
     suspend fun loadMissingSenderProfiles(senderIds: Set<String>) {
@@ -1608,7 +1621,25 @@ private fun GroupChatRoom(
                     val sender = senderProfiles[message.senderId]
                     val messageReactions = groupReactions.filter { it.messageId == message.id }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
-                        Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 1.dp, modifier = Modifier.widthIn(max = 320.dp).combinedClickable(onClick = { if ((message.messageType == "image" || message.messageType == "video") && groupMediaLinks[message.id] != null) fullScreenMedia = groupMediaLinks[message.id] }, onLongClick = { selectedMessage = message })) {
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (highlightedMessageId == message.id) {
+                                MaterialTheme.colorScheme.primaryContainer
+                            } else {
+                                MaterialTheme.colorScheme.surface
+                            },
+                            tonalElevation = 1.dp,
+                            modifier = Modifier
+                                .widthIn(max = 320.dp)
+                                .combinedClickable(
+                                    onClick = {
+                                        if ((message.messageType == "image" || message.messageType == "video") && groupMediaLinks[message.id] != null) {
+                                            fullScreenMedia = groupMediaLinks[message.id]
+                                        }
+                                    },
+                                    onLongClick = { selectedMessage = message }
+                                )
+                        ) {
                             Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
                                 if (!mine) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1674,10 +1705,38 @@ private fun GroupChatRoom(
                                 }
                                 if (message.replyToId.isNotBlank()) {
                                     val replied = messages.firstOrNull { it.id == message.replyToId }
-                                    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(8.dp), tonalElevation = 1.dp) {
+                                    val repliedSender = replied?.let { senderProfiles[it.senderId] }
+                                    val repliedSenderName = when {
+                                        replied == null -> "Message unavailable"
+                                        replied.senderId == session.profile.id -> "You"
+                                        else -> repliedSender?.username?.ifBlank { "Member" } ?: "Member"
+                                    }
+                                    Surface(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .clickable(enabled = replied != null) {
+                                                scope.launch { scrollToGroupMessage(replied.id) }
+                                            },
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant,
+                                        tonalElevation = 1.dp
+                                    ) {
                                         Column(Modifier.padding(7.dp)) {
-                                            Text("Reply", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.SemiBold)
-                                            Text(replied?.body?.ifBlank { "Media message" } ?: "Message unavailable", maxLines = 2, style = MaterialTheme.typography.bodySmall)
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text("↩", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                                Spacer(Modifier.width(5.dp))
+                                                Text(
+                                                    "Replying to $repliedSenderName",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                            Text(
+                                                replied?.body?.ifBlank { "Media message" } ?: "Message unavailable",
+                                                maxLines = 2,
+                                                style = MaterialTheme.typography.bodySmall
+                                            )
                                         }
                                     }
                                     Spacer(Modifier.height(6.dp))
