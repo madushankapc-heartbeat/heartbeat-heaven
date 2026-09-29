@@ -47,6 +47,59 @@ internal object GroupMediaSupport {
         }
     }
 
+    suspend fun uploadAudio(
+        file: java.io.File,
+        accessToken: String,
+        groupId: String,
+        onProgress: (Long, Long) -> Unit = { _, _ -> }
+    ): Result<Uploaded> = withContext(Dispatchers.IO) {
+        runCatching {
+            val size = file.length()
+            if (size <= 0L) error("Voice recording is empty.")
+            if (size > MAX_BYTES) error("Voice message must be 50 MB or smaller.")
+            val path = groupId + "/" + UUID.randomUUID().toString() + ".m4a"
+            val requestBody = object : RequestBody() {
+                override fun contentType() = "audio/mp4".toMediaTypeOrNull()
+                override fun contentLength() = size
+                override fun writeTo(sink: BufferedSink) {
+                    file.inputStream().use { input ->
+                        val buffer = ByteArray(64 * 1024)
+                        var sent = 0L
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count <= 0) break
+                            sent += count
+                            if (sent > MAX_BYTES) error("Voice message must be 50 MB or smaller.")
+                            sink.write(buffer, 0, count)
+                            onProgress(sent, size)
+                        }
+                    }
+                }
+            }
+            val request = Request.Builder()
+                .url(SUPABASE_URL + "/storage/v1/object/" + BUCKET + "/" + path)
+                .header("apikey", SUPABASE_PUBLISHABLE_KEY)
+                .header("Authorization", "Bearer " + accessToken)
+                .header("Content-Type", "audio/mp4")
+                .header("x-upsert", "false")
+                .post(requestBody)
+                .build()
+            client.newCall(request).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    val detail = runCatching {
+                        JSONObject(body).optString("message")
+                            .ifBlank { JSONObject(body).optString("error") }
+                            .ifBlank { JSONObject(body).optString("statusCode") }
+                    }.getOrDefault("")
+                    error(detail.ifBlank { "Voice message upload failed (HTTP " + response.code + ")." })
+                }
+            }
+            onProgress(size, size)
+            Uploaded("audio", path, size)
+        }
+    }
+
     suspend fun upload(context: Context, uri: Uri, accessToken: String, groupId: String, mime: String, onProgress: (Long, Long) -> Unit = { _, _ -> }): Result<Uploaded> = withContext(Dispatchers.IO) {
         runCatching {
             val normalizedMime = mime.trim().lowercase()
