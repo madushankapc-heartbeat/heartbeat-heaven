@@ -40,7 +40,7 @@ private const val API_BASE = "https://heartbeat-heaven.onrender.com"
 private const val YOUTUBE_URL = "https://www.youtube.com/@ViBORA-r1i"
 // Notification navigation is handled inside HeartbeatApp so the active group can receive the target message.
 
-private data class Song(
+internal data class Song(
     val id: Long,
     val title: String,
     val artist: String,
@@ -55,7 +55,7 @@ private data class Song(
     val versionName: String = "Original Version"
 )
 
-private fun songFromJson(o: JSONObject): Song = Song(
+internal fun songFromJson(o: JSONObject): Song = Song(
     id = o.optLong("id"), title = o.optString("title"), artist = o.optString("artist"), genre = o.optString("genre"),
     language = o.optString("language"), mood = o.optString("mood"), description = o.optString("description"), lyrics = o.optString("lyrics"),
     coverUrl = o.optString("cover_url"), audioUrl = o.optString("audio_url"), releaseDate = o.optString("release_date").takeIf { it.isNotBlank() },
