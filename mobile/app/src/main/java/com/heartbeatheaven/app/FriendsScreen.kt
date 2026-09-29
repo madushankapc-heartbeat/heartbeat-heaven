@@ -1607,12 +1607,17 @@ private fun GroupChatRoom(
         if (loading) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         } else {
-            LazyColumn(
-                state = groupMessageListState,
-                modifier = Modifier.weight(1f).fillMaxWidth(),
-                contentPadding = PaddingValues(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
             ) {
+                LazyColumn(
+                    state = groupMessageListState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                 if (messages.isEmpty()) {
                     item { Text("No messages yet. Start the conversation.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
@@ -1759,6 +1764,26 @@ private fun GroupChatRoom(
                                 }
                             }
                         }
+                    }
+                }
+            }
+                if (groupMessageListState.canScrollForward && messages.isNotEmpty()) {
+                    SmallFloatingActionButton(
+                        onClick = {
+                            scope.launch {
+                                groupMessageListState.animateScrollToItem(messages.lastIndex)
+                            }
+                        },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(end = 16.dp, bottom = 16.dp),
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    ) {
+                        Icon(
+                            Icons.Default.KeyboardArrowDown,
+                            contentDescription = "Jump to latest message"
+                        )
                     }
                 }
             }
