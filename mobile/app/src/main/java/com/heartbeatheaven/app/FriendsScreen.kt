@@ -600,9 +600,14 @@ private data class GroupMessage(
     val senderId: String,
     val body: String,
     val createdAt: String,
+    val editedAt: String = "",
+    val deletedAt: String = "",
+    val replyToId: String = "",
     val messageType: String = "text",
     val mediaPath: String = ""
 )
+
+private data class GroupMessageReaction(val messageId: String, val userId: String, val reaction: String)
 
 private data class GroupMemberSummary(
     val userId: String,
@@ -623,6 +628,12 @@ private fun GroupChatRoom(
     var senderProfiles by remember(group.id) { mutableStateOf<Map<String, GroupMemberSummary>>(emptyMap()) }
     val groupMessageListState = rememberLazyListState()
     var text by remember { mutableStateOf("") }
+    var replyToMessage by remember { mutableStateOf<GroupMessage?>(null) }
+    var selectedMessage by remember { mutableStateOf<GroupMessage?>(null) }
+    var editingMessage by remember { mutableStateOf<GroupMessage?>(null) }
+    var deletingMessage by remember { mutableStateOf<GroupMessage?>(null) }
+    var fullScreenMedia by remember { mutableStateOf<SecureMediaLink?>(null) }
+    var groupReactions by remember(group.id) { mutableStateOf<List<GroupMessageReaction>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var textSending by remember { mutableStateOf(false) }
     var mediaSending by remember { mutableStateOf(false) }
@@ -710,7 +721,7 @@ private fun GroupChatRoom(
 
     suspend fun loadMessages() {
         withContext(Dispatchers.IO) {
-            val url = "$FRIENDS_SUPABASE_URL/rest/v1/group_messages?group_id=eq.${group.id}&select=id,sender_id,body,created_at,message_type,media_path&order=created_at.asc&limit=500"
+            val url = "$FRIENDS_SUPABASE_URL/rest/v1/group_messages?group_id=eq.${group.id}&select=id,sender_id,body,created_at,edited_at,deleted_at,reply_to_id,message_type,media_path&order=created_at.asc&limit=500"
             val connection = (URL(url).openConnection() as HttpURLConnection)
             try {
                 connection.requestMethod = "GET"
@@ -730,7 +741,7 @@ private fun GroupChatRoom(
                 messages = buildList {
                     for (i in 0 until rows.length()) {
                         val row = rows.getJSONObject(i)
-                        add(GroupMessage(row.optString("id"), row.optString("sender_id"), row.optString("body"), row.optString("created_at"), row.optString("message_type").ifBlank { "text" }, row.optString("media_path").takeUnless { it == "null" }.orEmpty()))
+                        add(GroupMessage(row.optString("id"), row.optString("sender_id"), row.optString("body"), row.optString("created_at"), row.optString("edited_at").takeUnless { it == "null" }.orEmpty(), row.optString("deleted_at").takeUnless { it == "null" }.orEmpty(), row.optString("reply_to_id").takeUnless { it == "null" }.orEmpty(), row.optString("message_type").ifBlank { "text" }, row.optString("media_path").takeUnless { it == "null" }.orEmpty()))
                     }
                 }
             } finally {
