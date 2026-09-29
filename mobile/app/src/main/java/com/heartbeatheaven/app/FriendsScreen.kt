@@ -882,6 +882,7 @@ private fun GroupChatRoom(
 
     suspend fun sendMessage() {
         val body = text.trim()
+        val replyTarget = replyToMessage
         val attachments = pendingGroupMedia
         if (body.isBlank() && attachments.isEmpty()) return
         if (body.length > 4000) { onStatus("Message is too long."); return }
@@ -929,6 +930,7 @@ private fun GroupChatRoom(
                                         .put("body", body)
                                         .put("message_type", uploaded.type)
                                         .put("media_path", uploaded.path)
+                                        .apply { replyTarget?.id?.let { put("reply_to_id", it) } }
                                         .toString()
                                     connection.outputStream.use { it.write(payload.toByteArray()) }
                                     val code = connection.responseCode
@@ -963,6 +965,7 @@ private fun GroupChatRoom(
                         pendingGroupMedia = pendingGroupMedia.drop(1)
                     }
                     text = ""
+                    replyToMessage = null
                     loadMessages()
                 } catch (error: Throwable) {
                     onStatus(error.message ?: "Media message could not be sent.")
@@ -999,6 +1002,7 @@ private fun GroupChatRoom(
                                 .put("sender_id", session.profile.id)
                                 .put("body", body)
                                 .put("message_type", "text")
+                                .apply { replyTarget?.id?.let { put("reply_to_id", it) } }
                                 .toString().toByteArray()
                         )
                     }
@@ -1020,6 +1024,7 @@ private fun GroupChatRoom(
                 }
             }
             loadMessages()
+            replyToMessage = null
             onStatus("")
         } catch (error: Throwable) {
             onStatus(error.message ?: "Message could not be sent.")
@@ -1459,6 +1464,7 @@ private fun GroupChatRoom(
 
     LaunchedEffect(messages) {
         loadMissingSenderProfiles(messages.map { it.senderId }.toSet())
+        loadGroupReactions()
     }
 
     LaunchedEffect(messages.lastOrNull()?.id) {
