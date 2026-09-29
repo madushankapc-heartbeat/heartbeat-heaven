@@ -750,6 +750,60 @@ private fun GroupChatRoom(
         }
     }
 
+    suspend fun loadGroupReactions() {
+        runCatching {
+            val ids = messages.map { it.id }
+            if (ids.isEmpty()) { groupReactions = emptyList(); return@runCatching }
+            val idFilter = ids.joinToString(",")
+            val url = FRIENDS_SUPABASE_URL + "/rest/v1/group_message_reactions?select=group_message_id,user_id,reaction&group_message_id=in.(" + idFilter + ")&limit=1000"
+            val response = withContext(Dispatchers.IO) {
+                val connection = (URL(url).openConnection() as HttpURLConnection)
+                try {
+                    connection.requestMethod = "GET"; connection.connectTimeout = 15000; connection.readTimeout = 20000
+                    connection.setRequestProperty("apikey", FRIENDS_KEY); connection.setRequestProperty("Authorization", "Bearer " + session.accessToken); connection.setRequestProperty("Accept", "application/json")
+                    val code = connection.responseCode
+                    val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) error("Could not load group reactions.")
+                    JSONArray(body)
+                } finally { connection.disconnect() }
+            }
+            groupReactions = buildList { for (i in 0 until response.length()) { val row = response.getJSONObject(i); add(GroupMessageReaction(row.optString("group_message_id"), row.optString("user_id"), row.optString("reaction"))) } }
+        }.onFailure { onStatus(it.message ?: "Could not load group reactions.") }
+    }
+
+    suspend fun groupRpc(name: String, payload: JSONObject): JSONObject = withContext(Dispatchers.IO) {
+        val connection = (URL(FRIENDS_SUPABASE_URL + "/rest/v1/rpc/" + name).openConnection() as HttpURLConnection)
+        try {
+            connection.requestMethod = "POST"; connection.doOutput = true; connection.connectTimeout = 15000; connection.readTimeout = 20000
+            connection.setRequestProperty("apikey", FRIENDS_KEY); connection.setRequestProperty("Authorization", "Bearer " + session.accessToken); connection.setRequestProperty("Content-Type", "application/json"); connection.setRequestProperty("Accept", "application/json")
+            connection.outputStream.use { it.write(payload.toString().toByteArray()) }
+            val code = connection.responseCode
+            val body = (if (code in 200..299) connection.inputStream else connection.errorStream)?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) { val detail = runCatching { JSONObject(body).optString("message").ifBlank { JSONObject(body).optString("error") } }.getOrDefault(""); error(detail.ifBlank { "Group message action failed." }) }
+            JSONObject(body)
+        } finally { connection.disconnect() }
+    }
+
+    suspend fun editGroupMessage(message: GroupMessage, body: String) {
+        groupRpc("edit_my_group_message", JSONObject().put("p_message_id", message.id).put("p_body", body.trim()))
+        editingMessage = null; loadMessages(); onStatus("Message edited.")
+    }
+
+    suspend fun deleteGroupMessage(message: GroupMessage) {
+        val rpc = if (message.senderId == session.profile.id) "delete_my_group_message" else "admin_delete_group_message"
+        groupRpc(rpc, JSONObject().put("p_message_id", message.id))
+        deletingMessage = null; selectedMessage = null
+        if (message.mediaPath.isNotBlank()) runCatching { GroupMediaSupport.deleteUploaded(context, session.accessToken, message.mediaPath) }
+        loadMessages(); loadGroupReactions(); onStatus("Message deleted.")
+    }
+
+    suspend fun setGroupReaction(message: GroupMessage, reaction: String) {
+        val mine = groupReactions.firstOrNull { it.messageId == message.id && it.userId == session.profile.id }
+        if (mine?.reaction == reaction) groupRpc("remove_group_message_reaction", JSONObject().put("p_message_id", message.id))
+        else groupRpc("set_group_message_reaction", JSONObject().put("p_message_id", message.id).put("p_reaction", reaction))
+        selectedMessage = null; loadGroupReactions()
+    }
+
     suspend fun loadMissingSenderProfiles(senderIds: Set<String>) {
         val missingIds = senderIds.filter { it.isNotBlank() && !senderProfiles.containsKey(it) }
         if (missingIds.isEmpty()) return
