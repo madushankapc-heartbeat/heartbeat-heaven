@@ -1722,6 +1722,18 @@ private fun GroupChatRoom(
                     Text("Uploading group media… $groupMediaProgress%", style = MaterialTheme.typography.labelSmall)
                 }
             }
+            if (replyToMessage != null) {
+                Surface(Modifier.fillMaxWidth().padding(horizontal = 8.dp), tonalElevation = 1.dp) {
+                    Row(Modifier.padding(horizontal = 10.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Replying to " + (senderProfiles[replyToMessage!!.senderId]?.username ?: "message"), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                            Text(replyToMessage!!.body.ifBlank { "Media message" }, maxLines = 1, style = MaterialTheme.typography.bodySmall)
+                        }
+                        IconButton(onClick = { replyToMessage = null }) { Icon(Icons.Default.Close, "Cancel reply") }
+                    }
+                }
+            }
+
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1775,6 +1787,81 @@ private fun GroupChatRoom(
                         } else {
                             Icon(Icons.Default.Send, contentDescription = "Send message")
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    if (selectedMessage != null) {
+        val message = selectedMessage!!
+        AlertDialog(
+            onDismissRequest = { selectedMessage = null },
+            title = { Text("Message actions") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    if (message.deletedAt.isBlank()) {
+                        Text("React", style = MaterialTheme.typography.labelMedium)
+                        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            listOf("👍", "❤️", "😂", "😮", "😢", "😡").forEach { reaction ->
+                                TextButton(onClick = { scope.launch { setGroupReaction(message, reaction) } }) { Text(reaction) }
+                            }
+                        }
+                        TextButton(onClick = { replyToMessage = message; selectedMessage = null }) { Text("Reply") }
+                        if (message.senderId == session.profile.id && message.messageType == "text") {
+                            TextButton(onClick = { editingMessage = message; selectedMessage = null }) { Text("Edit") }
+                        }
+                        if (message.messageType == "image" || message.messageType == "video") {
+                            TextButton(onClick = { groupMediaLinks[message.id]?.let { fullScreenMedia = it }; selectedMessage = null }) { Text("Open") }
+                        }
+                        if (message.senderId == session.profile.id || canManageInvite) {
+                            TextButton(onClick = { deletingMessage = message; selectedMessage = null }) { Text("Delete") }
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { selectedMessage = null }) { Text("Close") } }
+        )
+    }
+
+    if (editingMessage != null) {
+        var editText by remember(editingMessage!!.id) { mutableStateOf(editingMessage!!.body) }
+        AlertDialog(
+            onDismissRequest = { editingMessage = null },
+            title = { Text("Edit message") },
+            text = {
+                OutlinedTextField(
+                    value = editText,
+                    onValueChange = { if (it.length <= 4000) editText = it },
+                    minLines = 2,
+                    maxLines = 6,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(enabled = editText.trim().isNotBlank(), onClick = { scope.launch { editGroupMessage(editingMessage!!, editText) } }) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { editingMessage = null }) { Text("Cancel") }
+        )
+    }
+
+    if (deletingMessage != null) {
+        AlertDialog(
+            onDismissRequest = { deletingMessage = null },
+            title = { Text("Delete message?") },
+            text = { Text("This message will be replaced with 'This message was deleted'.") },
+            confirmButton = { Button(onClick = { scope.launch { deleteGroupMessage(deletingMessage!!) } }) { Text("Delete") } },
+            dismissButton = { TextButton(onClick = { deletingMessage = null }) { Text("Cancel") } }
+        )
+    }
+
+    if (fullScreenMedia != null) {
+        Dialog(onDismissRequest = { fullScreenMedia = null }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    AsyncImage(model = fullScreenMedia!!.url, contentDescription = "Group media", modifier = Modifier.fillMaxWidth().padding(12.dp), contentScale = androidx.compose.ui.layout.ContentScale.Fit)
+                    IconButton(Modifier.align(Alignment.TopEnd).padding(12.dp), onClick = { fullScreenMedia = null }) {
+                        Icon(Icons.Default.Close, "Close")
                     }
                 }
             }
