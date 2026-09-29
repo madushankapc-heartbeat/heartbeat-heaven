@@ -28,7 +28,7 @@ function isUuid(value: string) {
 function isGroupMediaPath(path: string, groupId: string) {
   if (!path || path.length > 300 || !path.startsWith(groupId + "/")) return false;
   const suffix = path.slice(groupId.length + 1);
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(jpg|jpeg|png|webp|gif|mp4|webm|mov)$/i.test(suffix);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(jpg|jpeg|png|webp|gif|mp4|webm|mov|m4a)$/i.test(suffix);
 }
 
 Deno.serve(async (req) => {
