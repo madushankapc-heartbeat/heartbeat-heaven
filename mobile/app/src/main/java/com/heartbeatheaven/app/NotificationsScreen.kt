@@ -63,7 +63,7 @@ private class NotificationsApi(private val auth: AuthApi) {
     suspend fun list(): List<AppNotification> = withContext(Dispatchers.IO) {
         val session = auth.currentSession() ?: return@withContext emptyList()
         val userId = URLEncoder.encode(session.profile.id, "UTF-8")
-        val array = JSONArray(request("/rest/v1/notifications?recipient_id=eq.$userId&select=id,kind,title,body,entity_id,read_at,created_at&order=created_at.desc&limit=100", "GET"))
+        val array = JSONArray(request("/rest/v1/notifications?recipient_id=eq.$userId&read_at=is.null&select=id,kind,title,body,entity_id,read_at,created_at&order=created_at.desc&limit=100", "GET"))
         buildList {
             for (i in 0 until array.length()) {
                 val o = array.getJSONObject(i)
@@ -84,6 +84,17 @@ private class NotificationsApi(private val auth: AuthApi) {
         request("/rest/v1/notifications?id=eq.${URLEncoder.encode(id, "UTF-8")}", "PATCH", JSONObject().put("read_at", Instant.now().toString()).toString())
     }
 
+    suspend fun groupTarget(entityId: String): Pair<String, String>? = withContext(Dispatchers.IO) {
+        if (entityId.isBlank()) return@withContext null
+        val encoded = URLEncoder.encode(entityId, "UTF-8")
+        val array = JSONArray(request("/rest/v1/group_messages?id=eq.$encoded&select=id,group_id&limit=1", "GET"))
+        if (array.length() == 0) return@withContext null
+        val row = array.getJSONObject(0)
+        val messageId = row.optString("id")
+        val groupId = row.optString("group_id")
+        if (messageId.isBlank() || groupId.isBlank()) null else groupId to messageId
+    }
+
     suspend fun markAllRead() = withContext(Dispatchers.IO) {
         val session = auth.currentSession() ?: return@withContext
         request("/rest/v1/notifications?recipient_id=eq.${URLEncoder.encode(session.profile.id, "UTF-8")}&read_at=is.null", "PATCH", JSONObject().put("read_at", Instant.now().toString()).toString())
@@ -91,7 +102,10 @@ private class NotificationsApi(private val auth: AuthApi) {
 }
 
 @Composable
-internal fun NotificationsScreen(onBack: () -> Unit) {
+internal fun NotificationsScreen(
+    onBack: () -> Unit,
+    onOpenNotification: (String, String) -> Unit = { _, _ -> }
+) {
     val context = LocalContext.current
     val auth = remember { AuthApi(context) }
     val api = remember { NotificationsApi(auth) }
@@ -163,9 +177,16 @@ internal fun NotificationsScreen(onBack: () -> Unit) {
                 items(items, key = { it.id }) { n ->
                     Card(
                         Modifier.fillMaxWidth().clickable {
-                            if (n.readAt == null) {
-                                scope.launch {
-                                    runCatching { api.markRead(n.id); items = api.list() }
+                            scope.launch {
+                                runCatching {
+                                    if (n.readAt == null) api.markRead(n.id)
+                                    items = api.list()
+                                    val entityId = n.entityId
+                                    if (entityId != null) {
+                                        api.groupTarget(entityId)?.let { (groupId, messageId) ->
+                                            onOpenNotification(groupId, messageId)
+                                        }
+                                    }
                                 }
                             }
                         }
