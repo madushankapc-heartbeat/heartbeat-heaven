@@ -620,6 +620,8 @@ private fun GroupChatRoom(
     onGroupPhotoUpdated: (String, String) -> Unit
 ) {
     var messages by remember(group.id) { mutableStateOf<List<GroupMessage>>(emptyList()) }
+    var senderProfiles by remember(group.id) { mutableStateOf<Map<String, GroupMemberSummary>>(emptyMap()) }
+    val groupMessageListState = rememberLazyListState()
     var text by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(true) }
     var textSending by remember { mutableStateOf(false) }
@@ -734,6 +736,60 @@ private fun GroupChatRoom(
             } finally {
                 connection.disconnect()
             }
+        }
+    }
+
+    suspend fun loadMissingSenderProfiles(senderIds: Set<String>) {
+        val missingIds = senderIds.filter { it.isNotBlank() && !senderProfiles.containsKey(it) }
+        if (missingIds.isEmpty()) return
+
+        runCatching {
+            val profiles = withContext(Dispatchers.IO) {
+                val payload = JSONObject()
+                    .put("mode", "ids")
+                    .put("ids", JSONArray(missingIds))
+                    .toString()
+                val connection = (URL(FRIENDS_SUPABASE_URL + "/functions/v1/public-profiles").openConnection() as HttpURLConnection)
+                try {
+                    connection.requestMethod = "POST"
+                    connection.doOutput = true
+                    connection.connectTimeout = 15000
+                    connection.readTimeout = 20000
+                    connection.setRequestProperty("apikey", FRIENDS_KEY)
+                    connection.setRequestProperty("Authorization", "Bearer " + session.accessToken)
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.setRequestProperty("Accept", "application/json")
+                    connection.outputStream.use { it.write(payload.toByteArray()) }
+                    val code = connection.responseCode
+                    val body = (if (code in 200..299) connection.inputStream else connection.errorStream)
+                        ?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    if (code !in 200..299) throw IllegalStateException("Could not load message sender profiles.")
+                    JSONArray(body)
+                } finally {
+                    connection.disconnect()
+                }
+            }
+
+            val loaded = buildMap<String, GroupMemberSummary> {
+                for (i in 0 until profiles.length()) {
+                    val profile = profiles.getJSONObject(i)
+                    val id = profile.optString("id")
+                    if (id.isNotBlank()) {
+                        put(
+                            id,
+                            GroupMemberSummary(
+                                userId = id,
+                                username = profile.optString("username").ifBlank { "Member" },
+                                role = "member",
+                                avatarUrl = profile.optString("avatar_url").takeUnless { it == "null" }.orEmpty()
+                            )
+                        )
+                    }
+                }
+            }
+            senderProfiles = senderProfiles + loaded
+        }.onFailure {
+            onStatus(it.message ?: "Could not load message sender profiles.")
         }
     }
 
@@ -1336,14 +1392,41 @@ private fun GroupChatRoom(
         }
     }
 
+    LaunchedEffect(messages) {
+        loadMissingSenderProfiles(messages.map { it.senderId }.toSet())
+    }
+
+    LaunchedEffect(messages.lastOrNull()?.id) {
+        if (messages.isNotEmpty()) {
+            if (groupMessageListState.layoutInfo.totalItemsCount == 0) {
+                return@LaunchedEffect
+            }
+            groupMessageListState.animateScrollToItem(messages.lastIndex)
+        }
+    }
+
     LaunchedEffect(group.id) {
         loading = true
         runCatching { loadMessages() }.onFailure { onStatus(it.message ?: "Could not load group messages.") }
         runCatching { loadInvitePermission() }
         loading = false
-        while (true) {
-            delay(5000)
-            runCatching { loadMessages() }
+
+        val realtime = GroupRealtimeMessagesClient(
+            accessTokenProvider = { session.accessToken },
+            apiKey = FRIENDS_KEY,
+            groupId = group.id,
+            onChange = { _, _ ->
+                scope.launch {
+                    runCatching { loadMessages() }
+                }
+            }
+        )
+        realtime.start()
+
+        try {
+            delay(Long.MAX_VALUE)
+        } finally {
+            realtime.stop()
         }
     }
 
@@ -1438,6 +1521,7 @@ private fun GroupChatRoom(
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         } else {
             LazyColumn(
+                state = groupMessageListState,
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -1447,9 +1531,35 @@ private fun GroupChatRoom(
                 }
                 items(messages, key = { it.id }) { message ->
                     val mine = message.senderId == session.profile.id
+                    val sender = senderProfiles[message.senderId]
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
                         Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 1.dp, modifier = Modifier.widthIn(max = 320.dp)) {
                             Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                if (!mine) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (sender?.avatarUrl.orEmpty().isNotBlank()) {
+                                            AsyncImage(
+                                                model = sender?.avatarUrl,
+                                                contentDescription = sender?.username.orEmpty(),
+                                                modifier = Modifier.size(28.dp).clip(CircleShape),
+                                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                            )
+                                        } else {
+                                            Surface(modifier = Modifier.size(28.dp), shape = CircleShape, tonalElevation = 1.dp) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(18.dp))
+                                                }
+                                            }
+                                        }
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(
+                                            sender?.username?.ifBlank { "Member" } ?: "Member",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                    Spacer(Modifier.height(4.dp))
+                                }
                                 if (message.messageType == "image" || message.messageType == "video") {
                                     val secure = groupMediaLinks[message.id]
                                     if (secure != null) {
