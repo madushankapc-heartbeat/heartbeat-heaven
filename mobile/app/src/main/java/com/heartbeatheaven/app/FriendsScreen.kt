@@ -3046,15 +3046,20 @@ internal fun FriendsScreen(
     var saveTarget by remember { mutableStateOf<ChatMessage?>(null) }
     var friendTab by remember { mutableStateOf(0) }
 
+    LaunchedEffect(notificationTarget) {
+        if (notificationTarget != null) {
+            friendTab = 2
+        }
+    }
+
     LaunchedEffect(Unit) {
         session = withContext(Dispatchers.IO) { auth.currentSession() }
         checkingSession = false
     }
 
     LaunchedEffect(notificationTarget) {
-        pendingGroupMessageId = notificationTarget?.second
-        if (notificationTarget == null) {
-            selectedGroup = null
+        if (notificationTarget != null) {
+            pendingGroupMessageId = notificationTarget.second
         }
     }
 
