@@ -204,16 +204,19 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
 
     suspend fun refreshSongs() {
         try {
-            songs = fetchSongs()
+            val fresh = fetchSongs()
+            songs = fresh
+            FastStartCache.saveSongs(context, fresh)
             error = null
         } catch (e: Exception) {
-            error = "Unable to load songs. Please check your connection."
+            if (songs.isEmpty()) error = "Unable to load songs. Please check your connection."
+        } finally {
+            loading = false
         }
     }
 
     LaunchedEffect(Unit) {
         refreshSongs()
-        loading = false
     }
 
     LaunchedEffect(Unit) {
