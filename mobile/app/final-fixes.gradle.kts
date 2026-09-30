@@ -115,7 +115,7 @@ val prepareFinalAppFixes = tasks.register("prepareFinalAppFixes") {
             )
             t = t.replace(
                 "            songs = fetchSongs()\n            error = null",
-                "            songs = fetchSongs()\n            onQueueChanged(songs)\n            error = null"
+                "            val loadedSongs = fetchSongs()\n            songs = loadedSongs\n            onQueueChanged(loadedSongs)\n            for (baseSong in loadedSongs) {\n                runCatching { fetchSongHub(baseSong.id).second }\n                    .onSuccess { versions -> if (versions.isNotEmpty()) onQueueChanged(versions) }\n            }\n            error = null"
             )
             t = t.replace(
                 "MiniPlayer(song, playing, position, duration, onPlay, onPause, onSeek, onStop)",
