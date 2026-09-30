@@ -126,6 +126,18 @@ val prepareFinalAppFixes = tasks.register("prepareFinalAppFixes") {
                 "private fun MiniPlayer(s: Song, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit)"
             )
             t = t.replace(
+                "selected != null -> DetailScreen(selected!!, songId, playing, position, duration, { selected = null }, { target -> if (songId == target.id && playing) onPause() else onPlay(target) }, onSeek, { favoriteIds = favorites.toggle(selected!!.id) }, { shareSong(context, selected!!) })",
+                "selected != null -> DetailScreen(selected!!, songId, playing, position, duration, { selected = null }, { target -> if (songId == target.id && playing) onPause() else onPlay(target) }, onSeek, { favoriteIds = favorites.toggle(selected!!.id) }, { shareSong(context, selected!!) }, { versions -> setPlaybackQueue((playbackQueue + versions).distinctBy { it.id }) })"
+            )
+            t = t.replace(
+                "private fun DetailScreen(s: Song, songId: Long?, playing: Boolean, position: Long, duration: Long, onBack: () -> Unit, onPlaySong: (Song) -> Unit, onSeek: (Long) -> Unit, onFavorite: () -> Unit, onShare: () -> Unit)",
+                "private fun DetailScreen(s: Song, songId: Long?, playing: Boolean, position: Long, duration: Long, onBack: () -> Unit, onPlaySong: (Song) -> Unit, onSeek: (Long) -> Unit, onFavorite: () -> Unit, onShare: () -> Unit, onVersionsLoaded: (List<Song>) -> Unit)"
+            )
+            t = t.replace(
+                "LaunchedEffect(s.id) { try { val hub = fetchSongHub(s.id); original = hub.first; versions = hub.second } catch (e: Exception) { versionsError = \\"Unable to load versions.\\" } finally { loadingVersions = false } }",
+                "LaunchedEffect(s.id) { try { val hub = fetchSongHub(s.id); original = hub.first; versions = hub.second; onVersionsLoaded(hub.second) } catch (e: Exception) { versionsError = \\"Unable to load versions.\\" } finally { loadingVersions = false } }"
+            )
+            t = t.replace(
                 "Cover(s.coverUrl, Modifier.size(46.dp), true); Column(Modifier.weight(1f).padding(horizontal = 10.dp)) { Text(s.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(s.artist, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }; IconButton(onClick = { if (playing) onPause() else onPlay(s) }) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) \"Pause\" else \"Play\") }; IconButton(onClick = onStop) { Icon(Icons.Default.Close, \"Close\") }",
                 "Cover(s.coverUrl, Modifier.size(46.dp), true); Column(Modifier.weight(1f).padding(horizontal = 8.dp)) { Text(s.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(s.artist, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }; IconButton(onClick = onPrevious, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.SkipPrevious, \"Previous\") }; IconButton(onClick = { if (playing) onPause() else onPlay(s) }, modifier = Modifier.size(40.dp)) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) \"Pause\" else \"Play\") }; IconButton(onClick = onNext, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.SkipNext, \"Next\") }; IconButton(onClick = onStop, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.Close, \"Close\") }"
             )
