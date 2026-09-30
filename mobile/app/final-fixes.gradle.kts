@@ -134,8 +134,8 @@ val prepareFinalAppFixes = tasks.register("prepareFinalAppFixes") {
                 "private fun DetailScreen(s: Song, songId: Long?, playing: Boolean, position: Long, duration: Long, onBack: () -> Unit, onPlaySong: (Song) -> Unit, onSeek: (Long) -> Unit, onFavorite: () -> Unit, onShare: () -> Unit, onVersionsLoaded: (List<Song>) -> Unit)"
             )
             t = t.replace(
-                "LaunchedEffect(s.id) { try { val hub = fetchSongHub(s.id); original = hub.first; versions = hub.second } catch (e: Exception) { versionsError = \\"Unable to load versions.\\" } finally { loadingVersions = false } }",
-                "LaunchedEffect(s.id) { try { val hub = fetchSongHub(s.id); original = hub.first; versions = hub.second; onVersionsLoaded(hub.second) } catch (e: Exception) { versionsError = \\"Unable to load versions.\\" } finally { loadingVersions = false } }"
+                "LaunchedEffect(s.id) { try { val hub = fetchSongHub(s.id); original = hub.first; versions = hub.second } catch (e: Exception) { versionsError = \"Unable to load versions.\" } finally { loadingVersions = false } }",
+                "LaunchedEffect(s.id) { try { val hub = fetchSongHub(s.id); original = hub.first; versions = hub.second; onVersionsLoaded(hub.second) } catch (e: Exception) { versionsError = \"Unable to load versions.\" } finally { loadingVersions = false } }"
             )
             t = t.replace(
                 "Cover(s.coverUrl, Modifier.size(46.dp), true); Column(Modifier.weight(1f).padding(horizontal = 10.dp)) { Text(s.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(s.artist, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }; IconButton(onClick = { if (playing) onPause() else onPlay(s) }) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) \"Pause\" else \"Play\") }; IconButton(onClick = onStop) { Icon(Icons.Default.Close, \"Close\") }",
