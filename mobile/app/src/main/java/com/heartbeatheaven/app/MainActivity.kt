@@ -126,12 +126,14 @@ class MainActivity : ComponentActivity() {
     private var isPlaying by mutableStateOf(false)
     private var positionMs by mutableLongStateOf(0L)
     private var durationMs by mutableLongStateOf(0L)
+    private var playbackQueue: List<Song> = emptyList()
+    private var playbackIndex: Int = -1
 
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlayingNow: Boolean) { isPlaying = isPlayingNow }
         override fun onPlaybackStateChanged(state: Int) {
             if (state == Player.STATE_READY) durationMs = player?.duration?.coerceAtLeast(0L) ?: 0L
-            if (state == Player.STATE_ENDED) stopPlayback()
+            if (state == Player.STATE_ENDED) playNext()
         }
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) { isPlaying = false }
     }
@@ -147,13 +149,46 @@ class MainActivity : ComponentActivity() {
                         delay(if (isPlaying) 250L else 500L)
                     }
                 }
-                HeartbeatApp(currentSong, currentSongId, isPlaying, positionMs, durationMs, ::playSong, ::pausePlayback, ::seekPlayback, ::stopPlayback)
+                HeartbeatApp(currentSong, currentSongId, isPlaying, positionMs, durationMs, ::playSong, ::pausePlayback, ::seekPlayback, ::stopPlayback, ::previousPlayback, ::nextPlayback, ::setPlaybackQueue)
             }
+        }
+    }
+
+    private fun setPlaybackQueue(songs: List<Song>) {
+        playbackQueue = songs
+        playbackIndex = currentSongId?.let { id -> songs.indexOfFirst { it.id == id } } ?: -1
+    }
+
+    private fun playNext() {
+        val nextIndex = playbackIndex + 1
+        if (nextIndex in playbackQueue.indices) {
+            playSong(playbackQueue[nextIndex])
+        } else if (playbackQueue.isNotEmpty()) {
+            player?.seekTo(0L)
+            positionMs = 0L
+        }
+    }
+
+    private fun nextPlayback() = playNext()
+
+    private fun previousPlayback() {
+        if (player?.currentPosition?.let { it > 3000L } == true) {
+            player?.seekTo(0L)
+            positionMs = 0L
+            return
+        }
+        val previousIndex = playbackIndex - 1
+        if (previousIndex in playbackQueue.indices) {
+            playSong(playbackQueue[previousIndex])
+        } else {
+            player?.seekTo(0L)
+            positionMs = 0L
         }
     }
 
     private fun playSong(song: Song) {
         val url = song.audioUrl.trim(); if (url.isBlank()) return
+        playbackIndex = playbackQueue.indexOfFirst { it.id == song.id }
         if (currentSongId == song.id && player != null) { player?.play(); return }
         player?.removeListener(listener); player?.release(); currentSong = song; currentSongId = song.id; positionMs = 0L; durationMs = 0L
         player = ExoPlayer.Builder(this).build().also { p -> p.addListener(listener); p.setMediaItem(MediaItem.fromUri(url)); p.prepare(); p.playWhenReady = true }
@@ -182,7 +217,7 @@ private fun Progress(position: Long, duration: Long, onSeek: (Long) -> Unit, sma
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit) {
+private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit, onQueueChanged: (List<Song>) -> Unit) {
     val context = LocalContext.current
     var songs by remember { mutableStateOf<List<Song>>(emptyList()) }; var loading by remember { mutableStateOf(true) }; var error by remember { mutableStateOf<String?>(null) }
     var tab by remember { mutableStateOf(0) }; var search by remember { mutableStateOf("") }; var selected by remember { mutableStateOf<Song?>(null) }; var showNotifications by remember { mutableStateOf(false) }
@@ -204,6 +239,10 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
     LaunchedEffect(Unit) {
         refreshSongs()
         loading = false
+    }
+
+    LaunchedEffect(songs) {
+        onQueueChanged(songs)
     }
 
     LaunchedEffect(Unit) {
@@ -275,7 +314,7 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
         }
     ) },
         bottomBar = { Column {
-            if (song != null && selected == null) MiniPlayer(song, playing, position, duration, onPlay, onPause, onSeek, onStop)
+            if (song != null && selected == null) MiniPlayer(song, playing, position, duration, onPlay, onPause, onSeek, onStop, onPrevious, onNext)
             NavigationBar {
                 NavigationBarItem(tab == 0, { tab = 0; selected = null }, { Icon(Icons.Default.Home, "Home") }, label = { Text("Home") })
                 NavigationBarItem(tab == 1, { tab = 1; selected = null }, { Icon(Icons.Default.People, "Friends") }, label = { Text("Friends") })
@@ -311,8 +350,23 @@ private fun SongCard(s: Song, favorite: Boolean, onOpen: () -> Unit, onFavorite:
 }
 
 @Composable
-private fun MiniPlayer(s: Song, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit) {
-    Surface(shadowElevation = 8.dp, modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(horizontal = 10.dp, vertical = 4.dp)) { Row(verticalAlignment = Alignment.CenterVertically) { Cover(s.coverUrl, Modifier.size(46.dp), true); Column(Modifier.weight(1f).padding(horizontal = 10.dp)) { Text(s.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(s.artist, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis) }; IconButton(onClick = { if (playing) onPause() else onPlay(s) }) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) "Pause" else "Play") }; IconButton(onClick = onStop) { Icon(Icons.Default.Close, "Close") } }; Progress(position, duration, onSeek, true) } }
+private fun MiniPlayer(s: Song, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit) {
+    Surface(shadowElevation = 8.dp, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = 10.dp, vertical = 4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Cover(s.coverUrl, Modifier.size(46.dp), true)
+                Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
+                    Text(s.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(s.artist, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                IconButton(onClick = onPrevious, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.SkipPrevious, "Previous") }
+                IconButton(onClick = { if (playing) onPause() else onPlay(s) }, modifier = Modifier.size(40.dp)) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, if (playing) "Pause" else "Play") }
+                IconButton(onClick = onNext, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.SkipNext, "Next") }
+                IconButton(onClick = onStop, modifier = Modifier.size(40.dp)) { Icon(Icons.Default.Close, "Close") }
+            }
+            Progress(position, duration, onSeek, true)
+        }
+    }
 }
 
 @Composable
