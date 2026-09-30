@@ -61,11 +61,11 @@ import java.time.temporal.ChronoUnit
 
 private const val FRIENDS_SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.co"
 private const val FRIENDS_KEY = "sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
-private data class FriendUser(val id: String, val username: String, val gender: String, val avatarUrl: String = "", val lastSeenAt: String = "", val lastSeenVisibility: String = "everyone")
+internal data class FriendUser(val id: String, val username: String, val gender: String, val avatarUrl: String = "", val lastSeenAt: String = "", val lastSeenVisibility: String = "everyone")
 private enum class FriendSearchState { Idle, Loading, Results, Empty, Error }
 private data class FriendProfile(val id: String, val username: String, val gender: String, val bio: String = "", val lastSeenAt: String, val avatarUrl: String = "", val lastSeenVisibility: String = "everyone")
 private data class FriendRequest(val id: String, val user: FriendUser, val incoming: Boolean)
-private data class ChatSummary(val user: FriendUser, val lastMessage: String, val lastMessageAt: String, val unreadCount: Int, val pinned: Boolean, val muted: Boolean)
+internal data class ChatSummary(val user: FriendUser, val lastMessage: String, val lastMessageAt: String, val unreadCount: Int, val pinned: Boolean, val muted: Boolean)
 private data class ChatMessage(val id: String, val senderId: String, val body: String, val createdAt: String, val deliveredAt: String = "", val readAt: String = "", val editedAt: String = "", val deletedAt: String = "", val replyToId: String = "", val messageType: String = "text", val mediaUrl: String = "", val mediaPath: String = "", val mediaName: String = "", val mediaSize: Long = 0L)
 private data class MessageReaction(val messageId: String, val userId: String, val reaction: String)
 private data class PendingChatAttachment(val uri: Uri, val name: String, val mime: String, val size: Long)
@@ -3057,6 +3057,14 @@ internal fun FriendsScreen(
         checkingSession = false
     }
 
+    LaunchedEffect(session?.profile?.id) {
+        val userId = session?.profile?.id ?: return@LaunchedEffect
+        val cachedFriends = FastStartCache.loadFriends(context, userId)
+        val cachedChats = FastStartCache.loadChats(context, userId)
+        if (cachedFriends.isNotEmpty()) friends = cachedFriends
+        if (cachedChats.isNotEmpty()) chatSummaries = cachedChats
+    }
+
     LaunchedEffect(notificationTarget) {
         if (notificationTarget != null) {
             pendingGroupMessageId = notificationTarget.second
@@ -3347,11 +3355,18 @@ internal fun FriendsScreen(
         busy = true
         scope.launch {
             runCatching {
-                val (friendList, _) = coroutineScope {
-                    val presenceDeferred = async(Dispatchers.IO) { a.touchPresence() }
-                    val friendsDeferred = async(Dispatchers.IO) { a.friends() }
-                    friendsDeferred.await() to presenceDeferred.await()
-                }
+                val friendList = a.friends()
+                friends = friendList
+                FastStartCache.saveFriends(context, a.userId(), friendList)
+
+                // Presence is background-only; it must never delay the visible Friends list.
+                scope.launch(Dispatchers.IO) { runCatching { a.touchPresence() } }
+
+                // Refresh the chat list before secondary Friends data.
+                val freshChats = a.chatSummaries(friendList)
+                chatSummaries = freshChats
+                FastStartCache.saveChats(context, a.userId(), freshChats)
+
                 val friendIds = friendList.mapTo(hashSetOf()) { it.id }
                 val (requestsResult, onlineResult) = coroutineScope {
                     val requestsDeferred = async(Dispatchers.IO) { a.requests() }
@@ -3363,7 +3378,6 @@ internal fun FriendsScreen(
                 friends = f
                 requests = r
                 online = o
-                chatSummaries = runCatching { a.chatSummaries(f) }.getOrDefault(emptyList())
             }.onFailure { statusMessage = it.message ?: "Could not load Friends." }
             busy = false
         }
@@ -3372,25 +3386,28 @@ internal fun FriendsScreen(
     LaunchedEffect(session?.accessToken, refreshTrigger) { if (session != null) reload() }
 
     LaunchedEffect(api) {
-        if (api != null) while (true) {
+        val currentApi = api ?: return@LaunchedEffect
+        // Initial loading is handled by reload() + cache. Poll only after that work has had a chance to finish.
+        delay(10000)
+        while (true) {
             runCatching {
-                val friendList = coroutineScope {
-                    val presenceDeferred = async(Dispatchers.IO) { api.touchPresence() }
-                    val friendsDeferred = async(Dispatchers.IO) { api.friends() }
-                    friendsDeferred.await().also { presenceDeferred.await() }
-                }
+                val friendList = currentApi.friends()
                 friends = friendList
+                FastStartCache.saveFriends(context, currentApi.userId(), friendList)
+                scope.launch(Dispatchers.IO) { runCatching { currentApi.touchPresence() } }
                 coroutineScope {
-                    val requestsDeferred = async(Dispatchers.IO) { api.requests() }
+                    val requestsDeferred = async(Dispatchers.IO) { currentApi.requests() }
                     val onlineDeferred = async(Dispatchers.IO) {
-                        api.onlineUsers(friendList.mapTo(hashSetOf()) { it.id })
+                        currentApi.onlineUsers(friendList.mapTo(hashSetOf()) { it.id })
                     }
                     val summariesDeferred = async(Dispatchers.IO) {
-                        api.chatSummaries(friendList)
+                        currentApi.chatSummaries(friendList)
                     }
                     requests = requestsDeferred.await()
                     online = onlineDeferred.await()
-                    chatSummaries = summariesDeferred.await()
+                    val freshChats = summariesDeferred.await()
+                    chatSummaries = freshChats
+                    FastStartCache.saveChats(context, currentApi.userId(), freshChats)
                 }
             }
             delay(10000)
