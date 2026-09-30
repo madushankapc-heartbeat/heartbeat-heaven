@@ -110,14 +110,13 @@ val prepareFinalAppFixes = tasks.register("prepareFinalAppFixes") {
                 "val url = song.audioUrl.trim(); if (url.isBlank()) return\n        playbackIndex = playbackQueue.indexOfFirst { it.id == song.id }\n        if (currentSongId == song.id && player != null)"
             )
             t = t.replace(
-                "private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit)",
-                "private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit, onQueueChanged: (List<Song>) -> Unit, groupInviteToken: String? = null, onGroupInviteHandled: () -> Unit = {})"
-            )
-            t = t.replace(
                 "private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit, groupInviteToken: String? = null, onGroupInviteHandled: () -> Unit = {})",
                 "private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit, onQueueChanged: (List<Song>) -> Unit, groupInviteToken: String? = null, onGroupInviteHandled: () -> Unit = {})"
             )
-            t = t.replace("LaunchedEffect(Unit) { try { songs = fetchSongs() }", "LaunchedEffect(Unit) { try { songs = fetchSongs(); onQueueChanged(songs) }")
+            t = t.replace(
+                "            songs = fetchSongs()\n            error = null",
+                "            songs = fetchSongs()\n            onQueueChanged(songs)\n            error = null"
+            )
             t = t.replace(
                 "MiniPlayer(song, playing, position, duration, onPlay, onPause, onSeek, onStop)",
                 "MiniPlayer(song, playing, position, duration, onPlay, onPause, onSeek, onStop, onPrevious, onNext)"
