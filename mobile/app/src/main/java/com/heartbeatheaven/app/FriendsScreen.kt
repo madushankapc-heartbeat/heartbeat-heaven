@@ -1901,20 +1901,30 @@ private fun GroupChatRoom(
 
     LaunchedEffect(group.id) {
         loading = true
-        runCatching { loadMessages() }.onFailure { onStatus(it.message ?: "Could not load group messages.") }
-        runCatching { loadInvitePermission() }
-        runCatching { loadUnreadGroupNotifications() }
+        runCatching {
+            coroutineScope {
+                val messagesJob = async(Dispatchers.IO) { loadMessages() }
+                val inviteJob = async(Dispatchers.IO) { loadInvitePermission() }
+                val unreadJob = async(Dispatchers.IO) { loadUnreadGroupNotifications() }
+                messagesJob.await()
+                inviteJob.await()
+                unreadJob.await()
+            }
+        }.onFailure { onStatus(it.message ?: "Could not load group messages.") }
         loading = false
 
         val realtime = GroupRealtimeMessagesClient(
             accessTokenProvider = { session.accessToken },
             apiKey = FRIENDS_KEY,
             groupId = group.id,
-            onChange = { _, _ ->
+            onChange = { _, record ->
                 scope.launch {
                     runCatching {
-                        loadMessages()
-                        loadGroupReactions()
+                        if (record.has("group_message_id")) {
+                            loadGroupReactions()
+                        } else {
+                            loadMessages()
+                        }
                         loadUnreadGroupNotifications()
                     }
                 }
@@ -2704,7 +2714,8 @@ private fun GroupChatsSection(
     onGroupSelected: (GroupSummary) -> Unit,
     initialInviteToken: String? = null,
     onInviteHandled: () -> Unit = {},
-    initialGroupId: String? = null
+    initialGroupId: String? = null,
+    existingFriends: List<FriendUser> = emptyList()
 ) {
     var groups by remember { mutableStateOf<List<GroupSummary>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
@@ -2714,7 +2725,6 @@ private fun GroupChatsSection(
     var groupDescription by remember { mutableStateOf("") }
     var groupType by remember { mutableStateOf("private") }
     var autoDeleteDays by remember { mutableIntStateOf(7) }
-    var friends by remember { mutableStateOf<List<FriendUser>>(emptyList()) }
     var selectedFriendIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var groupsRefresh by remember { mutableIntStateOf(0) }
     var joiningInvite by remember { mutableStateOf(false) }
@@ -2863,7 +2873,6 @@ private fun GroupChatsSection(
 
     LaunchedEffect(session?.accessToken, groupsRefresh, groupLoadRefresh) {
         loading = true
-        runCatching { friends = FriendsApi(AuthApi(context), session ?: return@runCatching).friends() }.onFailure { friends = emptyList() }
         runCatching { loadGroups() }
             .onSuccess { onStatus("") }
             .onFailure { onStatus(it.message ?: "Could not load group chats.") }
@@ -2923,9 +2932,9 @@ private fun GroupChatsSection(
                         FilterChip(selected = groupType == "public", onClick = { groupType = "public" }, label = { Text("Public") }, enabled = !creating)
                     }
                     Text("Add friends", style = MaterialTheme.typography.titleSmall)
-                    if (friends.isEmpty()) Text("You can add friends after creating the group.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (existingFriends.isEmpty()) Text("You can add friends after creating the group.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     else Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        friends.take(20).forEach { friend ->
+                        existingFriends.take(20).forEach { friend ->
                             Row(Modifier.fillMaxWidth().clickable { selectedFriendIds = if (friend.id in selectedFriendIds) selectedFriendIds - friend.id else selectedFriendIds + friend.id }, verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(checked = friend.id in selectedFriendIds, onCheckedChange = { checked -> selectedFriendIds = if (checked) selectedFriendIds + friend.id else selectedFriendIds - friend.id }, enabled = !creating)
                                 Text(friend.username, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
@@ -4791,7 +4800,8 @@ internal fun FriendsScreen(
                     onGroupSelected = { selectedGroup = it },
                     initialInviteToken = groupInviteToken,
                     onInviteHandled = onGroupInviteHandled,
-                    initialGroupId = notificationTarget?.first
+                    initialGroupId = notificationTarget?.first,
+                    existingFriends = friends
                 )
             }
         }
