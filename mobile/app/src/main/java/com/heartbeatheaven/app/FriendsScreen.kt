@@ -2994,7 +2994,9 @@ internal fun FriendsScreen(
     groupInviteToken: String? = null,
     onGroupInviteHandled: () -> Unit = {},
     notificationTarget: Pair<String, String>? = null,
-    onNotificationTargetHandled: () -> Unit = {}
+    onNotificationTargetHandled: () -> Unit = {},
+    openChatSenderId: String? = null,
+    onOpenChatHandled: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -3092,6 +3094,45 @@ internal fun FriendsScreen(
     }
 
     val api = session?.let { remember(it.accessToken) { FriendsApi(auth, it) } }
+    LaunchedEffect(openChatSenderId, session?.profile?.id) {
+        val targetId = openChatSenderId?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+        val currentApi = api ?: return@LaunchedEffect
+
+        friendTab = 2
+
+        val target: FriendUser? =
+            friends.firstOrNull { it.id == targetId }
+                ?: chatSummaries.firstOrNull { it.user.id == targetId }?.user
+                ?: runCatching { currentApi.profile(targetId) }
+                    .getOrNull()
+                    ?.let { profile ->
+                        FriendUser(
+                            id = profile.id,
+                            username = profile.username,
+                            gender = profile.gender,
+                            avatarUrl = profile.avatarUrl,
+                            lastSeenAt = profile.lastSeenAt,
+                            lastSeenVisibility = profile.lastSeenVisibility
+                        )
+                    }
+
+        if (target != null) {
+            selectedGroup = null
+            selected = target
+            selectedMessage = null
+            replyingTo = null
+            deleteTarget = null
+            editingMessage = null
+            editText = ""
+            text = ""
+            statusMessage = null
+        } else {
+            statusMessage = "Could not open this chat."
+        }
+
+        onOpenChatHandled()
+    }
+
     fun isBlockedSendError(error: Throwable?): Boolean {
         val message = error?.message.orEmpty().lowercase()
         return message.contains("messages_blocked_users_denied") ||
