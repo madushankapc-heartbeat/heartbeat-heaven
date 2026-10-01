@@ -238,6 +238,10 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
     }
 
 
+    LaunchedEffect(openChatSenderId) {
+        if (!openChatSenderId.isNullOrBlank()) tab = 1
+    }
+
     LaunchedEffect(refreshTrigger) {
         if (refreshTrigger > 0) {
             refreshing = true
