@@ -34,7 +34,8 @@ internal data class ChatThemeOption(
     val name: String,
     val background: Color,
     val myBubble: Color,
-    val otherBubble: Color
+    val otherBubble: Color,
+    val textColor: Color = Color(0xFF1B1B1F)
 )
 
 internal val chatThemeOptions = listOf(
@@ -46,14 +47,14 @@ internal val chatThemeOptions = listOf(
     ChatThemeOption("sunset", "Sunset", Color(0xFFFFF4E8), Color(0xFFFFE0C2), Color(0xFFFFFFFF)),
     ChatThemeOption("sky", "Sky", Color(0xFFEEF5FF), Color(0xFFD8E9FF), Color(0xFFFFFFFF)),
     ChatThemeOption("sand", "Sand", Color(0xFFF8F3E8), Color(0xFFEDE1C5), Color(0xFFFFFFFF)),
-    ChatThemeOption("midnight", "Midnight", Color(0xFF12161C), Color(0xFF253A52), Color(0xFF242A31)),
-    ChatThemeOption("obsidian", "Obsidian", Color(0xFF0F1012), Color(0xFF24262A), Color(0xFF1B1D20)),
-    ChatThemeOption("dark_lavender", "Dark Lavender", Color(0xFF171421), Color(0xFF3A2F50), Color(0xFF282331)),
-    ChatThemeOption("deep_ocean", "Deep Ocean", Color(0xFF0D1820), Color(0xFF163A4A), Color(0xFF1A252C)),
-    ChatThemeOption("dark_rose", "Dark Rose", Color(0xFF1D1218), Color(0xFF542B3B), Color(0xFF302027)),
-    ChatThemeOption("emerald_night", "Emerald Night", Color(0xFF101A16), Color(0xFF24483A), Color(0xFF202B26)),
-    ChatThemeOption("night_sky", "Night Sky", Color(0xFF101525), Color(0xFF29365F), Color(0xFF20263A)),
-    ChatThemeOption("dark_romance", "Dark Romance", Color(0xFF171012), Color(0xFF4A202A), Color(0xFF2A1B20))
+    ChatThemeOption("midnight", "Midnight", Color(0xFF12161C), Color(0xFF253A52), Color(0xFF242A31), Color(0xFFF4F7FB)),
+    ChatThemeOption("obsidian", "Obsidian", Color(0xFF0F1012), Color(0xFF24262A), Color(0xFF1B1D20), Color(0xFFF5F5F5)),
+    ChatThemeOption("dark_lavender", "Dark Lavender", Color(0xFF171421), Color(0xFF3A2F50), Color(0xFF282331), Color(0xFFF5F0FF)),
+    ChatThemeOption("deep_ocean", "Deep Ocean", Color(0xFF0D1820), Color(0xFF163A4A), Color(0xFF1A252C), Color(0xFFEAF7FB)),
+    ChatThemeOption("dark_rose", "Dark Rose", Color(0xFF1D1218), Color(0xFF542B3B), Color(0xFF302027), Color(0xFFFFF0F4)),
+    ChatThemeOption("emerald_night", "Emerald Night", Color(0xFF101A16), Color(0xFF24483A), Color(0xFF202B26), Color(0xFFE9F8F0)),
+    ChatThemeOption("night_sky", "Night Sky", Color(0xFF101525), Color(0xFF29365F), Color(0xFF20263A), Color(0xFFF0F3FF)),
+    ChatThemeOption("dark_romance", "Dark Romance", Color(0xFF171012), Color(0xFF4A202A), Color(0xFF2A1B20), Color(0xFFFFEEF2))
 )
 
 internal fun chatThemeOption(id: String): ChatThemeOption =
