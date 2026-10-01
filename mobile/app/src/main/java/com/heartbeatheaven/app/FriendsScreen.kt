@@ -3504,6 +3504,10 @@ internal fun FriendsScreen(
 
     DisposableEffect(api, selected?.id) {
         val selectedId = selected?.id
+        val currentUserId = api?.userId()
+        if (selectedId != null && currentUserId != null) {
+            GlobalChatManager.setActiveChat(currentUserId, selectedId)
+        }
         val realtime = api?.let { currentApi ->
             RealtimeMessagesClient(
                 { currentApi.token() },
@@ -3557,7 +3561,12 @@ internal fun FriendsScreen(
             )
         }
         realtime?.start()
-        onDispose { realtime?.stop() }
+        onDispose {
+            realtime?.stop()
+            if (selectedId != null && currentUserId != null) {
+                GlobalChatManager.clearActiveChat(currentUserId, selectedId)
+            }
+        }
     }
 
     DisposableEffect(api) {
