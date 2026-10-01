@@ -128,6 +128,7 @@ class MainActivity : ComponentActivity() {
     private var positionMs by mutableLongStateOf(0L)
     private var durationMs by mutableLongStateOf(0L)
     private var pendingGroupInviteToken by mutableStateOf<String?>(null)
+    private var pendingOpenChatSenderId by mutableStateOf<String?>(null)
 
     private val listener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlayingNow: Boolean) { isPlaying = isPlayingNow }
@@ -151,6 +152,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pendingGroupInviteToken = intent?.data?.takeIf { it.scheme == "heartbeatheaven" && it.host == "group-invite" }?.getQueryParameter("token")
+        pendingOpenChatSenderId = intent?.getStringExtra("open_chat_sender_id")
         setContent {
             HeartbeatHeavenTheme {
                 LaunchedEffect(currentSongId, isPlaying) {
@@ -160,7 +162,7 @@ class MainActivity : ComponentActivity() {
                         delay(if (isPlaying) 250L else 500L)
                     }
                 }
-                HeartbeatApp(currentSong, currentSongId, isPlaying, positionMs, durationMs, ::playSong, ::pausePlayback, ::seekPlayback, ::stopPlayback, pendingGroupInviteToken) { pendingGroupInviteToken = null }
+                HeartbeatApp(currentSong, currentSongId, isPlaying, positionMs, durationMs, ::playSong, ::pausePlayback, ::seekPlayback, ::stopPlayback, pendingGroupInviteToken, { pendingGroupInviteToken = null }, pendingOpenChatSenderId) { pendingOpenChatSenderId = null }
             }
         }
     }
@@ -169,6 +171,7 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         pendingGroupInviteToken = intent?.data?.takeIf { it.scheme == "heartbeatheaven" && it.host == "group-invite" }?.getQueryParameter("token")
+        pendingOpenChatSenderId = intent?.getStringExtra("open_chat_sender_id")
     }
 
     private fun playSong(song: Song) {
@@ -201,7 +204,7 @@ private fun Progress(position: Long, duration: Long, onSeek: (Long) -> Unit, sma
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit, groupInviteToken: String? = null, onGroupInviteHandled: () -> Unit = {}) {
+private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit, groupInviteToken: String? = null, onGroupInviteHandled: () -> Unit = {}, openChatSenderId: String? = null, onOpenChatHandled: () -> Unit = {}) {
     val context = LocalContext.current
     var songs by remember { mutableStateOf<List<Song>>(emptyList()) }; var loading by remember { mutableStateOf(true) }; var error by remember { mutableStateOf<String?>(null) }
     var tab by remember { mutableStateOf(0) }; var search by remember { mutableStateOf("") }; var selected by remember { mutableStateOf<Song?>(null) }; var showNotifications by remember { mutableStateOf(false) }
@@ -319,6 +322,8 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
                     refreshTrigger = refreshTrigger,
                     groupInviteToken = groupInviteToken,
                     onGroupInviteHandled = onGroupInviteHandled,
+                    openChatSenderId = openChatSenderId,
+                    onOpenChatHandled = onOpenChatHandled,
                     notificationTarget = notificationTarget,
                     onNotificationTargetHandled = { notificationTarget = null }
                 )
