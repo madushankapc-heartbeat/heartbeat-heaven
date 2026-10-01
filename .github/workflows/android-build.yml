@@ -10,6 +10,7 @@ on:
       - feature/group-chat-safe
       - feature/friends-loading-fix
       - fast-start-717
+      - chat-group-performance-720-safe
   workflow_dispatch:
 
 jobs:
