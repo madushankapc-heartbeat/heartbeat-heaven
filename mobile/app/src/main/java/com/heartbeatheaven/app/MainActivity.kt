@@ -138,6 +138,16 @@ class MainActivity : ComponentActivity() {
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) { isPlaying = false }
     }
 
+    override fun onStart() {
+        super.onStart()
+        GlobalChatManager.setAppInForeground(true)
+    }
+
+    override fun onStop() {
+        GlobalChatManager.setAppInForeground(false)
+        super.onStop()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         pendingGroupInviteToken = intent?.data?.takeIf { it.scheme == "heartbeatheaven" && it.host == "group-invite" }?.getQueryParameter("token")
