@@ -66,7 +66,7 @@ private enum class FriendSearchState { Idle, Loading, Results, Empty, Error }
 private data class FriendProfile(val id: String, val username: String, val gender: String, val bio: String = "", val lastSeenAt: String, val avatarUrl: String = "", val lastSeenVisibility: String = "everyone")
 private data class FriendRequest(val id: String, val user: FriendUser, val incoming: Boolean)
 internal data class ChatSummary(val user: FriendUser, val lastMessage: String, val lastMessageAt: String, val unreadCount: Int, val pinned: Boolean, val muted: Boolean)
-private data class ChatMessage(val id: String, val senderId: String, val body: String, val createdAt: String, val deliveredAt: String = "", val readAt: String = "", val editedAt: String = "", val deletedAt: String = "", val replyToId: String = "", val messageType: String = "text", val mediaUrl: String = "", val mediaPath: String = "", val mediaName: String = "", val mediaSize: Long = 0L)
+internal data class ChatMessage(val id: String, val senderId: String, val body: String, val createdAt: String, val deliveredAt: String = "", val readAt: String = "", val editedAt: String = "", val deletedAt: String = "", val replyToId: String = "", val messageType: String = "text", val mediaUrl: String = "", val mediaPath: String = "", val mediaName: String = "", val mediaSize: Long = 0L)
 private data class MessageReaction(val messageId: String, val userId: String, val reaction: String)
 private data class PendingChatAttachment(val uri: Uri, val name: String, val mime: String, val size: Long)
 private fun formatAttachmentSize(bytes: Long): String {
@@ -585,7 +585,7 @@ suspend fun unfriend(other: String) = withContext(Dispatchers.IO) {
     }
 }
 
-private data class GroupSummary(
+internal data class GroupSummary(
     val id: String,
     val name: String,
     val description: String,
