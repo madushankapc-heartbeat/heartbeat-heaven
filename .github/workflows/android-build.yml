@@ -9,6 +9,7 @@ on:
       - feature/phone-one-device-account
       - feature/group-chat-safe
       - feature/friends-loading-fix
+      - fast-start-717
   workflow_dispatch:
 
 jobs:
