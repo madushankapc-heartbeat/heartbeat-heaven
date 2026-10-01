@@ -2852,6 +2852,7 @@ private fun GroupChatsSection(
                 add(GroupSummary(row.optString("id"), row.optString("name"), row.optString("description").takeUnless { it == "null" }.orEmpty(), row.optString("group_type"), row.optInt("auto_delete_days", 7), row.optString("owner_id"), row.optString("photo_path").takeUnless { it == "null" }.orEmpty()))
             }
         }
+        FastStartCache.saveGroups(context, current.profile.id, groups)
         val photoPaths = groups.mapNotNull { it.photoPath.takeIf(String::isNotBlank) }.distinct()
         if (photoPaths.isNotEmpty()) {
             val photoUrls = runCatching { withContext(Dispatchers.IO) { GroupProfileSupport.signedUrls(current, photoPaths) } }
@@ -2865,17 +2866,27 @@ private fun GroupChatsSection(
                 }
             groups = groups.map { it.copy(photoUrl = photoUrls[it.photoPath].orEmpty()) }
         }
+        FastStartCache.saveGroups(context, current.profile.id, groups)
         initialGroupId?.let { targetId ->
             groups.firstOrNull { it.id == targetId }?.let(onGroupSelected)
         }
         return true
     }
 
-    LaunchedEffect(session?.accessToken, groupsRefresh, groupLoadRefresh) {
-        loading = true
+    LaunchedEffect(session?.profile?.id, groupsRefresh, groupLoadRefresh) {
+        val userId = session?.profile?.id ?: return@LaunchedEffect
+        val cachedGroups = FastStartCache.loadGroups(context, userId)
+        if (cachedGroups.isNotEmpty()) {
+            groups = cachedGroups
+            loading = false
+        } else {
+            loading = true
+        }
         runCatching { loadGroups() }
             .onSuccess { onStatus("") }
-            .onFailure { onStatus(it.message ?: "Could not load group chats.") }
+            .onFailure {
+                if (cachedGroups.isEmpty()) onStatus(it.message ?: "Could not load group chats.")
+            }
         loading = false
     }
 
@@ -3426,7 +3437,8 @@ internal fun FriendsScreen(
     LaunchedEffect(selected?.id, api, refreshTrigger) {
         val current = selected ?: return@LaunchedEffect
         val a = api ?: return@LaunchedEffect
-        messages = emptyList()
+        val cachedMessages = FastStartCache.loadChatMessages(context, a.userId(), current.id)
+        messages = cachedMessages
         searchResults = null
         pendingMediaItems = emptyList()
         if (voiceRecording) stopVoiceRecording(send = false)
@@ -3436,14 +3448,16 @@ internal fun FriendsScreen(
         fullScreenImage = null
         hasOlderMessages = false
         initialMessagesLoaded = false
+        if (cachedMessages.isNotEmpty()) initialMessagesLoaded = true
         runCatching {
             a.markSeen(current.id)
             val page = a.messagesPage(current.id)
             messages = page.first
             hasOlderMessages = page.second
             initialMessagesLoaded = true
+            FastStartCache.saveChatMessages(context, a.userId(), current.id, messages)
             reactions = runCatching { a.reactionsForMessageIds(messages.map { it.id }) }.getOrDefault(emptyList())
-        }.onFailure { statusMessage = it.message ?: "Could not load messages." }
+        }.onFailure { if (cachedMessages.isEmpty()) statusMessage = it.message ?: "Could not load messages." }
         while (true) {
             delay(3000)
             runCatching {
@@ -3467,6 +3481,7 @@ internal fun FriendsScreen(
                 }
                 merged.addAll(freshNew.sortedBy { it.createdAt })
                 messages = merged
+                FastStartCache.saveChatMessages(context, a.userId(), current.id, messages)
 
                 if (hasNewIncoming && !showLatestButton) {
                     pendingLatestScroll = true
