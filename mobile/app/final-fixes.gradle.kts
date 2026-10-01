@@ -71,6 +71,7 @@ val prepareFinalAppFixes = tasks.register("prepareFinalAppFixes") {
         patchFile("src/main/java/com/heartbeatheaven/app/MainActivity.kt") { text ->
             var t = text
             if (!t.contains("internal data class Song")) t = t.replace("private data class Song(", "internal data class Song(")
+            if (!t.contains("internal fun songFromJson")) t = t.replace("private fun songFromJson(", "internal fun songFromJson(")
             if (!t.contains("import kotlinx.coroutines.launch")) t = t.replace("import kotlinx.coroutines.delay", "import kotlinx.coroutines.delay\nimport kotlinx.coroutines.launch")
             if (!t.contains("material3.pulltorefresh.PullToRefreshBox")) t = t.replace("import androidx.compose.material3.*", "import androidx.compose.material3.*\nimport androidx.compose.material3.pulltorefresh.PullToRefreshBox\nimport androidx.compose.material3.pulltorefresh.rememberPullToRefreshState")
             if (!t.contains("val refreshScope = rememberCoroutineScope()")) t = t.replace("val authSession = remember { AuthApi(context).currentSession() }", "val authSession = remember { AuthApi(context).currentSession() }\n    val refreshScope = rememberCoroutineScope()")
