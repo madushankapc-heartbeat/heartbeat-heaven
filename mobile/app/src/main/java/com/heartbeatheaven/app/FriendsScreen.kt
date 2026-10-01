@@ -1901,9 +1901,14 @@ private fun GroupChatRoom(
 
     LaunchedEffect(group.id) {
         loading = true
-        runCatching { loadMessages() }.onFailure { onStatus(it.message ?: "Could not load group messages.") }
-        runCatching { loadInvitePermission() }
-        runCatching { loadUnreadGroupNotifications() }
+        coroutineScope {
+            val messagesJob = async { runCatching { loadMessages() } }
+            val inviteJob = async { runCatching { loadInvitePermission() } }
+            val unreadJob = async { runCatching { loadUnreadGroupNotifications() } }
+            messagesJob.await().onFailure { onStatus(it.message ?: "Could not load group messages.") }
+            inviteJob.await()
+            unreadJob.await()
+        }
         loading = false
 
         val realtime = GroupRealtimeMessagesClient(
@@ -1913,8 +1918,11 @@ private fun GroupChatRoom(
             onChange = { _, _ ->
                 scope.launch {
                     runCatching {
-                        loadMessages()
-                        loadGroupReactions()
+                        if (record.has("group_message_id")) {
+                            loadGroupReactions()
+                        } else {
+                            loadMessages()
+                        }
                         loadUnreadGroupNotifications()
                     }
                 }
@@ -2700,6 +2708,7 @@ private fun GroupChatRoom(
 @Composable
 private fun GroupChatsSection(
     session: AuthSession?,
+    existingFriends: List<FriendUser>,
     onStatus: (String) -> Unit,
     onGroupSelected: (GroupSummary) -> Unit,
     initialInviteToken: String? = null,
@@ -2714,7 +2723,6 @@ private fun GroupChatsSection(
     var groupDescription by remember { mutableStateOf("") }
     var groupType by remember { mutableStateOf("private") }
     var autoDeleteDays by remember { mutableIntStateOf(7) }
-    var friends by remember { mutableStateOf<List<FriendUser>>(emptyList()) }
     var selectedFriendIds by remember { mutableStateOf<Set<String>>(emptySet()) }
     var groupsRefresh by remember { mutableIntStateOf(0) }
     var joiningInvite by remember { mutableStateOf(false) }
@@ -2863,7 +2871,6 @@ private fun GroupChatsSection(
 
     LaunchedEffect(session?.accessToken, groupsRefresh, groupLoadRefresh) {
         loading = true
-        runCatching { friends = FriendsApi(AuthApi(context), session ?: return@runCatching).friends() }.onFailure { friends = emptyList() }
         runCatching { loadGroups() }
             .onSuccess { onStatus("") }
             .onFailure { onStatus(it.message ?: "Could not load group chats.") }
@@ -4787,6 +4794,7 @@ internal fun FriendsScreen(
             item {
                 GroupChatsSection(
                     session = session,
+                    existingFriends = friends,
                     onStatus = { statusMessage = it },
                     onGroupSelected = { selectedGroup = it },
                     initialInviteToken = groupInviteToken,
