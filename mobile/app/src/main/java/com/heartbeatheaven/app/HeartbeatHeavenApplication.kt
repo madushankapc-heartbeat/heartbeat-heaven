@@ -33,7 +33,30 @@ internal object GlobalChatManager {
     private var monitorJob: Job? = null
     private var realtime: RealtimeMessagesClient? = null
     private var activeUserId: String? = null
+    @Volatile private var appInForeground = false
+    @Volatile private var activeChatUserId: String? = null
+    @Volatile private var activeChatPeerId: String? = null
     private var lastMessageIds = ArrayDeque<String>()
+
+    fun setAppInForeground(value: Boolean) {
+        appInForeground = value
+    }
+
+    fun setActiveChat(userId: String, peerId: String) {
+        activeChatUserId = userId
+        activeChatPeerId = peerId
+    }
+
+    fun clearActiveChat(userId: String, peerId: String) {
+        if (activeChatUserId == userId && activeChatPeerId == peerId) {
+            activeChatUserId = null
+            activeChatPeerId = null
+        }
+    }
+
+    private fun isCurrentChatVisible(userId: String, senderId: String): Boolean {
+        return appInForeground && activeChatUserId == userId && activeChatPeerId == senderId
+    }
 
     fun start(context: Context) {
         val app = context.applicationContext
@@ -176,6 +199,9 @@ internal object GlobalChatManager {
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return
         val auth = AuthApi(context)
         val session = runCatching { auth.currentSession() }.getOrNull() ?: return
+        // If this exact 1-to-1 chat is currently visible in the foreground,
+        // do not raise an OS notification. The future in-chat sound will handle that UX.
+        if (isCurrentChatVisible(session.profile.id, senderId)) return
         if (notificationsSuppressed(session.accessToken, session.profile.id, senderId)) return
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
