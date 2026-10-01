@@ -8,6 +8,8 @@ import android.content.Intent
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.media.MediaRecorder
+import android.media.ToneGenerator
+import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
 import android.os.SystemClock
@@ -69,6 +71,14 @@ internal data class ChatSummary(val user: FriendUser, val lastMessage: String, v
 internal data class ChatMessage(val id: String, val senderId: String, val body: String, val createdAt: String, val deliveredAt: String = "", val readAt: String = "", val editedAt: String = "", val deletedAt: String = "", val replyToId: String = "", val messageType: String = "text", val mediaUrl: String = "", val mediaPath: String = "", val mediaName: String = "", val mediaSize: Long = 0L)
 private data class MessageReaction(val messageId: String, val userId: String, val reaction: String)
 private data class PendingChatAttachment(val uri: Uri, val name: String, val mime: String, val size: Long)
+private fun playInChatSound(incoming: Boolean) {
+    runCatching {
+        val tone = ToneGenerator(AudioManager.STREAM_NOTIFICATION, if (incoming) 22 else 18)
+        tone.startTone(if (incoming) ToneGenerator.TONE_PROP_BEEP2 else ToneGenerator.TONE_PROP_BEEP, 55)
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({ tone.release() }, 90)
+    }
+}
+
 private fun formatAttachmentSize(bytes: Long): String {
     if (bytes < 1024L) return "$bytes B"
     val kb = bytes / 1024.0
@@ -3564,11 +3574,13 @@ internal fun FriendsScreen(
                             // Realtime arrival is the authoritative position for a new
                             // incoming message while this chat is open. Append it to
                             // the current conversation instead of re-sorting by timestamp.
-                            messages = if (messages.any { it.id == id }) {
+                            val alreadyPresent = messages.any { it.id == id }
+                            messages = if (alreadyPresent) {
                                 messages
                             } else {
                                 messages + incoming
                             }
+                            if (!alreadyPresent) playInChatSound(incoming = true)
                             if (wasAtLatest) pendingLatestScroll = true
                             scope.launch(Dispatchers.IO) {
                                 currentApi.markDelivered(id)
@@ -4692,6 +4704,7 @@ internal fun FriendsScreen(
                                     }
                                     reactions = api.reactions(chat.id)
                                     chatSummaries = api.chatSummaries()
+                                    playInChatSound(incoming = false)
                                     text = ""
                                     replyingTo = null
                                     pendingMediaItems = emptyList()
@@ -4721,6 +4734,7 @@ internal fun FriendsScreen(
                                 messages = messages + optimistic
                                 runCatching {
                                     api.sendMessage(chat.id, outgoing, replyId)
+                                    playInChatSound(incoming = false)
                                     messages = api.messages(chat.id)
                                     withFrameNanos { }
                                     if (messages.isNotEmpty()) {
