@@ -4533,10 +4533,7 @@ internal fun FriendsScreen(
                                     Text(
                                         if (m.deletedAt.isNotBlank()) "This message was deleted" else m.body,
                                         Modifier.padding(top = if (replyPreview != null) 1.dp else 0.dp),
-                                        color = when {
-                                            m.deletedAt.isNotBlank() -> MaterialTheme.colorScheme.onSurfaceVariant
-                                            else -> Color(0xFF1B1B1F)
-                                        }
+                                        color = if (m.deletedAt.isNotBlank()) MaterialTheme.colorScheme.onSurfaceVariant else chatTheme.textColor
                                     )
                                     myReaction?.let { Text(it.reaction, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 2.dp)) }
                                     if (reacted.isNotEmpty() && myReaction == null) {
@@ -4640,7 +4637,16 @@ internal fun FriendsScreen(
                         onValueChange = { text = it; statusMessage = null },
                         modifier = Modifier.weight(1f),
                         placeholder = { Text(if (pendingMediaItems.isNotEmpty()) "Add a caption (optional)" else "Message") },
-                        maxLines = 4
+                        maxLines = 4,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = chatTheme.textColor,
+                            unfocusedTextColor = chatTheme.textColor,
+                            focusedPlaceholderColor = chatTheme.textColor.copy(alpha = 0.65f),
+                            unfocusedPlaceholderColor = chatTheme.textColor.copy(alpha = 0.65f),
+                            focusedLabelColor = chatTheme.textColor.copy(alpha = 0.9f),
+                            unfocusedLabelColor = chatTheme.textColor.copy(alpha = 0.7f),
+                            cursorColor = chatTheme.textColor
+                        )
                     )
                     Spacer(Modifier.width(2.dp))
                     if (voiceRecording) {
