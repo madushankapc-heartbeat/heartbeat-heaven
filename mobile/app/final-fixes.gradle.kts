@@ -98,6 +98,10 @@ val prepareFinalAppFixes = tasks.register("prepareFinalAppFixes") {
                 "HeartbeatApp(currentSong, currentSongId, isPlaying, positionMs, durationMs, ::playSong, ::pausePlayback, ::seekPlayback, ::stopPlayback, ::previousPlayback, ::nextPlayback, ::setPlaybackQueue)"
             )
             t = t.replace(
+                "HeartbeatApp(currentSong, currentSongId, isPlaying, positionMs, durationMs, ::playSong, ::pausePlayback, ::seekPlayback, ::stopPlayback, pendingGroupInviteToken, { pendingGroupInviteToken = null }, pendingOpenChatSenderId) { pendingOpenChatSenderId = null }",
+                "HeartbeatApp(currentSong, currentSongId, isPlaying, positionMs, durationMs, ::playSong, ::pausePlayback, ::seekPlayback, ::stopPlayback, ::previousPlayback, ::nextPlayback, ::setPlaybackQueue, pendingGroupInviteToken, { pendingGroupInviteToken = null }, pendingOpenChatSenderId) { pendingOpenChatSenderId = null }"
+            )
+            t = t.replace(
                 "HeartbeatApp(currentSong, currentSongId, isPlaying, positionMs, durationMs, ::playSong, ::pausePlayback, ::seekPlayback, ::stopPlayback, pendingGroupInviteToken) { pendingGroupInviteToken = null }",
                 "HeartbeatApp(currentSong, currentSongId, isPlaying, positionMs, durationMs, ::playSong, ::pausePlayback, ::seekPlayback, ::stopPlayback, ::previousPlayback, ::nextPlayback, ::setPlaybackQueue, pendingGroupInviteToken) { pendingGroupInviteToken = null }"
             )
@@ -110,6 +114,10 @@ val prepareFinalAppFixes = tasks.register("prepareFinalAppFixes") {
             t = t.replace(
                 "val url = song.audioUrl.trim(); if (url.isBlank()) return\n        if (currentSongId == song.id && player != null)",
                 "val url = song.audioUrl.trim(); if (url.isBlank()) return\n        playbackIndex = playbackQueue.indexOfFirst { it.id == song.id }\n        if (currentSongId == song.id && player != null)"
+            )
+            t = t.replace(
+                "private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit, groupInviteToken: String? = null, onGroupInviteHandled: () -> Unit = {}, openChatSenderId: String? = null, onOpenChatHandled: () -> Unit = {})",
+                "private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit, onPrevious: () -> Unit, onNext: () -> Unit, onQueueChanged: (List<Song>) -> Unit, groupInviteToken: String? = null, onGroupInviteHandled: () -> Unit = {}, openChatSenderId: String? = null, onOpenChatHandled: () -> Unit = {})"
             )
             t = t.replace(
                 "private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit, groupInviteToken: String? = null, onGroupInviteHandled: () -> Unit = {})",
