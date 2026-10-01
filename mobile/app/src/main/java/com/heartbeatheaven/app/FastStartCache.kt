@@ -62,4 +62,35 @@ internal object FastStartCache {
             prefs(context).edit().putString(CHATS_PREFIX + userId, a.toString()).apply()
         }
     }
+    fun loadSongs(context: Context): List<Song> = runCatching {
+        val raw = prefs(context).getString(SONGS, null).orEmpty()
+        if (raw.isBlank()) return emptyList()
+        val a = JSONArray(raw)
+        buildList {
+            for (i in 0 until a.length()) add(songFromJson(a.getJSONObject(i)))
+        }
+    }.getOrDefault(emptyList())
+
+    fun saveSongs(context: Context, songs: List<Song>) {
+        runCatching {
+            val a = JSONArray()
+            songs.forEach { s ->
+                a.put(JSONObject()
+                    .put("id", s.id)
+                    .put("title", s.title)
+                    .put("artist", s.artist)
+                    .put("genre", s.genre)
+                    .put("language", s.language)
+                    .put("mood", s.mood)
+                    .put("description", s.description)
+                    .put("lyrics", s.lyrics)
+                    .put("cover_url", s.coverUrl)
+                    .put("audio_url", s.audioUrl)
+                    .put("release_date", s.releaseDate ?: "")
+                    .put("version_name", s.versionName))
+            }
+            prefs(context).edit().putString(SONGS, a.toString()).apply()
+        }
+    }
+
 }
