@@ -115,7 +115,12 @@ val prepareFinalAppFixes = tasks.register("prepareFinalAppFixes") {
             )
             t = t.replace(
                 "            songs = fetchSongs()\n            error = null",
-                "            val loadedSongs = fetchSongs()\n            songs = loadedSongs\n            onQueueChanged(loadedSongs)\n            for (baseSong in loadedSongs) {\n                runCatching { fetchSongHub(baseSong.id).second }\n                    .onSuccess { versions -> if (versions.isNotEmpty()) onQueueChanged(versions) }\n            }\n            error = null"
+                "            val loadedSongs = fetchSongs()\n            songs = loadedSongs\n            FastStartCache.saveSongs(context, loadedSongs)\n            onQueueChanged(loadedSongs)\n            error = null"
+            )
+
+            t = t.replace(
+                "    LaunchedEffect(Unit) {\n        refreshSongs()\n        loading = false\n    }",
+                "    LaunchedEffect(Unit) {\n        val cachedSongs = FastStartCache.loadSongs(context)\n        if (cachedSongs.isNotEmpty()) {\n            songs = cachedSongs\n            onQueueChanged(cachedSongs)\n            loading = false\n        }\n\n        try {\n            val loadedSongs = fetchSongs()\n            songs = loadedSongs\n            FastStartCache.saveSongs(context, loadedSongs)\n            onQueueChanged(loadedSongs)\n            error = null\n            loading = false\n\n            // Keep Original + Version enrichment, but never block the first UI render.\n            launch {\n                for (baseSong in loadedSongs) {\n                    runCatching { fetchSongHub(baseSong.id).second }\n                        .onSuccess { versions ->\n                            if (versions.isNotEmpty()) onQueueChanged(versions)\n                        }\n                }\n            }\n        } catch (e: Exception) {\n            if (cachedSongs.isEmpty()) {\n                error = \"Unable to load songs. Please check your connection.\"\n            }\n            loading = false\n        }\n    }"
             )
             t = t.replace(
                 "MiniPlayer(song, playing, position, duration, onPlay, onPause, onSeek, onStop)",
