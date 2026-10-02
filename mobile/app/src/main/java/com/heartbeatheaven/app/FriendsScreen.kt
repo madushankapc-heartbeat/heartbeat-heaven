@@ -1154,7 +1154,7 @@ private fun GroupChatRoom(
         groupRpc(rpc, JSONObject().put("p_message_id", message.id))
         deletingMessage = null; selectedMessage = null
         if (message.mediaPath.isNotBlank()) runCatching { GroupMediaSupport.deleteUploaded(context, session.accessToken, message.mediaPath) }
-        loadMessages(); loadGroupReactions(); onStatus("Message deleted.")
+        loadMessages(); onStatus("Message deleted.")
     }
 
     suspend fun setGroupReaction(message: GroupMessage, reaction: String) {
