@@ -1935,7 +1935,6 @@ private fun GroupChatRoom(
                         } else {
                             loadMessages()
                         }
-                        loadUnreadGroupNotifications()
                     }
                 }
             }
