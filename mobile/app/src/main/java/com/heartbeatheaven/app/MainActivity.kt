@@ -349,7 +349,31 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
 
 @Composable
 private fun SongCard(s: Song, favorite: Boolean, onOpen: () -> Unit, onFavorite: () -> Unit) {
-    Card(Modifier.fillMaxWidth().clickable(onClick = onOpen), shape = RoundedCornerShape(16.dp)) { Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) { Cover(s.coverUrl, Modifier.size(56.dp), true); Column(Modifier.weight(1f).padding(horizontal = 10.dp)) { Text(s.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis); Text(s.artist, fontSize = 13.sp); Text("${s.language} • ${s.genre}", fontSize = 11.sp) }; IconButton(onClick = onFavorite) { Icon(if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favorite") } } }
+    Card(Modifier.fillMaxWidth().clickable(onClick = onOpen), shape = RoundedCornerShape(16.dp)) {
+        Row(
+            Modifier.padding(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Cover(s.coverUrl, Modifier.size(52.dp), true)
+            Text(
+                s.title,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 10.dp)
+                    .height(40.dp),
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            IconButton(onClick = onFavorite) {
+                Icon(
+                    if (favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    "Favorite"
+                )
+            }
+        }
+    }
 }
 
 @Composable
