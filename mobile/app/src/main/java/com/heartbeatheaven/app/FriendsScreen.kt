@@ -3610,6 +3610,36 @@ internal fun FriendsScreen(
                             }
                         }
                     }
+                },
+                onReconnected = {
+                    val targetId = selectedId
+                    if (targetId != null) {
+                        scope.launch(Dispatchers.Main) {
+                            if (selected?.id != targetId) return@launch
+                            runCatching {
+                                val (recovered, _) = withContext(Dispatchers.IO) {
+                                    currentApi.messagesPage(targetId)
+                                }
+
+                                val existingById = messages.associateBy { it.id }
+                                val recoveredById = recovered.associateBy { it.id }
+                                val merged = ArrayList<ChatMessage>(messages.size + recovered.size)
+                                merged.addAll(messages.map { recoveredById[it.id] ?: it })
+                                merged.addAll(
+                                    recovered
+                                        .filter { it.id !in existingById }
+                                        .sortedBy { it.createdAt }
+                                )
+                                messages = merged
+                                reactions = withContext(Dispatchers.IO) {
+                                    currentApi.reactionsForMessageIds(messages.map { it.id })
+                                }
+                                withContext(Dispatchers.IO) {
+                                    FastStartCache.saveChatMessages(context, currentApi.userId(), targetId, messages)
+                                }
+                            }
+                        }
+                    }
                 }
             )
         }
