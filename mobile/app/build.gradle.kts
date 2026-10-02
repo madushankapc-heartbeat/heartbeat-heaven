@@ -32,7 +32,7 @@ android {
         }
     }
     buildTypes {
-        getByName("release") { isMinifyEnabled = false; signingConfig = signingConfigs.getByName("release") }
+        getByName("release") { isMinifyEnabled = true; isShrinkResources = true; signingConfig = signingConfigs.getByName("release") }
     }
 }
 
