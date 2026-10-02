@@ -109,9 +109,6 @@ class RealtimeMessagesClient(
                         .toString()
                 )
 
-                if (hasConnectedOnce) onReconnected()
-                hasConnectedOnce = true
-
                 heartbeatJob?.cancel()
                 heartbeatJob = scope.launch {
                     while (isActive && !stopped) {
@@ -142,6 +139,16 @@ class RealtimeMessagesClient(
                 runCatching {
                     val root = JSONObject(text)
                     when (root.optString("event")) {
+                        "phx_reply" -> {
+                            val payload = root.optJSONObject("payload") ?: return@runCatching
+                            val status = payload.optString("status")
+                            val response = payload.optJSONObject("response")
+                            val joinedPostgresChanges = response?.optJSONArray("postgres_changes") != null
+                            if (status.equals("ok", true) && joinedPostgresChanges) {
+                                if (hasConnectedOnce) onReconnected()
+                                hasConnectedOnce = true
+                            }
+                        }
                         "postgres_changes" -> {
                             val payload = root.optJSONObject("payload") ?: return@runCatching
                             val data = payload.optJSONObject("data") ?: payload
