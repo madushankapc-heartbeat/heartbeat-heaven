@@ -31,7 +31,8 @@ class RealtimeMessagesClient(
     private val userId: String,
     private val apiKey: String,
     private val onMessage: (id: String, senderId: String, body: String, createdAt: String) -> Unit,
-    private val onMessageChange: (RealtimeMessageChange) -> Unit = {}
+    private val onMessageChange: (RealtimeMessageChange) -> Unit = {},
+    private val onReconnected: () -> Unit = {}
 ) {
     constructor(
         accessTokenProvider: () -> String,
@@ -48,6 +49,7 @@ class RealtimeMessagesClient(
     private var ref = 0
     private var joinRef = "0"
     private var stopped = false
+    private var hasConnectedOnce = false
 
     fun start() {
         stopped = false
@@ -106,6 +108,9 @@ class RealtimeMessagesClient(
                         .put("join_ref", joinRef)
                         .toString()
                 )
+
+                if (hasConnectedOnce) onReconnected()
+                hasConnectedOnce = true
 
                 heartbeatJob?.cancel()
                 heartbeatJob = scope.launch {
