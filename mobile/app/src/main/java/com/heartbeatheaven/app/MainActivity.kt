@@ -233,7 +233,7 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
         while (true) {
             unreadActivityCount = runCatching { fetchUnreadActivityCount(context) }
                 .getOrDefault(unreadActivityCount)
-            delay(3000L)
+            delay(15000L)
         }
     }
 
