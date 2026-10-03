@@ -18,6 +18,34 @@ function getCookie(req, name) {
 }
 
 function install(app, { supabase }) {
+  const RATE_LIMIT_SECRET = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+
+  function visitorRateKey(ip) {
+    if (!RATE_LIMIT_SECRET) {
+      throw new Error("Visitor rate-limit secret is not configured.");
+    }
+
+    const digest = crypto
+      .createHmac("sha256", RATE_LIMIT_SECRET)
+      .update("public-visitor-counter:" + ip)
+      .digest("hex");
+
+    return "visitor-counter:" + digest;
+  }
+
+  async function allowVisitorIncrement(req) {
+    const ip = String(req.ip || "unknown").slice(0, 128);
+    const key = visitorRateKey(ip);
+
+    const { data, error } = await supabase.rpc("consume_api_rate_limit", {
+      p_key: key,
+      p_limit: 10,
+      p_window_seconds: 60
+    });
+
+    if (error) throw error;
+    return data === true;
+  }
   /* =========================================================
      PUBLIC VISITOR COUNTER
      ========================================================= */
@@ -42,6 +70,18 @@ function install(app, { supabase }) {
       const existingVisitor = getCookie(req, cookieName);
 
       if (!existingVisitor && !likelyBot) {
+        const allowed = await allowVisitorIncrement(req);
+
+        if (!allowed) {
+          const totalVisitors = await getVisitorTotal();
+          res.set("Retry-After", "60");
+          res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+          return res.status(429).json({
+            error: "visitor_rate_limited",
+            total_visitors: totalVisitors
+          });
+        }
+
         const visitorId = crypto.randomBytes(24).toString("hex");
 
         const { data, error } = await supabase.rpc("increment_site_visitors");
