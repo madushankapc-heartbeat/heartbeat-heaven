@@ -1,6 +1,7 @@
 package com.heartbeatheaven.app
 
 import android.content.Intent
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -42,6 +43,7 @@ internal fun AccountScreen(refreshTrigger: Int = 0) {
     var showPhoneDeleteDialog by remember { mutableStateOf(false) }
     var showSignupChoice by remember { mutableStateOf(false) }
     var signup by remember { mutableStateOf(false) }
+    var termsAccepted by remember { mutableStateOf(false) }
     var phoneMode by remember { mutableStateOf(false) }
     var resetMode by remember { mutableStateOf(false) }
     var phoneRecoveryMode by remember { mutableStateOf(false) }
@@ -125,8 +127,8 @@ internal fun AccountScreen(refreshTrigger: Int = 0) {
 
     if (showSignupChoice) {
         AlertDialog(onDismissRequest = { showSignupChoice = false }, title = { Text("Create account") }, text = { Text("How would you like to create your HEARTBEAT HEAVEN account?") },
-            confirmButton = { TextButton(onClick = { showSignupChoice = false; signup = true; phoneMode = false; resetMode = false; phoneRecoveryMode = false; message = null; error = null }) { Text("Email account") } },
-            dismissButton = { TextButton(onClick = { showSignupChoice = false; signup = true; phoneMode = true; resetMode = false; phoneRecoveryMode = false; message = null; error = null }) { Text("Phone account") } })
+            confirmButton = { TextButton(onClick = { showSignupChoice = false; signup = true; termsAccepted = false; phoneMode = false; resetMode = false; phoneRecoveryMode = false; message = null; error = null }) { Text("Email account") } },
+            dismissButton = { TextButton(onClick = { showSignupChoice = false; signup = true; termsAccepted = false; phoneMode = true; resetMode = false; phoneRecoveryMode = false; message = null; error = null }) { Text("Phone account") } })
     }
 
     if (showDeleteDialog && session != null) {
@@ -252,14 +254,29 @@ internal fun AccountScreen(refreshTrigger: Int = 0) {
                     Text("Your mobile number is collected for account safety and administration. It is not used for login or SMS verification.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Row(Modifier.fillMaxWidth()) { Row(Modifier.weight(1f)) { RadioButton(gender == "male", { gender = "male" }); Text("Male", Modifier.padding(top = 12.dp)) }; Row(Modifier.weight(1f)) { RadioButton(gender == "female", { gender = "female" }); Text("Female", Modifier.padding(top = 12.dp)) } }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = termsAccepted, onCheckedChange = { termsAccepted = it })
+                    Text("I agree to the ")
+                    Text(
+                        "Terms of Use",
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://heartbeat-heaven.onrender.com/terms-of-use.html"))) }
+                    )
+                    Text(" and ")
+                    Text(
+                        "Privacy Policy",
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://heartbeat-heaven.onrender.com/privacy-policy.html"))) }
+                    )
+                }
             } else {
                 if (phoneMode) OutlinedTextField(identifier, { identifier = it }, label = { Text("Phone number or username") }, singleLine = true, modifier = Modifier.fillMaxWidth()) else OutlinedTextField(email, { email = it }, label = { Text("Email") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             }
             if (signup) {
                 OutlinedTextField(password, { password = it }, label = { Text("Password") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 val age = ageText.toIntOrNull()
-                val validPhoneSignup = username.trim().length >= 3 && phone.trim().length >= 7 && age != null && age in 13..120 && recoveryQuestionInput in PHONE_RECOVERY_QUESTIONS && recoveryAnswerInput.trim().length >= 2
-                val enabled = if (phoneMode) !busy && password.length >= 8 && validPhoneSignup else !busy && password.length >= 6 && email.contains("@") && username.trim().length >= 3 && phone.trim().length >= 7 && age != null && age in 13..120
+                val validPhoneSignup = username.trim().length >= 3 && phone.trim().length >= 7 && age != null && age in 16..120 && recoveryQuestionInput in PHONE_RECOVERY_QUESTIONS && recoveryAnswerInput.trim().length >= 2
+                val enabled = if (phoneMode) !busy && termsAccepted && password.length >= 8 && validPhoneSignup else !busy && termsAccepted && password.length >= 6 && email.contains("@") && username.trim().length >= 3 && phone.trim().length >= 7 && age != null && age in 16..120
                 Button(enabled = enabled, onClick = { busy = true; message = null; error = null; Thread { val result = when { phoneMode -> api.signUpPhone(phone, password, username, gender, age!!, recoveryQuestionInput, recoveryAnswerInput).map { "Account created successfully. Welcome, ${it.profile.username}." }; else -> api.signUp(email, password, username, gender, phone, age!!).map { it } }; android.os.Handler(android.os.Looper.getMainLooper()).post { busy = false; result.onSuccess { text -> message = text; session = api.currentSession(); if (session == null) signup = false }.onFailure { error = it.message ?: "Account creation failed." } } }.start() }, modifier = Modifier.fillMaxWidth()) { Text(if (busy) "Please wait..." else "Create account") }
                 TextButton(onClick = { signup = false; message = null; error = null }) { Text("Back to login") }
             } else {
