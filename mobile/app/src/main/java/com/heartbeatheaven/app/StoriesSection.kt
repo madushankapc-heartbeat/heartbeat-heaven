@@ -1,0 +1,870 @@
+package com.heartbeatheaven.app
+
+import android.content.Context
+import android.net.Uri
+import android.view.ViewGroup
+import android.widget.VideoView
+import android.media.MediaMetadataRetriever
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Send
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.media3.common.MediaItem
+import androidx.media3.transformer.Composition
+import androidx.media3.transformer.EditedMediaItem
+import androidx.media3.transformer.ExportException
+import androidx.media3.transformer.ExportResult
+import androidx.media3.transformer.Transformer
+import kotlinx.coroutines.suspendCancellableCoroutine
+import java.io.File
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import coil.compose.AsyncImage
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
+import java.time.Instant
+import java.util.UUID
+
+private const val STORIES_URL = "https://fafvhyeesenpimxncupp.supabase.co"
+private const val STORIES_KEY = "sb_publishable_MlBmbt3bdFDjMkikjxrdwg_fa3MqBKs"
+private const val STORY_BUCKET = "stories"
+private const val STORY_MAX_BYTES = 20L * 1024L * 1024L
+
+internal data class StoryItem(
+    val id: String,
+    val userId: String,
+    val username: String,
+    val avatarUrl: String,
+    val mediaType: String,
+    val mediaUrl: String,
+    val storagePath: String,
+    val caption: String,
+    val createdAt: String,
+    val liked: Boolean
+)
+
+private const val STORY_MAX_VIDEO_MS = 90_000L
+
+private data class StoryUploadProgress(
+    val uploadedBytes: Long,
+    val totalBytes: Long
+) {
+    val percent: Int
+        get() = if (totalBytes <= 0L) 0 else ((uploadedBytes * 100L) / totalBytes).toInt().coerceIn(0, 100)
+}
+
+private suspend fun videoDurationMs(context: Context, uri: Uri): Long = withContext(Dispatchers.IO) {
+    val retriever = MediaMetadataRetriever()
+    try {
+        retriever.setDataSource(context, uri)
+        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()?.coerceAtLeast(0L) ?: 0L
+    } finally {
+        retriever.release()
+    }
+}
+
+private suspend fun trimVideo(context: Context, uri: Uri, startMs: Long, endMs: Long): Uri =
+    withContext(Dispatchers.Main) {
+        suspendCancellableCoroutine { continuation ->
+            val output = File(context.cacheDir, "story_trim_${UUID.randomUUID()}.mp4")
+            val clipping = MediaItem.ClippingConfiguration.Builder()
+                .setStartPositionMs(startMs)
+                .setEndPositionMs(endMs)
+                .build()
+            val input = MediaItem.Builder()
+                .setUri(uri)
+                .setClippingConfiguration(clipping)
+                .build()
+            val edited = EditedMediaItem.Builder(input).build()
+            val transformer = Transformer.Builder(context)
+                .addListener(object : Transformer.Listener {
+                    override fun onCompleted(composition: Composition, result: ExportResult) {
+                        if (continuation.isActive) continuation.resume(Uri.fromFile(output))
+                    }
+
+                    override fun onError(
+                        composition: Composition,
+                        result: ExportResult,
+                        exception: ExportException
+                    ) {
+                        if (continuation.isActive) {
+                            output.delete()
+                            continuation.resumeWithException(exception)
+                        }
+                    }
+                })
+                .build()
+
+            continuation.invokeOnCancellation {
+                runCatching { transformer.cancel() }
+                output.delete()
+            }
+            transformer.start(edited, output.absolutePath)
+        }
+    }
+
+@Composable
+private fun StoryVideoTrimEditor(
+    context: Context,
+    uri: Uri,
+    durationMs: Long,
+    startMs: Long,
+    endMs: Long,
+    onRangeChange: (Long, Long) -> Unit
+) {
+    val thumbnails by produceState<List<android.graphics.Bitmap>>(initialValue = emptyList(), uri, durationMs) {
+        value = withContext(Dispatchers.IO) {
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(context, uri)
+                val count = 10
+                buildList {
+                    for (i in 0 until count) {
+                        val timeUs = if (durationMs <= 0L) 0L
+                        else ((durationMs * i) / (count - 1).coerceAtLeast(1)).coerceAtLeast(0L) * 1000L
+                        retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)?.let { add(it) }
+                    }
+                }
+            } catch (_: Throwable) {
+                emptyList()
+            } finally {
+                retriever.release()
+            }
+        }
+    }
+
+    val durationSec = (durationMs.coerceAtLeast(1000L) / 1000f)
+    val oldStart = startMs / 1000f
+    val oldEnd = endMs / 1000f
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Select up to 1:30", style = MaterialTheme.typography.labelMedium)
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(72.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(Color.Black)
+        ) {
+            Row(Modifier.fillMaxSize()) {
+                thumbnails.forEach { bitmap ->
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = null,
+                        modifier = Modifier.weight(1f).fillMaxHeight(),
+                        contentScale = ContentScale.Crop
+                    )
+                }
+            }
+            RangeSlider(
+                value = oldStart..oldEnd,
+                onValueChange = { range ->
+                    val changedStart = kotlin.math.abs(range.start - oldStart) >= kotlin.math.abs(range.endInclusive - oldEnd)
+                    var ns = range.start.coerceIn(0f, durationSec)
+                    var ne = range.endInclusive.coerceIn(0f, durationSec)
+                    if (ne - ns > 90f) {
+                        if (changedStart) ns = (ne - 90f).coerceAtLeast(0f)
+                        else ne = (ns + 90f).coerceAtMost(durationSec)
+                    }
+                    if (ne - ns >= 0.5f) onRangeChange((ns * 1000L).toLong(), (ne * 1000L).toLong())
+                },
+                valueRange = 0f..durationSec,
+                modifier = Modifier.fillMaxWidth().align(Alignment.Center),
+                colors = SliderDefaults.colors(
+                    thumbColor = Color.White,
+                    activeTrackColor = Color.White,
+                    inactiveTrackColor = Color.Transparent
+                )
+            )
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text(formatStoryTime(startMs), style = MaterialTheme.typography.labelSmall)
+            Text(formatStoryTime(endMs) + " / 1:30 max", style = MaterialTheme.typography.labelSmall)
+        }
+    }
+}
+
+private fun formatBytes(bytes: Long): String {
+    if (bytes < 1024L) return "$bytes B"
+    if (bytes < 1024L * 1024L) return String.format("%.1f KB", bytes / 1024f)
+    return String.format("%.1f MB", bytes / (1024f * 1024f))
+}
+
+private fun formatStoryTime(ms: Long): String {
+    val totalSeconds = (ms / 1000L).coerceAtLeast(0L)
+    return "%d:%02d".format(totalSeconds / 60L, totalSeconds % 60L)
+}
+
+private class StoriesApi(private val auth: AuthApi, initial: AuthSession) {
+    private var session = initial
+    fun userId() = session.profile.id
+
+    private fun request(path: String, method: String, body: String? = null): String {
+        auth.currentSession()?.let { session = it }
+        val c = URL(STORIES_URL + path).openConnection() as HttpURLConnection
+        try {
+            c.requestMethod = method
+            c.connectTimeout = 15000
+            c.readTimeout = 30000
+            c.setRequestProperty("apikey", STORIES_KEY)
+            c.setRequestProperty("Authorization", "Bearer " + session.accessToken)
+            c.setRequestProperty("Accept", "application/json")
+            if (body != null) {
+                c.doOutput = true
+                c.setRequestProperty("Content-Type", "application/json")
+                c.outputStream.use { it.write(body.toByteArray()) }
+            }
+            val stream = if (c.responseCode in 200..299) c.inputStream else c.errorStream
+            val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (c.responseCode !in 200..299) throw IllegalStateException(JSONObject(text).optString("message").ifBlank { "Request failed (" + c.responseCode + ")" })
+            return text
+        } finally { c.disconnect() }
+    }
+
+    private fun loadPublicProfiles(ids: Set<String>): JSONArray {
+        if (ids.isEmpty()) return JSONArray()
+        val c = URL(STORIES_URL + "/functions/v1/public-profiles").openConnection() as HttpURLConnection
+        try {
+            c.requestMethod = "POST"
+            c.doOutput = true
+            c.connectTimeout = 15000
+            c.readTimeout = 30000
+            c.setRequestProperty("apikey", STORIES_KEY)
+            c.setRequestProperty("Authorization", "Bearer " + session.accessToken)
+            c.setRequestProperty("Content-Type", "application/json")
+            c.setRequestProperty("Accept", "application/json")
+            val body = JSONObject()
+                .put("mode", "ids")
+                .put("ids", JSONArray(ids.toList()))
+                .toString()
+            c.outputStream.use { it.write(body.toByteArray()) }
+            val stream = if (c.responseCode in 200..299) c.inputStream else c.errorStream
+            val text = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (c.responseCode !in 200..299) {
+                throw IllegalStateException(JSONObject(text).optString("error").ifBlank { "Public profile lookup failed (" + c.responseCode + ")." })
+            }
+            return JSONArray(text)
+        } finally {
+            c.disconnect()
+        }
+    }
+
+    suspend fun load(): List<StoryItem> = withContext(Dispatchers.IO) {
+        val now = URLEncoder.encode(Instant.now().toString(), "UTF-8")
+        val a = JSONArray(request("/rest/v1/stories?expires_at=gt." + now + "&select=id,user_id,media_type,storage_path,caption,created_at&order=created_at.asc&limit=500", "GET"))
+        if (a.length() == 0) return@withContext emptyList()
+        val ids = buildSet { for (i in 0 until a.length()) add(a.getJSONObject(i).optString("user_id")) }
+        val p = loadPublicProfiles(ids)
+        val profiles = buildMap {
+            for (i in 0 until p.length()) {
+                val o = p.getJSONObject(i)
+                put(o.optString("id"), o.optString("username") to o.optString("avatar_url").takeUnless { it == "null" }.orEmpty())
+            }
+        }
+        val mine = userId()
+        val l = runCatching { JSONArray(request("/rest/v1/story_likes?user_id=eq." + mine + "&select=story_id&limit=500", "GET")) }.getOrDefault(JSONArray())
+        val liked = buildSet { for (i in 0 until l.length()) add(l.getJSONObject(i).optString("story_id")) }
+        buildList {
+            for (i in 0 until a.length()) {
+                val o = a.getJSONObject(i)
+                val uid = o.optString("user_id")
+                val prof = profiles[uid] ?: continue
+                val path = o.optString("storage_path").takeUnless { it == "null" }.orEmpty()
+                val url = if (path.isBlank()) "" else STORIES_URL + "/storage/v1/object/public/" + STORY_BUCKET + "/" + path
+                add(StoryItem(
+                    id = o.optString("id"),
+                    userId = uid,
+                    username = prof.first,
+                    avatarUrl = prof.second,
+                    mediaType = o.optString("media_type"),
+                    mediaUrl = url,
+                    storagePath = path,
+                    caption = o.optString("caption"),
+                    createdAt = o.optString("created_at"),
+                    liked = o.optString("id") in liked
+                ))
+            }
+        }.sortedWith(compareBy<StoryItem> { it.userId != mine }.thenBy { it.createdAt })
+    }
+
+    suspend fun upload(
+        context: Context,
+        uri: Uri,
+        mime: String,
+        onProgress: suspend (StoryUploadProgress) -> Unit
+    ): String = withContext(Dispatchers.IO) {
+        val size = context.contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.SIZE), null, null, null)?.use {
+            if (it.moveToFirst()) it.getLong(0) else -1L
+        }?.takeIf { it >= 0L }
+            ?: context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { it.length }
+            ?: -1L
+        if (size <= 0L) throw IllegalStateException("Could not determine Story media size.")
+        if (size > STORY_MAX_BYTES) throw IllegalStateException("Story media must be 20 MB or smaller.")
+
+        val ext = mime.substringAfter('/').substringBefore(';').replace("jpeg", "jpg")
+        val path = userId() + "/" + UUID.randomUUID() + "." + ext
+        val c = URL(STORIES_URL + "/storage/v1/object/" + STORY_BUCKET + "/" + path).openConnection() as HttpURLConnection
+        try {
+            c.requestMethod = "POST"
+            c.doOutput = true
+            c.connectTimeout = 15000
+            c.readTimeout = 60000
+            c.setFixedLengthStreamingMode(size)
+            c.setRequestProperty("apikey", STORIES_KEY)
+            c.setRequestProperty("Authorization", "Bearer " + session.accessToken)
+            c.setRequestProperty("Content-Type", mime)
+            c.setRequestProperty("Content-Length", size.toString())
+
+            var uploaded = 0L
+            var lastReported = 0L
+            val buffer = ByteArray(128 * 1024)
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                c.outputStream.use { out ->
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        out.write(buffer, 0, count)
+                        uploaded += count
+                        if (uploaded - lastReported >= 256 * 1024 || uploaded == size) {
+                            lastReported = uploaded
+                            onProgress(StoryUploadProgress(uploaded, size))
+                        }
+                    }
+                    out.flush()
+                }
+            } ?: error("Could not read media.")
+
+            if (c.responseCode !in 200..299) error("Story upload failed (" + c.responseCode + ").")
+            path
+        } finally {
+            c.disconnect()
+        }
+    }
+
+    suspend fun create(type: String, path: String?, caption: String) = withContext(Dispatchers.IO) {
+        val p = JSONObject().put("user_id", userId()).put("media_type", type).put("caption", caption.trim().take(1000))
+        if (path != null) p.put("storage_path", path)
+        request("/rest/v1/stories", "POST", p.toString())
+    }
+
+    suspend fun updateCaption(story: StoryItem, caption: String) = withContext(Dispatchers.IO) {
+        request("/rest/v1/stories?id=eq." + story.id + "&user_id=eq." + userId(), "PATCH", JSONObject().put("caption", caption.trim().take(1000)).toString())
+    }
+
+    suspend fun delete(story: StoryItem) = withContext(Dispatchers.IO) {
+        if (story.storagePath.isNotBlank()) {
+            val c = URL(STORIES_URL + "/storage/v1/object/" + STORY_BUCKET).openConnection() as HttpURLConnection
+            try {
+                c.requestMethod = "DELETE"
+                c.doOutput = true
+                c.connectTimeout = 15000
+                c.readTimeout = 30000
+                c.setRequestProperty("apikey", STORIES_KEY)
+                c.setRequestProperty("Authorization", "Bearer " + session.accessToken)
+                c.setRequestProperty("Content-Type", "application/json")
+                c.outputStream.use {
+                    it.write(
+                        JSONObject()
+                            .put("prefixes", JSONArray().put(story.storagePath))
+                            .toString()
+                            .toByteArray()
+                    )
+                }
+                val code = c.responseCode
+                if (code !in 200..299) {
+                    val detail = c.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                    throw IllegalStateException(
+                        if (detail.isBlank()) "Could not remove Story media from Storage." else "Could not remove Story media from Storage ($code)."
+                    )
+                }
+            } finally {
+                c.disconnect()
+            }
+        }
+
+        request("/rest/v1/stories?id=eq." + story.id + "&user_id=eq." + userId(), "DELETE")
+    }
+
+    suspend fun view(id: String) = withContext(Dispatchers.IO) {
+        request("/rest/v1/story_views?on_conflict=story_id,viewer_id", "POST", JSONObject().put("story_id", id).put("viewer_id", userId()).toString())
+    }
+
+    suspend fun toggleLike(story: StoryItem, liked: Boolean) = withContext(Dispatchers.IO) {
+        if (liked) request("/rest/v1/story_likes?story_id=eq." + story.id + "&user_id=eq." + userId(), "DELETE")
+        else request("/rest/v1/story_likes", "POST", JSONObject().put("story_id", story.id).put("user_id", userId()).toString())
+    }
+
+    suspend fun reply(story: StoryItem, text: String) = withContext(Dispatchers.IO) {
+        request("/rest/v1/messages", "POST", JSONObject().put("sender_id", userId()).put("receiver_id", story.userId).put("body", "↩️ Replied to your story: " + text.trim().take(1500)).toString())
+    }
+}
+
+@Composable
+internal fun StoriesSection(session: AuthSession, onStatus: (String) -> Unit = {}) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val api = remember(session.accessToken) { StoriesApi(AuthApi(context), session) }
+    var stories by remember { mutableStateOf<List<StoryItem>>(emptyList()) }
+    var createOpen by remember { mutableStateOf(false) }
+    var viewer by remember { mutableStateOf<List<StoryItem>>(emptyList()) }
+    var viewerIndex by remember { mutableIntStateOf(0) }
+    var pickedUri by remember { mutableStateOf<Uri?>(null) }
+    var pickedMime by remember { mutableStateOf("") }
+    var newCaption by remember { mutableStateOf("") }
+    var editingStory by remember { mutableStateOf<StoryItem?>(null) }
+    var editCaption by remember { mutableStateOf("") }
+    var videoDurationMs by remember { mutableLongStateOf(0L) }
+    var trimStartMs by remember { mutableLongStateOf(0L) }
+    var trimEndMs by remember { mutableLongStateOf(0L) }
+    var isPosting by remember { mutableStateOf(false) }
+    var postError by remember { mutableStateOf("") }
+    var uploadProgress by remember { mutableStateOf<StoryUploadProgress?>(null) }
+
+    fun reload() { scope.launch { runCatching { stories = api.load() }.onFailure { onStatus(it.message ?: "Could not load stories.") } } }
+
+    LaunchedEffect(session.accessToken) { reload() }
+
+    val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val mime = context.contentResolver.getType(uri).orEmpty().lowercase()
+        if (!mime.startsWith("image/") && !mime.startsWith("video/")) onStatus("Please choose an image or video.")
+        else {
+            pickedUri = uri
+            pickedMime = mime
+            newCaption = ""
+            postError = ""
+            if (mime.startsWith("video/")) {
+                scope.launch {
+                    videoDurationMs = videoDurationMs(context, uri)
+                    trimStartMs = 0L
+                    trimEndMs = minOf(videoDurationMs, STORY_MAX_VIDEO_MS)
+                    createOpen = true
+                }
+            } else {
+                videoDurationMs = 0L
+                trimStartMs = 0L
+                trimEndMs = 0L
+                createOpen = true
+            }
+        }
+    }
+
+    val mine = stories.filter { it.userId == api.userId() }
+    val groups = stories.groupBy { it.userId }
+    val others = groups.keys.filter { it != api.userId() }.mapNotNull { groups[it]?.firstOrNull() }
+
+    Column(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("Stories", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.weight(1f))
+            Text("48h", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Spacer(Modifier.height(8.dp))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(horizontal = 2.dp)) {
+            item {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(68.dp).clickable {
+                    if (mine.isEmpty()) createOpen = true else { viewer = mine; viewerIndex = 0 }
+                }) {
+                    Box {
+                        if (mine.firstOrNull()?.avatarUrl?.isNotBlank() == true) AsyncImage(mine.first().avatarUrl, "Your story", Modifier.size(58.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+                        else Surface(Modifier.size(58.dp), CircleShape, tonalElevation = 2.dp) { Box(contentAlignment = Alignment.Center) { Text("+") } }
+                        if (mine.isEmpty()) Surface(Modifier.size(22.dp).align(Alignment.BottomEnd), CircleShape, color = MaterialTheme.colorScheme.primary) { Icon(Icons.Default.Add, null, Modifier.padding(3.dp), tint = Color.White) }
+                    }
+                    Text("You", maxLines = 1)
+                }
+            }
+            items(others, key = { it.userId }) { s ->
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(68.dp).clickable {
+                    viewer = groups[s.userId].orEmpty(); viewerIndex = 0
+                }) {
+                    if (s.avatarUrl.isNotBlank()) AsyncImage(s.avatarUrl, s.username, Modifier.size(58.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+                    else Surface(Modifier.size(58.dp), CircleShape) { Box(contentAlignment = Alignment.Center) { Text(s.username.take(1).uppercase()) } }
+                    Text(s.username, maxLines = 1)
+                }
+            }
+        }
+        TextButton(onClick = { pickedUri = null; pickedMime = ""; newCaption = ""; postError = ""; videoDurationMs = 0L; trimStartMs = 0L; trimEndMs = 0L; createOpen = true }) { Text("Add Story") }
+    }
+
+    if (createOpen) {
+        val mediaUri = pickedUri
+        val canPost = mediaUri != null || newCaption.isNotBlank()
+        AlertDialog(
+            onDismissRequest = { createOpen = false },
+            title = { Text("Add Story") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (mediaUri != null) {
+                        if (pickedMime.startsWith("image/")) {
+                            AsyncImage(mediaUri, "Story preview", Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(16.dp)), contentScale = ContentScale.Crop)
+                        } else {
+                            AndroidView(
+                                factory = { ctx -> VideoView(ctx).apply {
+                                    setVideoURI(mediaUri)
+                                    setOnPreparedListener { mp -> mp.isLooping = true; start() }
+                                }},
+                                modifier = Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(16.dp))
+                            )
+                            if (videoDurationMs > 0L) {
+                                StoryVideoTrimEditor(
+                                    context = context,
+                                    uri = mediaUri,
+                                    durationMs = videoDurationMs,
+                                    startMs = trimStartMs,
+                                    endMs = trimEndMs,
+                                    onRangeChange = { start, end ->
+                                        trimStartMs = start
+                                        trimEndMs = end
+                                    }
+                                )
+                            }
+                        }
+                        Text("Preview", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        Text("Create a text story", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    OutlinedButton(onClick = { picker.launch("*/*") }) {
+                        Text(if (mediaUri == null) "Choose photo / video" else "Change media")
+                    }
+                    uploadProgress?.let { progress ->
+                        Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Uploading… ${progress.percent}%", style = MaterialTheme.typography.labelMedium)
+                                Text(
+                                    "${formatBytes(progress.uploadedBytes)} / ${formatBytes(progress.totalBytes)}",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                            }
+                            LinearProgressIndicator(
+                                progress = { progress.percent / 100f },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
+                    if (postError.isNotBlank()) {
+                        Text(postError, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                    }
+                    OutlinedTextField(
+                        value = newCaption,
+                        onValueChange = { if (it.length <= 1000) newCaption = it },
+                        label = { Text(if (mediaUri == null) "Story text" else "Caption") },
+                        minLines = 2,
+                        maxLines = 5,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = canPost && !isPosting,
+                    onClick = {
+                        postError = ""
+                        isPosting = true
+                        scope.launch {
+                            runCatching {
+                                val uploadUri = if (mediaUri != null && pickedMime.startsWith("video/") && videoDurationMs > 0L &&
+                                    (trimStartMs > 0L || trimEndMs < videoDurationMs - 250L)) {
+                                    onStatus("Preparing selected video…")
+                                    trimVideo(context, mediaUri, trimStartMs, trimEndMs)
+                                } else mediaUri
+                                val uploadMime = if (pickedMime.startsWith("video/")) "video/mp4" else pickedMime
+                                uploadProgress = null
+                                val path = uploadUri?.let {
+                                    onStatus("Uploading Story…")
+                                    api.upload(context, it, uploadMime) { progress ->
+                                        withContext(Dispatchers.Main.immediate) {
+                                            uploadProgress = progress
+                                        }
+                                    }
+                                }
+                                api.create(
+                                    if (path == null) "text" else if (pickedMime.startsWith("video/")) "video" else "image",
+                                    path,
+                                    newCaption
+                                )
+                                createOpen = false
+                                pickedUri = null
+                                pickedMime = ""
+                                newCaption = ""
+                                postError = ""
+                                uploadProgress = null
+                                videoDurationMs = 0L
+                                trimStartMs = 0L
+                                trimEndMs = 0L
+                                reload()
+                                onStatus("Story posted.")
+                            }.onFailure {
+                                postError = it.message ?: "Could not create story."
+                                onStatus(postError)
+                            }
+                            isPosting = false
+                        }
+                    }
+                ) {
+                    if (isPosting) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    else Text("Post Story")
+                }
+            },
+            dismissButton = { TextButton(enabled = !isPosting, onClick = { createOpen = false }) { Text("Cancel") } }
+        )
+    }
+
+    if (editingStory != null) {
+        val story = editingStory!!
+        AlertDialog(
+            onDismissRequest = { editingStory = null },
+            title = { Text("Edit Story") },
+            text = {
+                OutlinedTextField(editCaption, { if (it.length <= 1000) editCaption = it }, label = { Text("Caption") }, minLines = 2, modifier = Modifier.fillMaxWidth())
+            },
+            confirmButton = {
+                TextButton(enabled = editCaption.isNotBlank() || story.mediaType != "text", onClick = {
+                    scope.launch {
+                        runCatching {
+                            api.updateCaption(story, editCaption)
+                            editingStory = null
+                            reload()
+                            onStatus("Story updated.")
+                        }.onFailure { onStatus(it.message ?: "Could not update story.") }
+                    }
+                }) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { editingStory = null }) { Text("Cancel") } }
+        )
+    }
+
+    if (viewer.isNotEmpty()) StoryViewer(api, viewer, viewerIndex, { viewerIndex = it }, { viewer = emptyList() }, { reload() }, { story -> editCaption = story.caption; editingStory = story }, onStatus)
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun StoryViewer(api: StoriesApi, stories: List<StoryItem>, index: Int, setIndex: (Int) -> Unit, close: () -> Unit, reload: () -> Unit, onEdit: (StoryItem) -> Unit, onStatus: (String) -> Unit) {
+    if (index !in stories.indices) { close(); return }
+    val story = stories[index]
+    val scope = rememberCoroutineScope()
+    var liked by remember(story.id) { mutableStateOf(story.liked) }
+    var reply by remember(story.id) { mutableStateOf("") }
+    var videoPlaying by remember(story.id) { mutableStateOf(false) }
+    val mine = story.userId == api.userId()
+    fun next() { if (index + 1 < stories.size) setIndex(index + 1) else close() }
+    fun prev() { if (index > 0) setIndex(index - 1) }
+
+    val imeVisible = WindowInsets.isImeVisible
+
+    LaunchedEffect(story.id) {
+        runCatching { api.view(story.id) }
+    }
+
+    LaunchedEffect(story.id, imeVisible, reply) {
+        if (story.mediaType != "video" && !imeVisible && reply.isBlank()) {
+            delay(5000)
+            if (!imeVisible && reply.isBlank()) {
+                next()
+            }
+        }
+    }
+
+    Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Box(
+            Modifier.fillMaxSize().background(Color.Black).pointerInput(story.id) {
+                var total = 0f
+                detectHorizontalDragGestures(
+                    onHorizontalDrag = { _, amount -> total += amount },
+                    onDragEnd = { if (total < -80) next() else if (total > 80) prev(); total = 0f }
+                )
+            }
+        ) {
+            if (story.mediaType == "image") AsyncImage(story.mediaUrl, story.username, Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+            else if (story.mediaType == "video") {
+                AndroidView(
+                    factory = { ctx ->
+                        VideoView(ctx).apply {
+                            setVideoURI(Uri.parse(story.mediaUrl))
+                            setOnPreparedListener { videoPlaying = true; start() }
+                            setOnCompletionListener { next() }
+                            layoutParams = ViewGroup.LayoutParams(-1, -1)
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(Modifier.fillMaxSize().padding(28.dp), contentAlignment = Alignment.Center) {
+                    Text(story.caption, color = Color.White, style = MaterialTheme.typography.headlineSmall)
+                }
+            }
+            Column(Modifier.fillMaxWidth().align(Alignment.TopCenter).padding(12.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    stories.forEachIndexed { i, _ -> LinearProgressIndicator(if (i < index) 1f else 0f, Modifier.weight(1f)) }
+                }
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    if (story.avatarUrl.isNotBlank()) AsyncImage(story.avatarUrl, story.username, Modifier.size(40.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+                    Spacer(Modifier.width(8.dp)); Text(story.username, color = Color.White)
+                    Spacer(Modifier.weight(1f)); IconButton(onClick = close) { Icon(Icons.Default.Close, "Close", tint = Color.White) }
+                }
+            }
+            Row(Modifier.align(Alignment.Center).fillMaxWidth()) {
+                Box(Modifier.weight(1f).height(280.dp).clickable { prev() })
+                Box(Modifier.weight(1f).height(280.dp).clickable { next() })
+            }
+            Column(
+                Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .navigationBarsPadding()
+                    .imePadding()
+                    .padding(horizontal = 12.dp)
+                    .padding(bottom = 76.dp, top = 8.dp)
+            ) {
+                if (story.caption.isNotBlank() && story.mediaType != "text") {
+                    Text(
+                        story.caption,
+                        color = Color.White,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                }
+                if (!mine) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        listOf("❤️", "🔥", "😂", "😍", "😭").forEach { emoji ->
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(42.dp)
+                                    .clickable {
+                                        scope.launch {
+                                            runCatching {
+                                                api.reply(story, emoji)
+                                                onStatus("Reaction sent.")
+                                            }.onFailure {
+                                                onStatus(it.message ?: "Could not send reaction.")
+                                            }
+                                        }
+                                    },
+                                shape = RoundedCornerShape(22.dp),
+                                color = Color.Black.copy(alpha = 0.72f)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(emoji, style = MaterialTheme.typography.titleLarge)
+                                }
+                            }
+                        }
+                    }
+                }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (mine) {
+                        IconButton(onClick = { onEdit(story) }) {
+                            Icon(Icons.Default.Edit, "Edit story", tint = Color.White)
+                        }
+                        IconButton(onClick = {
+                            scope.launch {
+                                runCatching {
+                                    api.delete(story)
+                                    reload()
+                                    next()
+                                }.onFailure {
+                                    onStatus(it.message ?: "Could not delete story.")
+                                }
+                            }
+                        }) {
+                            Icon(Icons.Default.Delete, "Delete", tint = Color.White)
+                        }
+                    } else {
+                        IconButton(onClick = {
+                            scope.launch {
+                                runCatching {
+                                    api.toggleLike(story, liked)
+                                    liked = !liked
+                                    reload()
+                                }.onFailure {
+                                    onStatus(it.message ?: "Could not like story.")
+                                }
+                            }
+                        }) {
+                            Icon(
+                                if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                                "Like",
+                                tint = Color.White
+                            )
+                        }
+                        OutlinedTextField(
+                            value = reply,
+                            onValueChange = { reply = it },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            shape = RoundedCornerShape(22.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color.White,
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.7f),
+                                cursorColor = Color.White,
+                                focusedPlaceholderColor = Color.White.copy(alpha = 0.75f),
+                                unfocusedPlaceholderColor = Color.White.copy(alpha = 0.75f)
+                            ),
+                            placeholder = { Text("Reply to story") }
+                        )
+                        IconButton(
+                            enabled = reply.isNotBlank(),
+                            onClick = {
+                                scope.launch {
+                                    runCatching {
+                                        api.reply(story, reply.trim())
+                                        reply = ""
+                                        onStatus("Story reply sent.")
+                                    }.onFailure {
+                                        onStatus(it.message ?: "Could not send reply.")
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(Icons.Default.Send, "Send", tint = Color.White)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
