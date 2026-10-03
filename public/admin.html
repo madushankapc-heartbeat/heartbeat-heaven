@@ -6,12 +6,11 @@
 <meta name="theme-color" content="#090909">
 <title>Studio — HEARTBEAT HEAVEN</title>
 <link rel="stylesheet" href="/styles.css">
-<style>.ghost{color:var(--text);}</style>
 </head>
 <body>
 <header class="topbar">
   <a class="brand" href="/">
-    <img src="/heartbeat-heaven-logo.png" alt="HEARTBEAT HEAVEN logo" style="width:40px;height:40px;object-fit:cover;border-radius:50%;display:block;">
+    <img src="/heartbeat-heaven-logo.png" alt="HEARTBEAT HEAVEN logo">
     <div><strong>HEARTBEAT HEAVEN</strong><small>Original Music by Madushanka</small></div>
   </a>
   <nav>
@@ -89,34 +88,6 @@
   </section>
 </main>
 <script src="/admin.js"></script>
-<script>
-  const menuToggle = document.getElementById("studioMenuToggle");
-  const studioNav = document.querySelector(".topbar nav");
 
-  menuToggle?.addEventListener("click", () => {
-    const open = studioNav?.classList.toggle("open") ?? false;
-    menuToggle.setAttribute("aria-expanded", String(open));
-    menuToggle.setAttribute("aria-label", open ? "Close menu" : "Open menu");
-  });
-
-  studioNav?.querySelectorAll("a").forEach((link) => {
-    link.addEventListener("click", () => {
-      studioNav.classList.remove("open");
-      menuToggle?.setAttribute("aria-expanded", "false");
-      menuToggle?.setAttribute("aria-label", "Open menu");
-    });
-  });
-
-  document.getElementById("studioLogout")?.addEventListener("click", async () => {
-    const button = document.getElementById("studioLogout");
-    button.disabled = true;
-    button.textContent = "Logging out…";
-    try {
-      await fetch("/api/studio/logout", { method: "POST", credentials: "same-origin" });
-    } finally {
-      window.location.replace("/studio-login.html");
-    }
-  });
-</script>
 </body>
 </html>
