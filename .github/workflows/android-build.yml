@@ -11,6 +11,7 @@ on:
       - feature/friends-loading-fix
       - fast-start-717
       - chat-group-performance-720-safe
+      - legal/privacy-policy-step3
   workflow_dispatch:
 
 jobs:
