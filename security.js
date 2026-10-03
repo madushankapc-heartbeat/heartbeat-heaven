@@ -13,23 +13,7 @@ function install(app) {
     );
     res.set(
       "Content-Security-Policy",
-      "default-src 'self'; " +
-        "base-uri 'self'; " +
-        "object-src 'none'; " +
-        "frame-ancestors 'none'; " +
-        "form-action 'self'; " +
-        "img-src 'self' data: https:; " +
-        "media-src 'self' https: blob:; " +
-        "script-src 'self' 'unsafe-inline'; " +
-        "style-src 'self' 'unsafe-inline'; " +
-        "connect-src 'self' https:; " +
-        "font-src 'self' https: data:"
-    );
-
-    if (req.secure) {
-      res.set(
-        "Strict-Transport-Security",
-        "max-age=31536000; includeSubDomains"
+      "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: https://fafvhyeesenpimxncupp.supabase.co; media-src 'self' https://fafvhyeesenpimxncupp.supabase.co blob:; script-src 'self'; style-src 'self'; script-src-attr 'none'; style-src-attr 'none'; connect-src 'self' https://fafvhyeesenpimxncupp.supabase.co; font-src 'self'"
       );
     }
 

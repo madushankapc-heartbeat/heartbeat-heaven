@@ -1084,7 +1084,7 @@ function renderSongs() {
 
                 <button
                   class="btn ghost edit-btn"
-                  onclick="editSong(${song.id})"
+                  data-admin-action="edit" data-song-id="${song.id}"
                 >
                   Edit
                 </button>
@@ -1092,7 +1092,7 @@ function renderSongs() {
 
                 <button
                   class="delete"
-                  onclick="deleteSong(${song.id})"
+                  data-admin-action="delete" data-song-id="${song.id}"
                 >
                   Delete
                 </button>
@@ -1147,14 +1147,14 @@ function renderSongs() {
 
                               <button
                                 class="btn ghost"
-                                onclick="editSong(${version.id})"
+                                data-admin-action="edit" data-song-id="${version.id}"
                               >
                                 Edit
                               </button>
 
                               <button
                                 class="delete"
-                                onclick="deleteSong(${version.id})"
+                                data-admin-action="delete" data-song-id="${version.id}"
                               >
                                 Delete
                               </button>
@@ -2620,3 +2620,5 @@ function esc(value) {
 updateContentTypeUI();
 
 loadStudioSongs();
+
+document.getElementById("studioMenuToggle")?.addEventListener("click",()=>{const b=document.getElementById("studioMenuToggle"),n=document.querySelector(".topbar nav"),o=n?.classList.toggle("open")??false;b.setAttribute("aria-expanded",String(o));b.setAttribute("aria-label",o?"Close menu":"Open menu")});document.querySelector(".topbar nav")?.querySelectorAll("a").forEach(l=>l.addEventListener("click",()=>{const b=document.getElementById("studioMenuToggle"),n=document.querySelector(".topbar nav");n?.classList.remove("open");b?.setAttribute("aria-expanded","false");b?.setAttribute("aria-label","Open menu")}));document.getElementById("studioLogout")?.addEventListener("click",async()=>{const b=document.getElementById("studioLogout");b.disabled=true;b.textContent="Logging out…";try{await fetch("/api/studio/logout",{method:"POST",credentials:"same-origin"})}finally{window.location.replace("/studio-login.html")}});document.addEventListener("click",e=>{const b=e.target.closest("[data-admin-action]");if(!b)return;const id=Number(b.dataset.songId);if(!Number.isInteger(id))return;if(b.dataset.adminAction==="edit")editSong(id);if(b.dataset.adminAction==="delete")deleteSong(id)});
