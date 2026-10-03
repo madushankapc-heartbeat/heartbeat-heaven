@@ -6,10 +6,39 @@
 <main class="policy" style="max-width:760px;margin:auto;padding:48px 20px 90px;line-height:1.75">
 <p class="eyebrow">HEARTBEAT HEAVEN</p><h1>Account Deletion</h1>
 <p>This page is the external account-deletion resource for the HEARTBEAT HEAVEN app.</p>
-<h2>How to delete your account</h2>
-<p>For the normal deletion process, open the HEARTBEAT HEAVEN app and use its account-deletion option. You may also request account deletion through the app's Owner/Support contact feature.</p>
-<p>When an account-deletion request is completed, associated account data is deleted from the service, except information that must or may be retained for security, fraud prevention, legal obligations, dispute resolution, or other lawful purposes described in the Privacy Policy.</p>
+<h2>Request account deletion</h2>
+<p>If you can access the HEARTBEAT HEAVEN app, you can delete your account directly from the app. If you cannot access the app, you can submit an external deletion request below.</p>
+<form id="deleteRequestForm" style="margin-top:20px;padding:20px;border:1px solid rgba(217,180,106,.28);border-radius:14px;background:rgba(217,180,106,.06)">
+<label for="identifier"><strong>Phone number or username used for the account</strong></label>
+<input id="identifier" name="identifier" autocomplete="username" maxlength="120" required style="display:block;width:100%;box-sizing:border-box;margin-top:10px;padding:12px;border-radius:10px;border:1px solid #444;background:#111;color:#fff">
+<p style="font-size:13px;color:#aaa">Do not enter your password. We will use this information only to identify the account-deletion request.</p>
+<button type="submit" style="padding:12px 18px;border:0;border-radius:24px;background:#d9b46a;color:#111;font-weight:700;cursor:pointer">Submit deletion request</button>
+<p id="deleteRequestStatus" role="status" style="margin-top:14px"></p>
+</form>
+<p>For account security, this web form does not ask for your password. Requests are rate-limited and reviewed by the service team before account deletion.</p>
+<p>When a deletion request is completed, associated account data is deleted from the service, except information that must or may be retained for security, fraud prevention, legal obligations, dispute resolution, or other lawful purposes described in the Privacy Policy.</p>
 <h2>Need help?</h2>
-<p>If you cannot access your account, contact HEARTBEAT HEAVEN through the app's Owner/Support contact feature and explain that you need an account-deletion request.</p>
+<p>If you cannot access your account or the request form does not work, contact HEARTBEAT HEAVEN through the app's Owner/Support contact feature.</p>
+<script>
+document.getElementById("deleteRequestForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const status = document.getElementById("deleteRequestStatus");
+  const identifier = document.getElementById("identifier").value.trim();
+  status.textContent = "Submitting request…";
+  try {
+    const response = await fetch("https://fafvhyeesenpimxncupp.supabase.co/functions/v1/account-deletion-request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identifier })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || "Request could not be submitted.");
+    status.textContent = data.message || "Deletion request submitted.";
+    event.target.reset();
+  } catch (error) {
+    status.textContent = error.message || "Request could not be submitted. Please try again later.";
+  }
+});
+</script>
 <p><a href="/privacy-policy.html">Read the Privacy Policy</a></p>
 </main></body></html>
