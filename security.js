@@ -15,7 +15,6 @@ function install(app) {
       "Content-Security-Policy",
       "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; img-src 'self' data: https://fafvhyeesenpimxncupp.supabase.co; media-src 'self' https://fafvhyeesenpimxncupp.supabase.co blob:; script-src 'self'; style-src 'self'; script-src-attr 'none'; style-src-attr 'none'; connect-src 'self' https://fafvhyeesenpimxncupp.supabase.co; font-src 'self'"
       );
-    }
 
     next();
   });
