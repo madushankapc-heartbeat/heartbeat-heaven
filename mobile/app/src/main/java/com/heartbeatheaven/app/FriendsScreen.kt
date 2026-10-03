@@ -3509,7 +3509,7 @@ internal fun FriendsScreen(
             reactions = runCatching { a.reactionsForMessageIds(messages.map { it.id }) }.getOrDefault(emptyList())
         }.onFailure { if (cachedMessages.isEmpty()) statusMessage = it.message ?: "Could not load messages." }
         while (true) {
-            delay(3000)
+            delay(10000)
             runCatching {
                 a.markSeen(current.id)
                 val fresh = a.messages(current.id)
