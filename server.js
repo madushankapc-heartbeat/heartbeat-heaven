@@ -1294,7 +1294,7 @@ app.get(
                         src="${escapeHtml(
                           version.audio_url
                         )}"
-                        style="width:100%;margin-top:10px"
+                        class="server-audio-player"
                       ></audio>
                       `
                       : ""
@@ -1620,7 +1620,7 @@ ${
 <audio
   controls
   preload="metadata"
-  style="width:100%;margin-top:25px"
+  class="server-audio-player"
   src="${escapeHtml(
     originalSong.audio_url
   )}"
