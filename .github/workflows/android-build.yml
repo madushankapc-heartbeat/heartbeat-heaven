@@ -1,0 +1,142 @@
+name: Android App Build
+
+# Signed release build for the Android working branches. main is intentionally excluded.
+
+on:
+  push:
+    branches:
+      - feature/android-app
+      - feature/phone-one-device-account
+      - feature/group-chat-safe
+      - feature/friends-loading-fix
+      - fast-start-717
+      - chat-group-performance-720-safe
+      - legal/privacy-policy-step3
+      - android/integrate-from-main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Prepare permanent release signing key
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/heartbeat-heaven-release.p12"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+          chmod 600 "$KEYSTORE"
+          test -s "$KEYSTORE"
+          echo "Keystore size: $(wc -c < "$KEYSTORE") bytes"
+          set +e
+          keytool -list -v \
+            -keystore "$KEYSTORE" \
+            -storetype PKCS12 \
+            -storepass "$RELEASE_STORE_PASSWORD" >/tmp/keytool-store-check.out 2>&1
+          STATUS=$?
+          set -e
+          cat /tmp/keytool-store-check.out
+          if [ "$STATUS" -ne 0 ]; then
+            echo "ERROR: PKCS12 keystore store-password validation failed (exit $STATUS)."
+            exit "$STATUS"
+          fi
+          echo "PKCS12 keystore store password validation passed."
+
+      - name: Verify permanent signing key, alias and key password
+        shell: bash
+        env:
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/heartbeat-heaven-release.p12"
+          TEST_KEYSTORE="$RUNNER_TEMP/signing-key-validation.p12"
+          set +e
+          keytool -list -v \
+            -keystore "$KEYSTORE" \
+            -storetype PKCS12 \
+            -storepass "$RELEASE_STORE_PASSWORD" \
+            -alias "$RELEASE_KEY_ALIAS" >/tmp/keytool-alias-check.out 2>&1
+          STATUS=$?
+          set -e
+          cat /tmp/keytool-alias-check.out
+          if [ "$STATUS" -ne 0 ]; then
+            echo "ERROR: keystore/alias validation failed (exit $STATUS)."
+            exit "$STATUS"
+          fi
+          set +e
+          keytool -importkeystore \
+            -srckeystore "$KEYSTORE" \
+            -srcstoretype PKCS12 \
+            -srcstorepass "$RELEASE_STORE_PASSWORD" \
+            -srcalias "$RELEASE_KEY_ALIAS" \
+            -srckeypass "$RELEASE_KEY_PASSWORD" \
+            -destkeystore "$TEST_KEYSTORE" \
+            -deststoretype PKCS12 \
+            -deststorepass "$RELEASE_STORE_PASSWORD" \
+            -destkeypass "$RELEASE_KEY_PASSWORD" \
+            -noprompt >/tmp/keytool-key-check.out 2>&1
+          STATUS=$?
+          set -e
+          cat /tmp/keytool-key-check.out
+          if [ "$STATUS" -ne 0 ]; then
+            echo "ERROR: private-key password validation failed (exit $STATUS)."
+            exit "$STATUS"
+          fi
+          keytool -list -v \
+            -keystore "$TEST_KEYSTORE" \
+            -storetype PKCS12 \
+            -storepass "$RELEASE_STORE_PASSWORD" \
+            -alias "$RELEASE_KEY_ALIAS" >/dev/null
+          echo "Permanent PKCS12 keystore, alias and private-key password validation passed."
+
+      - name: Build signed release APK
+        env:
+          RELEASE_STORE_FILE: ${{ runner.temp }}/heartbeat-heaven-release.p12
+          RELEASE_STORE_TYPE: PKCS12
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          gradle --stop || true
+          gradle clean :app:assembleRelease --stacktrace --no-build-cache --no-daemon -Pkotlin.incremental=false -Dkotlin.caching.enabled=false -Pkotlin.compiler.execution.strategy=in-process --no-configuration-cache
+
+      - name: Validate APK package and signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$GITHUB_WORKSPACE/mobile/app/build/outputs/apk/release/app-release.apk"
+          BUILD_TOOLS_DIR="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
+          echo "APK: $APK"
+          ls -lh "$APK"
+          echo "Build tools: $BUILD_TOOLS_DIR"
+          "$BUILD_TOOLS_DIR/aapt2" dump packagename "$APK"
+          "$BUILD_TOOLS_DIR/zipalign" -c -P 16 -v 4 "$APK"
+          "$BUILD_TOOLS_DIR/apksigner" verify --verbose --print-certs "$APK"
+
+      - name: Upload signed release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: heartbeat-heaven-release-apk
+          path: mobile/app/build/outputs/apk/release/app-release.apk
