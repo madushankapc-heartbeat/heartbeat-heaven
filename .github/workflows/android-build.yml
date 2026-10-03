@@ -12,6 +12,7 @@ on:
       - fast-start-717
       - chat-group-performance-720-safe
       - legal/privacy-policy-step3
+      - android/integrate-from-main
   workflow_dispatch:
 
 jobs:
