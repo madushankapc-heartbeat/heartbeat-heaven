@@ -1,6 +1,7 @@
 package com.heartbeatheaven.app
 
 import android.app.Application
+import com.google.firebase.messaging.FirebaseMessaging
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -80,6 +81,20 @@ internal object GlobalChatManager {
                     if (System.currentTimeMillis() - lastPresence >= 20_000L) {
                         touchPresence(session.accessToken, session.profile.id)
                         lastPresence = System.currentTimeMillis()
+                    }
+                    FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+                        if (token.isNotBlank()) {
+                            scope.launch {
+                                runCatching {
+                                    auth.registerPushToken(
+                                        token,
+                                        app.packageManager.getPackageInfo(
+                                            app.packageName, 0
+                                        ).versionName.orEmpty()
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
                 delay(5_000L)
