@@ -59,6 +59,18 @@ internal object GlobalChatManager {
         return appInForeground && activeChatUserId == userId && activeChatPeerId == senderId
     }
 
+    fun handlePushMessage(context: Context, data: Map<String, String>) {
+        val senderId = data["sender_id"]?.trim().orEmpty()
+        val body = data["body"]?.trim().orEmpty()
+        val createdAt = data["created_at"]?.trim().orEmpty()
+        val messageId = data["message_id"]?.trim().orEmpty()
+        if (senderId.isBlank() || body.isBlank() || messageId.isBlank()) return
+        if (!rememberMessage(messageId)) return
+        val session = runCatching { AuthApi(context).currentSession() }.getOrNull() ?: return
+        if (isCurrentChatVisible(session.profile.id, senderId)) return
+        showMessageNotification(context, senderId, body, createdAt, messageId)
+    }
+
     fun start(context: Context) {
         val app = context.applicationContext
         createChannel(app)
