@@ -139,6 +139,26 @@ internal class AuthApi(context: Context) {
     private fun normalizePhone(value: String): String { val raw = value.trim().replace(" ", "").replace("-", "").replace("(", "").replace(")", ""); if (raw.startsWith("+")) return "+" + raw.drop(1).filter { it.isDigit() }; val digits = raw.filter { it.isDigit() }; return when { digits.startsWith("0") && digits.length >= 9 -> "+94" + digits.drop(1); digits.startsWith("94") && digits.length >= 10 -> "+$digits"; digits.length >= 8 -> "+$digits"; else -> "" } }
 
     fun requestPasswordReset(email: String): Result<String> = try { request("/auth/v1/recover?redirect_to=${encode(PASSWORD_RESET_REDIRECT_URL)}", "POST", JSONObject().put("email", email.trim()).toString(), "application/json"); Result.success("If an account exists for this email, a password reset link has been sent.") } catch (e: Exception) { Result.failure(e) }
+    fun registerPushToken(fcmToken: String, appVersion: String): Result<Unit> = try {
+        val session = currentSession() ?: return Result.failure(IllegalStateException("No authenticated session"))
+        val body = JSONObject()
+            .put("user_id", session.profile.id)
+            .put("fcm_token", fcmToken.trim())
+            .put("platform", "android")
+            .put("app_version", appVersion)
+            .put("updated_at", java.time.Instant.now().toString())
+        request(
+            "/rest/v1/push_device_tokens?on_conflict=fcm_token",
+            "POST",
+            body.toString(),
+            "application/json",
+            session.accessToken
+        )
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
     fun cacheAvatarUrl(avatarUrl: String) { prefs.edit().putString("profile_avatar_url", avatarUrl).apply() }
 
     fun updateProfile(accessToken: String, bio: String, lastSeenVisibility: String): Result<String> = try {
