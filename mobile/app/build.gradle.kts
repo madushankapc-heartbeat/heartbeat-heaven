@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -198,6 +199,7 @@ tasks.named("preBuild").configure {
 }
 
 dependencies {
+    implementation(platform("com.google.firebase:firebase-bom:34.19.0"))
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom); androidTestImplementation(composeBom)
     implementation("androidx.core:core-ktx:1.15.0")
