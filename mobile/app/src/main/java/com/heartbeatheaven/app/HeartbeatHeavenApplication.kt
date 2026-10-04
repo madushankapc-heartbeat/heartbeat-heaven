@@ -77,24 +77,24 @@ internal object GlobalChatManager {
                         stopRealtime()
                         activeUserId = session.profile.id
                         startRealtime(app, auth, session.profile.id)
+                        FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+                            if (token.isNotBlank()) {
+                                scope.launch {
+                                    runCatching {
+                                        auth.registerPushToken(
+                                            token,
+                                            app.packageManager.getPackageInfo(
+                                                app.packageName, 0
+                                            ).versionName.orEmpty()
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                     if (System.currentTimeMillis() - lastPresence >= 20_000L) {
                         touchPresence(session.accessToken, session.profile.id)
                         lastPresence = System.currentTimeMillis()
-                    }
-                    FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
-                        if (token.isNotBlank()) {
-                            scope.launch {
-                                runCatching {
-                                    auth.registerPushToken(
-                                        token,
-                                        app.packageManager.getPackageInfo(
-                                            app.packageName, 0
-                                        ).versionName.orEmpty()
-                                    )
-                                }
-                            }
-                        }
                     }
                 }
                 delay(5_000L)
