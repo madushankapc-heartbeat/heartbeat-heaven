@@ -1,6 +1,7 @@
 package com.heartbeatheaven.app
 
 import android.app.Application
+import com.google.firebase.messaging.FirebaseMessaging
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -58,6 +59,18 @@ internal object GlobalChatManager {
         return appInForeground && activeChatUserId == userId && activeChatPeerId == senderId
     }
 
+    fun handlePushMessage(context: Context, data: Map<String, String>) {
+        val senderId = data["sender_id"]?.trim().orEmpty()
+        val body = data["body"]?.trim().orEmpty()
+        val createdAt = data["created_at"]?.trim().orEmpty()
+        val messageId = data["message_id"]?.trim().orEmpty()
+        if (senderId.isBlank() || body.isBlank() || messageId.isBlank()) return
+        if (!rememberMessage(messageId)) return
+        val session = runCatching { AuthApi(context).currentSession() }.getOrNull() ?: return
+        if (isCurrentChatVisible(session.profile.id, senderId)) return
+        showMessageNotification(context, senderId, body, createdAt, messageId)
+    }
+
     fun start(context: Context) {
         val app = context.applicationContext
         createChannel(app)
@@ -76,6 +89,20 @@ internal object GlobalChatManager {
                         stopRealtime()
                         activeUserId = session.profile.id
                         startRealtime(app, auth, session.profile.id)
+                        FirebaseMessaging.getInstance().token.addOnSuccessListener { token ->
+                            if (token.isNotBlank()) {
+                                scope.launch {
+                                    runCatching {
+                                        auth.registerPushToken(
+                                            token,
+                                            app.packageManager.getPackageInfo(
+                                                app.packageName, 0
+                                            ).versionName.orEmpty()
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                     if (System.currentTimeMillis() - lastPresence >= 20_000L) {
                         touchPresence(session.accessToken, session.profile.id)
