@@ -4670,6 +4670,8 @@ internal fun FriendsScreen(
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = chatTheme.textColor,
                             unfocusedTextColor = chatTheme.textColor,
+                            focusedContainerColor = chatTheme.background,
+                            unfocusedContainerColor = chatTheme.background,
                             focusedPlaceholderColor = chatTheme.textColor.copy(alpha = 0.65f),
                             unfocusedPlaceholderColor = chatTheme.textColor.copy(alpha = 0.65f),
                             focusedLabelColor = chatTheme.textColor.copy(alpha = 0.9f),
