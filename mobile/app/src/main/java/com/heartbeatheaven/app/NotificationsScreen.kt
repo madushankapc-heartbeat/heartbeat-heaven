@@ -63,10 +63,11 @@ private class NotificationsApi(private val auth: AuthApi) {
     suspend fun list(): List<AppNotification> = withContext(Dispatchers.IO) {
         val session = auth.currentSession() ?: return@withContext emptyList()
         val userId = URLEncoder.encode(session.profile.id, "UTF-8")
-        val array = JSONArray(request("/rest/v1/notifications?recipient_id=eq.$userId&read_at=is.null&select=id,kind,title,body,entity_id,read_at,created_at&order=created_at.desc&limit=100", "GET"))
+        val notificationArray = JSONArray(request("/rest/v1/notifications?recipient_id=eq.$userId&read_at=is.null&select=id,kind,title,body,entity_id,read_at,created_at&order=created_at.desc&limit=100", "GET"))
+        val messageArray = JSONArray(request("/rest/v1/messages?receiver_id=eq.$userId&read_at=is.null&select=id,sender_id,body,created_at&order=created_at.desc&limit=100", "GET"))
         buildList {
-            for (i in 0 until array.length()) {
-                val o = array.getJSONObject(i)
+            for (i in 0 until notificationArray.length()) {
+                val o = notificationArray.getJSONObject(i)
                 add(AppNotification(
                     id = o.optString("id"),
                     kind = o.optString("kind"),
@@ -77,11 +78,33 @@ private class NotificationsApi(private val auth: AuthApi) {
                     createdAt = o.optString("created_at")
                 ))
             }
-        }
+            for (i in 0 until messageArray.length()) {
+                val o = messageArray.getJSONObject(i)
+                val senderId = o.optString("sender_id")
+                if (senderId.isNotBlank()) {
+                    add(AppNotification(
+                        id = "message:${o.optString("id")}",
+                        kind = "direct_message",
+                        title = "New message",
+                        body = o.optString("body"),
+                        entityId = senderId,
+                        readAt = null,
+                        createdAt = o.optString("created_at")
+                    ))
+                }
+            }
+        }.sortedByDescending { it.createdAt }
     }
 
     suspend fun markRead(id: String) = withContext(Dispatchers.IO) {
         request("/rest/v1/notifications?id=eq.${URLEncoder.encode(id, "UTF-8")}", "PATCH", JSONObject().put("read_at", Instant.now().toString()).toString())
+    }
+
+    suspend fun markDirectMessagesRead(senderId: String) = withContext(Dispatchers.IO) {
+        val session = auth.currentSession() ?: return@withContext
+        val sender = URLEncoder.encode(senderId, "UTF-8")
+        val recipient = URLEncoder.encode(session.profile.id, "UTF-8")
+        request("/rest/v1/messages?sender_id=eq.$sender&receiver_id=eq.$recipient&read_at=is.null", "PATCH", JSONObject().put("read_at", Instant.now().toString()).toString())
     }
 
     suspend fun groupTarget(entityId: String): Pair<String, String>? = withContext(Dispatchers.IO) {
@@ -97,7 +120,9 @@ private class NotificationsApi(private val auth: AuthApi) {
 
     suspend fun markAllRead() = withContext(Dispatchers.IO) {
         val session = auth.currentSession() ?: return@withContext
-        request("/rest/v1/notifications?recipient_id=eq.${URLEncoder.encode(session.profile.id, "UTF-8")}&read_at=is.null", "PATCH", JSONObject().put("read_at", Instant.now().toString()).toString())
+        val userId = URLEncoder.encode(session.profile.id, "UTF-8")
+        request("/rest/v1/notifications?recipient_id=eq.$userId&read_at=is.null", "PATCH", JSONObject().put("read_at", Instant.now().toString()).toString())
+        request("/rest/v1/messages?receiver_id=eq.$userId&read_at=is.null", "PATCH", JSONObject().put("read_at", Instant.now().toString()).toString())
     }
 }
 
@@ -179,14 +204,20 @@ internal fun NotificationsScreen(
                         Modifier.fillMaxWidth().clickable {
                             scope.launch {
                                 runCatching {
-                                    if (n.readAt == null) api.markRead(n.id)
-                                    items = api.list()
-                                    val entityId = n.entityId
-                                    if (entityId != null) {
-                                        api.groupTarget(entityId)?.let { (groupId, messageId) ->
-                                            onOpenNotification(groupId, messageId)
+                                    if (n.kind == "direct_message") {
+                                        n.entityId?.takeIf { it.isNotBlank() }?.let { senderId ->
+                                            api.markDirectMessagesRead(senderId)
+                                            onOpenNotification("direct", senderId)
+                                        }
+                                    } else {
+                                        if (n.readAt == null) api.markRead(n.id)
+                                        n.entityId?.let { entityId ->
+                                            api.groupTarget(entityId)?.let { (groupId, messageId) ->
+                                                onOpenNotification("group:$groupId", messageId)
+                                            }
                                         }
                                     }
+                                    items = api.list()
                                 }
                             }
                         }
