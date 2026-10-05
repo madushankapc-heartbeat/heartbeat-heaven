@@ -162,7 +162,7 @@ class MainActivity : ComponentActivity() {
                         delay(if (isPlaying) 250L else 500L)
                     }
                 }
-                HeartbeatApp(currentSong, currentSongId, isPlaying, positionMs, durationMs, ::playSong, ::pausePlayback, ::seekPlayback, ::stopPlayback, pendingGroupInviteToken, { pendingGroupInviteToken = null }, // CI build source is intentionally kept explicit.
+                HeartbeatApp(currentSong, currentSongId, isPlaying, positionMs, durationMs, ::playSong, ::pausePlayback, ::seekPlayback, ::stopPlayback, pendingGroupInviteToken, { pendingGroupInviteToken = null }, pendingOpenChatSenderId) { pendingOpenChatSenderId = null }
 package com.heartbeatheaven.app
 
 import android.content.Context
@@ -368,7 +368,7 @@ private fun Progress(position: Long, duration: Long, onSeek: (Long) -> Unit, sma
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit, groupInviteToken: String? = null, onGroupInviteHandled: () -> Unit = {}, openChatSenderId: String? = null, onOpenChatHandled: () -> Unit = {}, onMessagesRead: () -> Unit = {}) {
+private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position: Long, duration: Long, onPlay: (Song) -> Unit, onPause: () -> Unit, onSeek: (Long) -> Unit, onStop: () -> Unit, groupInviteToken: String? = null, onGroupInviteHandled: () -> Unit = {}, openChatSenderId: String? = null, onOpenChatHandled: () -> Unit = {}) {
     val context = LocalContext.current
     var songs by remember { mutableStateOf<List<Song>>(emptyList()) }; var loading by remember { mutableStateOf(true) }; var error by remember { mutableStateOf<String?>(null) }
     var tab by remember { mutableStateOf(0) }; var search by remember { mutableStateOf("") }; var selected by remember { mutableStateOf<Song?>(null) }; var showNotifications by remember { mutableStateOf(false) }
@@ -500,7 +500,7 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
                     onGroupInviteHandled = onGroupInviteHandled,
                     openChatSenderId = directChatSenderId ?: openChatSenderId,
                     onOpenChatHandled = { directChatSenderId = null; onOpenChatHandled() },
-                    onMessagesRead = onMessagesRead,
+                    onMessagesRead = { unreadActivityCount = runCatching { fetchUnreadActivityCount(context) }.getOrDefault(unreadActivityCount) },
                     notificationTarget = notificationTarget,
                     onNotificationTargetHandled = { notificationTarget = null }
                 )
