@@ -316,10 +316,18 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
             when {
                 showNotifications -> NotificationsScreen(
                     onBack = { showNotifications = false },
-                    onOpenNotification = { groupId, messageId ->
-                        notificationTarget = groupId to messageId
-                        showNotifications = false
-                        tab = 1
+                    onOpenNotification = { targetType, targetId ->
+                        if (targetType == "direct") {
+                            notificationTarget = null
+                            showNotifications = false
+                            tab = 1
+                            // Reuse the existing direct-chat navigation path.
+                            pendingOpenChatSenderId = targetId
+                        } else {
+                            notificationTarget = targetType.removePrefix("group:") to targetId
+                            showNotifications = false
+                            tab = 1
+                        }
                     }
                 )
                 tab == 1 -> FriendsScreen(
