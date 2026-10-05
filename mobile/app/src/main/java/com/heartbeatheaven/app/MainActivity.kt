@@ -208,7 +208,7 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
     val context = LocalContext.current
     var songs by remember { mutableStateOf<List<Song>>(emptyList()) }; var loading by remember { mutableStateOf(true) }; var error by remember { mutableStateOf<String?>(null) }
     var tab by remember { mutableStateOf(0) }; var search by remember { mutableStateOf("") }; var selected by remember { mutableStateOf<Song?>(null) }; var showNotifications by remember { mutableStateOf(false) }
-    var notificationTarget by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var notificationTarget by remember { mutableStateOf<Pair<String, String>?>(null) }; var directChatSenderId by remember { mutableStateOf<String?>(null) }
     var unreadActivityCount by remember { mutableIntStateOf(0) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
     var refreshing by remember { mutableStateOf(false) }
@@ -316,18 +316,27 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
             when {
                 showNotifications -> NotificationsScreen(
                     onBack = { showNotifications = false },
-                    onOpenNotification = { groupId, messageId ->
-                        notificationTarget = groupId to messageId
-                        showNotifications = false
-                        tab = 1
+                    onOpenNotification = { targetType, targetId ->
+                        if (targetType == "direct") {
+                            notificationTarget = null
+                            showNotifications = false
+                            tab = 1
+                            // Reuse the existing direct-chat navigation path.
+                            directChatSenderId = targetId
+                        } else {
+                            notificationTarget = targetType.removePrefix("group:") to targetId
+                            showNotifications = false
+                            tab = 1
+                        }
                     }
                 )
                 tab == 1 -> FriendsScreen(
                     refreshTrigger = refreshTrigger,
                     groupInviteToken = groupInviteToken,
                     onGroupInviteHandled = onGroupInviteHandled,
-                    openChatSenderId = openChatSenderId,
-                    onOpenChatHandled = onOpenChatHandled,
+                    openChatSenderId = directChatSenderId ?: openChatSenderId,
+                    onOpenChatHandled = { directChatSenderId = null; onOpenChatHandled() },
+                    onMessagesRead = { unreadActivityCount = runCatching { fetchUnreadActivityCount(context) }.getOrDefault(unreadActivityCount) },
                     notificationTarget = notificationTarget,
                     onNotificationTargetHandled = { notificationTarget = null }
                 )

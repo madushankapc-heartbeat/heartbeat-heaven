@@ -3005,7 +3005,8 @@ internal fun FriendsScreen(
     notificationTarget: Pair<String, String>? = null,
     onNotificationTargetHandled: () -> Unit = {},
     openChatSenderId: String? = null,
-    onOpenChatHandled: () -> Unit = {}
+    onOpenChatHandled: () -> Unit = {},
+    onMessagesRead: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -3501,6 +3502,7 @@ internal fun FriendsScreen(
         if (cachedMessages.isNotEmpty()) initialMessagesLoaded = true
         runCatching {
             a.markSeen(current.id)
+            onMessagesRead()
             val page = a.messagesPage(current.id)
             messages = page.first
             hasOlderMessages = page.second
@@ -3512,6 +3514,7 @@ internal fun FriendsScreen(
             delay(10000)
             runCatching {
                 a.markSeen(current.id)
+                onMessagesRead()
                 val fresh = a.messages(current.id)
                 val existingById = messages.associateBy { it.id }
                 val freshNew = fresh.filter { it.id !in existingById }
