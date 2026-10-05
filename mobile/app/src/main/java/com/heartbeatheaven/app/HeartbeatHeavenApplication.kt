@@ -22,6 +22,7 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 import java.time.Instant
+import java.security.MessageDigest
 
 internal object GlobalChatManager {
     private const val SUPABASE_URL = "https://fafvhyeesenpimxncupp.supabase.co"
@@ -29,6 +30,8 @@ internal object GlobalChatManager {
     private const val CHANNEL_ID = "chat_messages_v2"
     private const val CHANNEL_NAME = "Chat messages"
     private const val NOTIFICATION_ID_BASE = 4101
+    private const val HISTORY_PREFS = "chat_notification_history_v1"
+    private const val MAX_HISTORY_MESSAGES = 8
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var monitorJob: Job? = null
@@ -57,6 +60,18 @@ internal object GlobalChatManager {
 
     private fun isCurrentChatVisible(userId: String, senderId: String): Boolean {
         return appInForeground && activeChatUserId == userId && activeChatPeerId == senderId
+    }
+
+    fun handlePushMessage(context: Context, data: Map<String, String>) {
+        val senderId = data["sender_id"]?.trim().orEmpty()
+        val body = data["body"]?.trim().orEmpty()
+        val createdAt = data["created_at"]?.trim().orEmpty()
+        val messageId = data["message_id"]?.trim().orEmpty()
+        if (senderId.isBlank() || body.isBlank() || messageId.isBlank()) return
+        if (!rememberMessage(messageId)) return
+        val session = runCatching { AuthApi(context).currentSession() }.getOrNull() ?: return
+        if (isCurrentChatVisible(session.profile.id, senderId)) return
+        showMessageNotification(context, senderId, body, createdAt, messageId)
     }
 
     fun start(context: Context) {
@@ -223,27 +238,89 @@ internal object GlobalChatManager {
             putExtra("open_chat_sender_id", senderId)
             putExtra("message_created_at", createdAt)
         }
-        val requestCode = messageId.hashCode()
+        val notificationId = notificationIdForSender(senderId)
         val pending = PendingIntent.getActivity(
             context,
-            requestCode,
+            notificationId,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val preview = body.trim().ifBlank { "New message" }.take(120)
+        val history = appendNotificationHistory(context, senderId, messageId, body, createdAt)
+        val messagingStyle = NotificationCompat.MessagingStyle("HEARTBEAT HEAVEN")
+            .setConversationTitle("HEARTBEAT HEAVEN")
+        history.forEach { item ->
+            messagingStyle.addMessage(
+                NotificationCompat.MessagingStyle.Message(
+                    item.body,
+                    item.timestamp,
+                    "Chat"
+                )
+            )
+        }
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.heartbeat_heaven_logo)
             .setContentTitle("New message")
             .setContentText(preview)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(preview))
+            .setStyle(messagingStyle)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setAutoCancel(true)
             .setContentIntent(pending)
             .setOnlyAlertOnce(false)
-            .setNumber(1)
+            .setNumber(history.size)
             .build()
-        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID_BASE + (requestCode and 0x7FFF), notification)
+        NotificationManagerCompat.from(context).notify(notificationId, notification)
+    }
+
+    private data class NotificationHistoryItem(
+        val id: String,
+        val body: String,
+        val timestamp: Long
+    )
+
+    private fun appendNotificationHistory(
+        context: Context,
+        senderId: String,
+        messageId: String,
+        body: String,
+        createdAt: String
+    ): List<NotificationHistoryItem> {
+        val prefs = context.getSharedPreferences(HISTORY_PREFS, Context.MODE_PRIVATE)
+        val key = "chat_$senderId"
+        val array = runCatching { org.json.JSONArray(prefs.getString(key, "[]") ?: "[]") }.getOrElse { org.json.JSONArray() }
+        val items = mutableListOf<NotificationHistoryItem>()
+        for (i in 0 until array.length()) {
+            val item = array.optJSONObject(i) ?: continue
+            val id = item.optString("id")
+            val text = item.optString("body")
+            if (id.isNotBlank() && text.isNotBlank()) {
+                items += NotificationHistoryItem(id, text, item.optLong("timestamp", System.currentTimeMillis()))
+            }
+        }
+        if (items.none { it.id == messageId }) {
+            val timestamp = runCatching { Instant.parse(createdAt).toEpochMilli() }.getOrElse { System.currentTimeMillis() }
+            items += NotificationHistoryItem(messageId, body.take(1000), timestamp)
+        }
+        val trimmed = items.takeLast(MAX_HISTORY_MESSAGES)
+        val out = org.json.JSONArray()
+        trimmed.forEach {
+            out.put(
+                JSONObject()
+                    .put("id", it.id)
+                    .put("body", it.body)
+                    .put("timestamp", it.timestamp)
+            )
+        }
+        prefs.edit().putString(key, out.toString()).apply()
+        return trimmed
+    }
+
+    private fun notificationIdForSender(senderId: String): Int {
+        val digest = MessageDigest.getInstance("SHA-256").digest(senderId.toByteArray(Charsets.UTF_8))
+        var value = 0
+        for (i in 0 until 4) value = (value shl 8) or (digest[i].toInt() and 0xFF)
+        return NOTIFICATION_ID_BASE + (value and 0x7FFF)
     }
 }
 
