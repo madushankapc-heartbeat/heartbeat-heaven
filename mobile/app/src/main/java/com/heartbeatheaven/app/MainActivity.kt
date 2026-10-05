@@ -210,6 +210,7 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
     var tab by remember { mutableStateOf(0) }; var search by remember { mutableStateOf("") }; var selected by remember { mutableStateOf<Song?>(null) }; var showNotifications by remember { mutableStateOf(false) }
     var notificationTarget by remember { mutableStateOf<Pair<String, String>?>(null) }; var directChatSenderId by remember { mutableStateOf<String?>(null) }
     var unreadActivityCount by remember { mutableIntStateOf(0) }
+    var refreshUnreadRequested by remember { mutableIntStateOf(0) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
     var refreshing by remember { mutableStateOf(false) }
     val favorites = remember { FavoriteStore(context) }; var favoriteIds by remember { mutableStateOf(favorites.ids()) }
@@ -237,6 +238,13 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
         }
     }
 
+
+    LaunchedEffect(refreshUnreadRequested) {
+        if (refreshUnreadRequested > 0) {
+            unreadActivityCount = runCatching { fetchUnreadActivityCount(context) }
+                .getOrDefault(unreadActivityCount)
+        }
+    }
 
     LaunchedEffect(openChatSenderId) {
         if (!openChatSenderId.isNullOrBlank()) tab = 1
@@ -336,7 +344,7 @@ private fun HeartbeatApp(song: Song?, songId: Long?, playing: Boolean, position:
                     onGroupInviteHandled = onGroupInviteHandled,
                     openChatSenderId = directChatSenderId ?: openChatSenderId,
                     onOpenChatHandled = { directChatSenderId = null; onOpenChatHandled() },
-                    onMessagesRead = { unreadActivityCount = runCatching { fetchUnreadActivityCount(context) }.getOrDefault(unreadActivityCount) },
+                    onMessagesRead = { refreshUnreadRequested += 1 },
                     notificationTarget = notificationTarget,
                     onNotificationTargetHandled = { notificationTarget = null }
                 )
