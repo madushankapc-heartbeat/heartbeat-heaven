@@ -669,3 +669,208 @@ font-size:11px;
   body:has(.songs-library) .brand small{font-size:8px}
   body:has(.songs-library) .songs-library{padding-top:28px}
 }
+
+
+/* =========================================================
+   STUDIO SONG LIST — COMPACT ORIGINAL/VERSION ROWS
+   Scoped to .admin-list so other pages are unaffected.
+========================================================= */
+
+.admin-list .admin-original{
+  margin-bottom:16px;
+  background:#111;
+  border:1px solid #292929;
+  border-radius:14px;
+  overflow:hidden;
+}
+
+.admin-list .admin-row{
+  min-height:72px;
+  padding:8px 12px;
+  gap:12px;
+}
+
+.admin-list .admin-song-info{
+  min-width:0;
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+
+.admin-list .admin-thumb{
+  width:64px;
+  height:64px;
+  flex:0 0 64px;
+  display:block;
+  object-fit:cover;
+  border-radius:9px;
+}
+
+.admin-list .admin-song-info > div{
+  min-width:0;
+}
+
+.admin-list .admin-song-info b{
+  display:block;
+  font-size:14px;
+  line-height:1.25;
+  margin-bottom:3px;
+}
+
+.admin-list .admin-original-label{
+  color:var(--gold);
+  font-size:10px;
+  margin-bottom:3px;
+}
+
+.admin-list .admin-song-info .meta{
+  display:block;
+  color:#777;
+  font-size:9px;
+  line-height:1.35;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  max-width:100%;
+}
+
+.admin-list .admin-actions{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex:0 0 auto;
+}
+
+.admin-list .admin-actions .edit-btn,
+.admin-list .admin-actions .delete{
+  min-width:0;
+  padding:7px 9px;
+  font-size:10px;
+  border-radius:8px;
+}
+
+.admin-list .version-list{
+  border-top:1px solid #292929;
+}
+
+.admin-list .version-row{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  min-height:48px;
+  padding:7px 12px 7px 88px;
+  border-bottom:1px solid #202020;
+}
+
+.admin-list .version-row:last-child{
+  border-bottom:0;
+}
+
+.admin-list .version-row-info{
+  min-width:0;
+}
+
+.admin-list .version-row-info strong{
+  display:block;
+  font-size:11px;
+  line-height:1.25;
+}
+
+.admin-list .version-row-info small{
+  display:block;
+  color:#777;
+  font-size:9px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+
+.admin-list .version-actions{
+  display:flex;
+  gap:6px;
+  flex:0 0 auto;
+}
+
+.admin-list .version-actions .btn,
+.admin-list .version-actions .delete{
+  padding:6px 9px;
+  font-size:10px;
+  border-radius:8px;
+}
+
+@media(max-width:560px){
+
+  .admin-list{
+    margin-top:28px;
+  }
+
+  .admin-list .admin-original{
+    margin-bottom:12px;
+    border-radius:12px;
+  }
+
+  .admin-list .admin-row{
+    min-height:58px;
+    padding:7px 8px;
+    gap:8px;
+  }
+
+  .admin-list .admin-song-info{
+    gap:9px;
+  }
+
+  .admin-list .admin-thumb{
+    width:52px;
+    height:52px;
+    flex-basis:52px;
+    border-radius:7px;
+  }
+
+  .admin-list .admin-song-info b{
+    font-size:12px;
+  }
+
+  .admin-list .admin-original-label{
+    font-size:9px;
+  }
+
+  .admin-list .admin-song-info .meta{
+    font-size:8px;
+  }
+
+  .admin-list .admin-actions{
+    gap:4px;
+  }
+
+  .admin-list .admin-actions .edit-btn,
+  .admin-list .admin-actions .delete{
+    padding:6px 7px;
+    font-size:9px;
+  }
+
+  .admin-list .version-row{
+    min-height:42px;
+    padding:6px 8px 6px 69px;
+    gap:8px;
+  }
+
+  .admin-list .version-row-info strong{
+    font-size:10px;
+  }
+
+  .admin-list .version-row-info small{
+    font-size:8px;
+  }
+
+  .admin-list .version-actions{
+    gap:4px;
+  }
+
+  .admin-list .version-actions .btn,
+  .admin-list .version-actions .delete{
+    padding:5px 7px;
+    font-size:9px;
+  }
+
+}
