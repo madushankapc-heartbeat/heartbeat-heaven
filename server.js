@@ -663,8 +663,8 @@ app.post(
       } = await supabase
         .from("songs")
         .insert({
-          title: cleanTitle,
-          artist: cleanArtist,
+          title,
+          artist,
           genre: genre || "",
           language: language || "",
           mood: mood || "",
@@ -762,21 +762,10 @@ app.put(
         version_name
       } = req.body || {};
 
-      /*
-       * Title is editable for BOTH original songs and versions.
-       * The parent relationship is handled separately below and is
-       * never changed by an edit.
-       */
-      const cleanTitle =
-        String(title || "").trim();
-
-      const cleanArtist =
-        String(artist || "").trim();
-
-      if (!cleanTitle || !cleanArtist) {
+      if (!title || !artist) {
         return res.status(400).json({
           error:
-            "Song title and artist are required."
+            "Title and artist are required."
         });
       }
 
