@@ -24,7 +24,7 @@
   <div class="admin-head"><div><p class="eyebrow">PRIVATE STUDIO</p><h1>Manage your music.</h1><p>Publish new releases, versions, remixes or edit songs already in your collection.</p></div></div>
   <section class="admin-panel">
     <div class="admin-panel-head"><div><p class="eyebrow">NEW RELEASE</p><h2>Upload music</h2></div></div>
-    <form id="uploadForm" class="upload-form" enctype="multipart/form-data">
+    <form id="uploadForm" class="upload-form" enctype="multipart/form-data" novalidate>
       <div class="content-type-box">
         <p class="field-title">Content type</p>
         <div class="content-type-options">
@@ -49,7 +49,7 @@
       <label>Lyrics<textarea name="lyrics" rows="12" placeholder="Paste your original lyrics here"></textarea></label>
       <label>Release date<input type="text" name="release_date" inputmode="text" autocomplete="off" maxlength="10" placeholder="YYYY-MM-DD"><span class="hint">Type the date as YYYY-MM-DD.</span></label>
       <div class="two">
-        <label>Audio file<input type="file" name="audio" accept="audio/*" required></label>
+        <label>Audio file<input type="file" name="audio" accept="audio/*"></label>
         <label>Cover image<input type="file" name="cover" accept="image/*" id="uploadCover"><span id="coverHint" class="hint">Required for an original song.</span></label>
       </div>
       <button class="btn primary" type="submit">Publish Song</button>
