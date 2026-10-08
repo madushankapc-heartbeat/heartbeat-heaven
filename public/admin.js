@@ -858,100 +858,18 @@ async function uploadFile(
    RELEASE DATE INPUT
 ========================================================= */
 
-function formatReleaseDateInput(input) {
-
-  if (!input) return;
-
-  const digits =
-    String(input.value || "")
-      .replace(/\\D/g, "")
-      .slice(0, 8);
-
-  let formatted = digits;
-
-  if (digits.length > 4) {
-    formatted =
-      digits.slice(0, 4) +
-      "-" +
-      digits.slice(4);
-  }
-
-  if (digits.length > 6) {
-    formatted =
-      digits.slice(0, 4) +
-      "-" +
-      digits.slice(4, 6) +
-      "-" +
-      digits.slice(6);
-  }
-
-  input.value = formatted;
-}
-
-
-function isValidReleaseDate(value) {
-
-  const date =
-    String(value || "").trim();
-
-  if (!date) {
-    return true;
-  }
-
-  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(date)) {
-    return false;
-  }
-
-  const [year, month, day] =
-    date.split("-").map(Number);
-
-  if (
-    month < 1 ||
-    month > 12 ||
-    day < 1 ||
-    day > 31
-  ) {
-    return false;
-  }
-
-  const parsed =
-    new Date(
-      Date.UTC(year, month - 1, day)
-    );
-
-  return (
-    parsed.getUTCFullYear() === year &&
-    parsed.getUTCMonth() === month - 1 &&
-    parsed.getUTCDate() === day
-  );
-}
-
-
-const releaseDateInputs =
-  document.querySelectorAll(
-    'input[name="release_date"]'
-  );
-
-releaseDateInputs.forEach(
-  input => {
-
-    input.addEventListener(
-      "input",
-      () => formatReleaseDateInput(input)
-    );
-
-    input.addEventListener(
-      "blur",
-      () => formatReleaseDateInput(input)
-    );
-
-  }
-);
+/*
+ * Release date is intentionally a plain text field.
+ * Do not auto-format while typing: mobile keyboards/cursors can
+ * interfere with manually entered YYYY-MM-DD values.
+ */
 
 
 /* =========================================================
    GET FORM VALUE
 ========================================================= */
+
+
 
 
 
