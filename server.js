@@ -1696,6 +1696,129 @@ ${
 );
 
 /* =========================================================
+   ROBOTS.TXT — EXPLICIT PLAIN-TEXT RESPONSE
+   ========================================================= */
+
+app.get("/robots.txt", (req, res) => {
+  res.set("Cache-Control", "public, max-age=3600");
+  res.type("text/plain").sendFile(
+    path.join(__dirname, "public", "robots.txt")
+  );
+});
+
+/* =========================================================
+   GOOGLE SEO — SITEMAP
+   ONLY ORIGINAL SONG HUB URLs
+   ========================================================= */
+
+app.get(
+  "/sitemap.xml",
+  async (req, res) => {
+    try {
+      const {
+        data: songs,
+        error
+      } = await supabase
+        .from("songs")
+        .select(
+          "id, release_date, created_at, parent_song_id"
+        )
+        .is(
+          "parent_song_id",
+          null
+        );
+
+      if (error) {
+        console.error(
+          "Sitemap error:",
+          error
+        );
+
+        return res
+          .status(500)
+          .type("text/plain")
+          .send(
+            "Sitemap error"
+          );
+      }
+
+      const baseUrl =
+        "https://heartbeat-heaven.onrender.com";
+
+      const now =
+        new Date().toISOString();
+
+      const urls = [
+        {
+          loc:
+            `${baseUrl}/`,
+          lastmod:
+            now
+        },
+
+        {
+          loc:
+            `${baseUrl}/songs.html`,
+          lastmod:
+            now
+        }
+      ];
+
+      (songs || []).forEach(
+        (song) => {
+          urls.push({
+            loc:
+              `${baseUrl}/song.html?id=${song.id}`,
+
+            lastmod:
+              song.release_date
+                ? new Date(
+                    song.release_date
+                  ).toISOString()
+                : new Date(
+                    song.created_at
+                  ).toISOString()
+          });
+        }
+      );
+
+      const xml =
+        `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls
+  .map(
+    (url) =>
+      `  <url>
+    <loc>${url.loc}</loc>
+    <lastmod>${url.lastmod}</lastmod>
+  </url>`
+  )
+  .join("\n")}
+</urlset>`;
+
+      res
+        .status(200)
+        .type("application/xml")
+        .send(xml);
+
+    } catch (error) {
+      console.error(
+        "Sitemap generation failed:",
+        error
+      );
+
+      res
+        .status(500)
+        .type("text/plain")
+        .send(
+          "Sitemap generation failed"
+        );
+    }
+  }
+);
+
+
+/* =========================================================
    PUBLIC FILES
    ========================================================= */
 
@@ -1822,117 +1945,6 @@ app.get(
           error.message ||
           "Could not load Song Hub."
       });
-    }
-  }
-);
-
-/* =========================================================
-   GOOGLE SEO — SITEMAP
-   ONLY ORIGINAL SONG HUB URLs
-   ========================================================= */
-
-app.get(
-  "/sitemap.xml",
-  async (req, res) => {
-    try {
-      const {
-        data: songs,
-        error
-      } = await supabase
-        .from("songs")
-        .select(
-          "id, release_date, created_at, parent_song_id"
-        )
-        .is(
-          "parent_song_id",
-          null
-        );
-
-      if (error) {
-        console.error(
-          "Sitemap error:",
-          error
-        );
-
-        return res
-          .status(500)
-          .type("text/plain")
-          .send(
-            "Sitemap error"
-          );
-      }
-
-      const baseUrl =
-        "https://heartbeat-heaven.onrender.com";
-
-      const now =
-        new Date().toISOString();
-
-      const urls = [
-        {
-          loc:
-            `${baseUrl}/`,
-          lastmod:
-            now
-        },
-
-        {
-          loc:
-            `${baseUrl}/songs.html`,
-          lastmod:
-            now
-        }
-      ];
-
-      (songs || []).forEach(
-        (song) => {
-          urls.push({
-            loc:
-              `${baseUrl}/song.html?id=${song.id}`,
-
-            lastmod:
-              song.release_date
-                ? new Date(
-                    song.release_date
-                  ).toISOString()
-                : new Date(
-                    song.created_at
-                  ).toISOString()
-          });
-        }
-      );
-
-      const xml =
-        `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-${urls
-  .map(
-    (url) =>
-      `  <url>
-    <loc>${url.loc}</loc>
-    <lastmod>${url.lastmod}</lastmod>
-  </url>`
-  )
-  .join("\n")}
-</urlset>`;
-
-      res
-        .status(200)
-        .type("application/xml")
-        .send(xml);
-
-    } catch (error) {
-      console.error(
-        "Sitemap generation failed:",
-        error
-      );
-
-      res
-        .status(500)
-        .type("text/plain")
-        .send(
-          "Sitemap generation failed"
-        );
     }
   }
 );
