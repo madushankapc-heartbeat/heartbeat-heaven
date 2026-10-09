@@ -1700,10 +1700,20 @@ ${
    ========================================================= */
 
 app.get("/robots.txt", (req, res) => {
-  res.set("Cache-Control", "public, max-age=3600");
+  // Keep crawler policy fresh while Google Search Console is re-fetching.
+  res.set("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
   res.type("text/plain").sendFile(
     path.join(__dirname, "public", "robots.txt")
   );
+});
+
+app.head("/robots.txt", (req, res) => {
+  res.set("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
+  res.type("text/plain").end();
 });
 
 /* =========================================================
