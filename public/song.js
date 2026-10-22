@@ -7,9 +7,18 @@ const root =
 const SITE_URL =
   "https://heartbeat-heaven.onrender.com";
 
+function showSongLoadMessage(message) {
+  // Keep server-rendered song content visible if the API request fails.
+  // This prevents a transient client-side error from turning a valid song
+  // page into a Soft 404 for crawlers.
+  if (root && !root.querySelector("h1.song-title")) {
+    root.innerHTML = "<div class='empty'>" + esc(message) + "</div>";
+  }
+}
+
 async function load() {
   if (!id) {
-    root.innerHTML = "<div class='empty'>Song not found.</div>";
+    showSongLoadMessage("Song not found.");
     return;
   }
 
@@ -19,7 +28,8 @@ async function load() {
     );
 
     if (!response.ok) {
-      root.innerHTML = "<div class='empty'>Song not found.</div>";
+      console.warn("Song Hub API returned HTTP", response.status);
+      showSongLoadMessage("Song not found.");
       return;
     }
 
@@ -28,7 +38,8 @@ async function load() {
     const versions = Array.isArray(hub.versions) ? hub.versions : [];
 
     if (!s) {
-      root.innerHTML = "<div class='empty'>Song not found.</div>";
+      console.warn("Song Hub API response did not include an original song.");
+      showSongLoadMessage("Song not found.");
       return;
     }
 
@@ -225,7 +236,7 @@ async function load() {
     setupAudioPlayers();
   } catch (error) {
     console.error("Song Hub error:", error);
-    root.innerHTML = "<div class='empty'>Unable to load song.</div>";
+    showSongLoadMessage("Unable to load song.");
   }
 }
 
